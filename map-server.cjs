@@ -48,16 +48,26 @@ function getShareDir() {
 function getWorldFiles(shareDir) {
   const worldsDir = path.join(shareDir, 'worlds');
   if (!fs.existsSync(worldsDir)) return [];
+
   return fs.readdirSync(worldsDir)
     .filter(f => f.endsWith('.json'))
     .map(f => {
       const fullPath = path.join(worldsDir, f);
-      const stat     = fs.statSync(fullPath);
-      let   mapName  = f;
+
+      // ── FIXED: guard against file disappearing between readdir & stat ──
+      let stat;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch {
+        return null;   // file vanished, skip it
+      }
+
+      let mapName = f;
       try {
         const data = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
         mapName    = data.name ?? path.parse(f).name;
       } catch { /* keep filename */ }
+
       return {
         name:     f,
         mapName,
@@ -66,7 +76,8 @@ function getWorldFiles(shareDir) {
         modified: stat.mtime.toISOString(),
         url:      `http://localhost:${PORT}/map?file=${f}`,
       };
-    });
+    })
+    .filter(Boolean);   // ← remove any null entries
 }
 
 function getRobotFiles(shareDir) {
@@ -432,6 +443,45 @@ app.post('/switch', async (req, res) => {
     console.error('❌ Switch failed:', err.message);
     currentState.status = 'error';
     currentState.error  = err.message;
+  }
+});
+
+// POST /save_map  { filename: 'custom_map.json', data: { ... } }
+app.post('/save_map', (req, res) => {
+  const { filename, data } = req.body;
+
+  if (!filename || !data) {
+    return res.status(400).json({ ok: false, message: 'Missing filename or map data.' });
+  }
+
+  // Prevent path traversal attacks
+  const safeName = path.basename(filename);
+  if (!safeName.endsWith('.json')) {
+    return res.status(400).json({ ok: false, message: 'Filename must end with .json' });
+  }
+
+  // ── Resolve worlds dir via ROS package (same as other routes) ────────────
+  const shareDir = getShareDir();
+  if (!shareDir) {
+    return res.status(500).json({ ok: false, message: 'Cannot resolve ROS package' });
+  }
+
+  const savePath = path.join(shareDir, 'worlds', safeName);
+
+  try {
+    // Auto-create worlds dir if missing
+    const dir = path.dirname(savePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    fs.writeFileSync(savePath, JSON.stringify(data, null, 2), 'utf8');
+    console.log(`[save_map] ✅ Saved: ${savePath}`);
+    res.json({ ok: true, message: `Saved to ${savePath}` });
+
+  } catch (err) {
+    console.error(`[save_map] ❌ ${err.message}`);
+    res.status(500).json({ ok: false, message: err.message });
   }
 });
 

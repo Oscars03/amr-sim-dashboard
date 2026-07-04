@@ -1,7 +1,6 @@
-// App.jsx — HUD Axis & Mouse Icons Update
+// App.jsx — Map Editor Feature Added (No Other UI/Features Changed)
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import * as ROSLIB from 'roslib';
-import MapEditor from './components/MapEditor';
 
 const MAP_SERVER_URL  = 'http://localhost:3001/map';
 const URDF_SERVER_URL = 'http://localhost:3001/urdf';
@@ -9,6 +8,7 @@ const ROBOTS_URL      = 'http://localhost:3001/robots';
 const STATUS_URL      = 'http://localhost:3001/status';
 const SWITCH_URL      = 'http://localhost:3001/switch';
 const STOP_URL        = 'http://localhost:3001/stop';
+const SAVE_MAP_URL = 'http://localhost:3001/save_map';
 const ROSBRIDGE_URL   = 'ws://localhost:9090';
 const FETCH_INTERVAL  = 3000;
 const STATUS_INTERVAL = 1500;
@@ -266,6 +266,247 @@ function buildTransform(mapInfo, canvasW, canvasH) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MapEditor Component (New Feature)
+// ─────────────────────────────────────────────────────────────────────────────
+function buildTransformEditor(mapInfo, canvasW, canvasH) {
+  const { origin_x, origin_y, width: mw, height: mh } = mapInfo;
+  const scale   = Math.min(canvasW / mh, canvasH / mw) * 0.90;
+  const offsetX = (canvasW - mh * scale) / 2;
+  const offsetY = (canvasH - mw * scale) / 2;
+  return {
+    scale, offsetX, offsetY,
+    toCanvas: (wx, wy) => ({
+      cx: Math.round(canvasW - offsetX - (wy - origin_y) * scale) + 0.5,
+      cy: Math.round(canvasH - offsetY - (wx - origin_x) * scale) + 0.5,
+    }),
+    fromCanvas: (cx, cy) => ({
+      wx: origin_x + (canvasH - offsetY - cy + 0.5) / scale,
+      wy: origin_y + (canvasW - offsetX - cx + 0.5) / scale,
+    }),
+  };
+}
+
+function MapEditor({ onExit, isDark }) {
+  const [mapName, setMapName] = useState('custom_map');
+  const [walls, setWalls] = useState([]);
+  const [obstacles, setObstacles] = useState([]);
+  const [tool, setTool] = useState('wall'); 
+  const gridSize = 10; 
+  const mapInfo = { origin_x: -gridSize, origin_y: -gridSize, width: gridSize*2, height: gridSize*2 };
+
+  const canvasRef = useRef(null);
+  const wrapRef = useRef(null);
+  const [canvasSize, setCanvasSize] = useState({ w: 800, h: 600 });
+
+  useEffect(() => {
+    const updateSize = () => {
+      if (wrapRef.current) {
+        setCanvasSize({ w: wrapRef.current.clientWidth, h: wrapRef.current.clientHeight });
+      }
+    };
+    updateSize();
+    setTimeout(updateSize, 100);
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
+
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startPt, setStartPt] = useState(null);
+  const [curPt, setCurPt] = useState(null);
+
+  const transform = buildTransformEditor(mapInfo, canvasSize.w, canvasSize.h);
+  const snap = (val) => Math.round(val * 2) / 2;
+
+  const getPos = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const { wx, wy } = transform.fromCanvas(cx, cy);
+    return { x: snap(wx), y: snap(wy) };
+  };
+
+  const handlePointerDown = (e) => {
+    const pt = getPos(e);
+    if (tool === 'eraser') {
+       setWalls(ws => ws.filter(w => !isNearLine(pt.x, pt.y, w.start, w.end)));
+       setObstacles(os => os.filter(o => !isInsideRect(pt.x, pt.y, o)));
+       return;
+    }
+    setIsDrawing(true);
+    setStartPt(pt);
+    setCurPt(pt);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isDrawing) return;
+    setCurPt(getPos(e));
+  };
+
+  const handlePointerUp = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    if (startPt.x === curPt.x && startPt.y === curPt.y) return; 
+
+    if (tool === 'wall') {
+      setWalls([...walls, { start: [startPt.x, startPt.y], end: [curPt.x, curPt.y], thickness: 0.12 }]);
+    } else if (tool === 'obstacle') {
+      const w = Math.abs(curPt.x - startPt.x);
+      const h = Math.abs(curPt.y - startPt.y);
+      const x = Math.min(startPt.x, curPt.x);
+      const y = Math.min(startPt.y, curPt.y);
+      setObstacles([...obstacles, { type: 'rect', x, y, w, h }]);
+    }
+  };
+
+  const isNearLine = (x, y, p1, p2) => {
+    const dist = Math.abs((p2[1]-p1[1])*x - (p2[0]-p1[0])*y + p2[0]*p1[1] - p2[1]*p1[0]) / Math.hypot(p2[1]-p1[1], p2[0]-p1[0]);
+    const minX = Math.min(p1[0], p2[0]) - 0.5;
+    const maxX = Math.max(p1[0], p2[0]) + 0.5;
+    const minY = Math.min(p1[1], p2[1]) - 0.5;
+    const maxY = Math.max(p1[1], p2[1]) + 0.5;
+    return dist < 0.5 && x >= minX && x <= maxX && y >= minY && y <= maxY;
+  };
+  
+  const isInsideRect = (x, y, o) => {
+    return x >= o.x && x <= o.x + o.w && y >= o.y && y <= o.y + o.h;
+  };
+
+  useEffect(() => {
+     const ctx = canvasRef.current?.getContext('2d');
+     if (!ctx) return;
+     ctx.clearRect(0,0, canvasSize.w, canvasSize.h);
+     ctx.fillStyle = isDark ? '#555555' : '#222222';
+     ctx.fillRect(0,0, canvasSize.w, canvasSize.h);
+
+     ctx.strokeStyle = isDark ? '#ffffff20' : '#ffffff15';
+     ctx.lineWidth = 1;
+     for(let i=mapInfo.origin_x; i<=mapInfo.origin_x+mapInfo.width; i+=0.5){
+        const {cx:x1, cy:y1} = transform.toCanvas(i, mapInfo.origin_y);
+        const {cx:x2, cy:y2} = transform.toCanvas(i, mapInfo.origin_y + mapInfo.height);
+        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+     }
+     for(let j=mapInfo.origin_y; j<=mapInfo.origin_y+mapInfo.height; j+=0.5){
+        const {cx:x1, cy:y1} = transform.toCanvas(mapInfo.origin_x, j);
+        const {cx:x2, cy:y2} = transform.toCanvas(mapInfo.origin_x+mapInfo.width, j);
+        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+     }
+
+     ctx.strokeStyle = isDark ? '#000000' : '#eeeeee';
+     ctx.lineWidth = 4;
+     ctx.lineCap = 'round';
+     walls.forEach(w => {
+       const p1 = transform.toCanvas(w.start[0], w.start[1]);
+       const p2 = transform.toCanvas(w.end[0], w.end[1]);
+       ctx.beginPath(); ctx.moveTo(p1.cx, p1.cy); ctx.lineTo(p2.cx, p2.cy); ctx.stroke();
+     });
+
+     ctx.fillStyle = '#ef535077';
+     ctx.strokeStyle = '#ef5350';
+     ctx.lineWidth = 2;
+     obstacles.forEach(o => {
+       const p1 = transform.toCanvas(o.x, o.y);
+       const p2 = transform.toCanvas(o.x + o.w, o.y);
+       const p3 = transform.toCanvas(o.x + o.w, o.y + o.h);
+       const p4 = transform.toCanvas(o.x, o.y + o.h);
+       ctx.beginPath(); ctx.moveTo(p1.cx, p1.cy); ctx.lineTo(p2.cx, p2.cy); ctx.lineTo(p3.cx, p3.cy); ctx.lineTo(p4.cx, p4.cy); ctx.closePath();
+       ctx.fill(); ctx.stroke();
+     });
+
+     if (isDrawing && startPt && curPt) {
+        ctx.strokeStyle = '#4caf50';
+        ctx.lineWidth = 4;
+        const p1 = transform.toCanvas(startPt.x, startPt.y);
+        const p2 = transform.toCanvas(curPt.x, curPt.y);
+        if (tool === 'wall') {
+           ctx.beginPath(); ctx.moveTo(p1.cx, p1.cy); ctx.lineTo(p2.cx, p2.cy); ctx.stroke();
+        } else if (tool === 'obstacle') {
+           const p3 = transform.toCanvas(startPt.x, curPt.y);
+           const p4 = transform.toCanvas(curPt.x, startPt.y);
+           ctx.fillStyle = '#4caf5077';
+           ctx.beginPath(); ctx.moveTo(p1.cx, p1.cy); ctx.lineTo(p3.cx, p3.cy); ctx.lineTo(p2.cx, p2.cy); ctx.lineTo(p4.cx, p4.cy); ctx.closePath();
+           ctx.fill(); ctx.stroke();
+        }
+     }
+     
+     const { cx: ox, cy: oy } = transform.toCanvas(0, 0);
+     ctx.lineWidth = 2.5;
+     ctx.strokeStyle = '#ff4444'; ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - 30); ctx.stroke(); 
+     ctx.strokeStyle = '#44ff44'; ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox - 30, oy); ctx.stroke(); 
+  }, [canvasSize, walls, obstacles, isDrawing, startPt, curPt, isDark, transform, mapInfo]);
+
+  const saveMap = async () => {
+  const formattedWalls = walls.map(w => [w.start, w.end]);
+  const mapJson = {
+    name: mapName,
+    walls: formattedWalls,
+    obstacles: obstacles,          // ← also include obstacles
+    map_info: {                    // ← include so normaliseMap works
+      origin_x: mapInfo.origin_x,
+      origin_y: mapInfo.origin_y,
+      width:    mapInfo.width,
+      height:   mapInfo.height,
+    }
+  };
+
+  try {
+    const res = await fetch('http://localhost:3001/save_map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filename: `${mapName}.json`,   // → saved as e.g. custom_map.json
+        data: mapJson                  // → the map object
+      })
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.message || `HTTP error! status: ${res.status}`);
+    }
+
+    const result = await res.json();
+    alert(`Map "${mapName}.json" saved!\nPath: ${result.message}`);
+
+  } catch (err) {
+    console.error('Save map error:', err);
+    alert(`Failed to save map: ${err.message}\n\nCheck that your Node.js server is running on port 3001.`);
+  }
+};
+
+  const S = {
+    wrap: { display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', flex: 1, minHeight: 0 },
+    toolbar: { display: 'flex', gap: '12px', alignItems: 'center', background: isDark ? '#121212' : '#ffffff', padding: '12px 20px', borderRadius: '16px', border: `1px solid ${isDark ? '#333' : '#ddd'}`, boxShadow: isDark ? 'none' : '0 4px 16px rgba(0,0,0,0.04)', flexShrink: 0 },
+    input: { background: isDark ? '#00000044' : '#f5f5f5', border: `1px solid ${isDark ? '#444' : '#ccc'}`, color: isDark ? '#fff' : '#000', padding: '8px 12px', borderRadius: '8px', outline: 'none', fontSize: '13px', fontWeight: 600, width: '200px' },
+    btn: { background: isDark ? '#1e1e1e' : '#f5f5f5', border: `1px solid ${isDark ? '#444' : '#ddd'}`, color: isDark ? '#ccc' : '#555', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, transition: 'all 0.2s' },
+    btnActive: { background: isDark ? '#1a237e' : '#e3f2fd', border: `1px solid ${isDark ? '#3949ab' : '#90caf9'}`, color: isDark ? '#fff' : '#1565c0', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, transition: 'all 0.2s' },
+    btnSave: { background: '#4caf50', border: 'none', color: '#fff', padding: '8px 20px', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 700, boxShadow: '0 2px 6px rgba(76,175,80,0.3)', marginLeft: 'auto' },
+    btnDanger: { background: isDark ? '#b71c1c44' : '#ffebee', border: `1px solid ${isDark ? '#ef535055' : '#ef9a9a'}`, color: isDark ? '#ef9a9a' : '#c62828', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 },
+    canvasWrap: { flex: 1, minHeight: 0, background: isDark ? '#0d0d1a' : '#e6e9ec', borderRadius: '16px', border: `1px solid ${isDark ? '#ffffff15' : '#cccccc'}`, overflow: 'hidden', position: 'relative' }
+  };
+
+  return (
+    <div style={S.wrap}>
+      <div style={S.toolbar}>
+         <button onClick={onExit} style={S.btn}>← Back to Dashboard</button>
+         <div style={{ width: '1px', height: '24px', background: isDark ? '#333' : '#ddd', margin: '0 8px' }} />
+         <input value={mapName} onChange={e => setMapName(e.target.value)} style={S.input} placeholder="Map Name" />
+         <button onClick={() => setTool('wall')} style={tool === 'wall' ? S.btnActive : S.btn}>Draw Wall</button>
+         <button onClick={() => setTool('obstacle')} style={tool === 'obstacle' ? S.btnActive : S.btn}>Add Obstacle</button>
+         <button onClick={() => setTool('eraser')} style={tool === 'eraser' ? S.btnActive : S.btn}>Eraser</button>
+         <button onClick={() => { setWalls([]); setObstacles([]); }} style={S.btnDanger}>Clear All</button>
+         <button onClick={saveMap} style={S.btnSave}>Save to ROS</button>
+      </div>
+      <div style={S.canvasWrap} ref={wrapRef}>
+         <canvas
+            ref={canvasRef} width={canvasSize.w} height={canvasSize.h}
+            onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
+            style={{ cursor: tool === 'eraser' ? 'crosshair' : 'crosshair', touchAction: 'none', display: 'block', width: '100%', height: '100%' }}
+         />
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component 
 // ─────────────────────────────────────────────────────────────────────────────
 function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
@@ -287,12 +528,12 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
   };
 
   const handleMouseMove = (e) => {
-    if (dragRef.current.isLeft) { // ถ้าคลิกซ้ายอยู่ให้หมุน
+    if (dragRef.current.isLeft) { 
       const dx = e.clientX - dragRef.current.lastX;
       setView(v => ({ ...v, rotation: v.rotation + dx * 0.01 }));
       dragRef.current.lastX = e.clientX;
       dragRef.current.lastY = e.clientY;
-    } else if (dragRef.current.isMiddle) { // ถ้าคลิกกลางอยู่ให้เลื่อน
+    } else if (dragRef.current.isMiddle) { 
       const dx = e.clientX - dragRef.current.lastX;
       const dy = e.clientY - dragRef.current.lastY;
       setView(v => ({ ...v, panX: v.panX + dx, panY: v.panY + dy }));
@@ -486,7 +727,6 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
 
     ctx.restore();
 
-    // ── HUD: Scale Bar ──
     const scaleColor = isDark ? '#000000' : '#ffffff'; 
     const barPx = Math.round(scale * view.zoom); 
     const bx = 16.5; 
@@ -499,7 +739,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     ctx.beginPath(); ctx.moveTo(bx+barPx, by-4); ctx.lineTo(bx+barPx, by+4); ctx.stroke();
     
     ctx.fillStyle = scaleColor;
-    ctx.font = '12px sans-serif';
+    ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('1 m', bx + barPx + 8, by + 4);
 
@@ -518,7 +758,6 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
         onDoubleClick={handleDoubleClick}
         style={{ borderRadius: '8px', display: 'block', cursor, width: '100%', height: '100%' }}
       />
-      {/* Instruction Zone */}
       <div style={{ 
         position: 'absolute', 
         bottom: '16px', 
@@ -563,6 +802,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     </div>
   );
 }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // KeyboardController
 // ─────────────────────────────────────────────────────────────────────────────
@@ -672,15 +912,18 @@ function KeyboardController({ ros, isDark }) {
   }, [keys, speed, turnSpeed, webControl]);
 
   const S = {
-   wrap: {
-      background: isDark ? '#121212' : '#ffffff', 
-      border: `1px solid ${isDark ? '#333333' : '#e0e0e0'}`,
-      boxShadow: isDark ? 'none' : '0 4px 12px rgba(0,0,0,0.03)',
-      borderRadius: '16px', padding: '20px',
-      opacity: webControl ? 1 : 0.6,
-      transition: 'opacity 0.3s',
-      display: 'flex', flexDirection: 'column', boxSizing: 'border-box', flexShrink: 0,
-      overflow: 'hidden'
+    wrap: {
+      background:    isDark ? '#121212' : '#ffffff',
+      border:       `1px solid ${isDark ? '#333333' : '#e0e0e0'}`,
+      borderRadius: '16px',
+      padding:      '16px',
+      opacity:       webControl ? 1 : 0.6,
+      transition:   'opacity 0.3s',
+      display:      'flex',
+      flexDirection:'column',
+      boxSizing:    'border-box',
+      flexShrink:    0,
+      overflow:     'hidden',
     },
     titleRow: {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px'
@@ -714,9 +957,11 @@ function KeyboardController({ ros, isDark }) {
       display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: '20px', justifyContent: 'center'
     },
     dpad: {
-      display: 'grid', gridTemplateColumns: 'repeat(3, 56px)', 
-      gridTemplateRows: 'repeat(3, 56px)', gap: '8px',
-      pointerEvents: webControl ? 'auto' : 'none'
+      display:             'grid',
+      gridTemplateColumns: 'repeat(3, 48px)',
+      gridTemplateRows:    'repeat(3, 48px)',
+      gap:                 '6px',
+      pointerEvents:        webControl ? 'auto' : 'none',
     },
     key: (active) => ({
       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -726,16 +971,55 @@ function KeyboardController({ ros, isDark }) {
       color: active ? (isDark ? '#fff' : '#1565c0') : (isDark ? '#9e9ec0' : '#666666'),
       fontSize: '18px', fontWeight: 600, cursor: 'pointer', userSelect: 'none'
     }),
+
+    // ─── Slider section (redesigned) ───────────────────────────
     sliderCol: {
-      display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, maxWidth: '240px', minWidth: '180px'
+      display: 'flex', flexDirection: 'column', gap: '18px', flex: 1, maxWidth: '260px', minWidth: '200px'
     },
-    sliderRow: {
-      display: 'flex', alignItems: 'center', gap: '10px',
-      fontSize: '14px', color: isDark ? '#9e9ec0' : '#666', fontWeight: 500,
+    sliderHeader: {
+      display: 'flex', alignItems: 'center', marginBottom: '6px'
+    },
+    sliderLabel: {
+      fontSize: '12px', fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase',
+      color: isDark ? '#7d8bab' : '#5a6478'
+    },
+    sliderKeyBadge: (variant, color) => ({
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '3px',
+      fontSize: '10px', fontFamily: 'monospace', fontWeight: 800, letterSpacing: '0.3px',
+      padding: '3px 8px', borderRadius: '6px', whiteSpace: 'nowrap',
+      color: variant === 'max' ? color : `${color}80`,
+      background: variant === 'max' ? `${color}1a` : `${color}0d`,
+      border: variant === 'max' ? `1px solid ${color}55` : `1px solid ${color}25`,
+      boxShadow: variant === 'max' ? `0 0 6px ${color}30` : 'none',
+    }),
+    
+    sliderTrackCol: {
+      display: 'flex', flexDirection: 'column', flex: 1, gap: '6px'
+    },
+    sliderLegendRow: {
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+    },
+
+    sliderTrackRow: {
+      display: 'flex', alignItems: 'center', gap: '12px',
       pointerEvents: webControl ? 'auto' : 'none'
     },
-    slider: { flex: 1, accentColor: isDark ? '#90caf9' : '#1976d2' },
-    val:    { fontFamily: 'monospace', color: isDark ? '#00e5ff' : '#007b83', width: '38px', textAlign: 'right', fontWeight: 700, fontSize: '12px' },
+    slider: (value, min, max, color) => ({
+      flex: 1,
+      background: `linear-gradient(to right, ${color} 0%, ${color} ${((value - min) / (max - min)) * 100}%, ${isDark ? '#ffffff15' : '#e0e0e0'} ${((value - min) / (max - min)) * 100}%, ${isDark ? '#ffffff15' : '#e0e0e0'} 100%)`,
+      '--thumb-color': isDark ? '#0a0a0a' : '#ffffff',
+      '--thumb-ring': color,
+      '--thumb-glow': `${color}80`,
+    }),
+    val: {
+      fontFamily: 'monospace', fontSize: '13px', fontWeight: 700,
+      color: isDark ? '#00e5ff' : '#007b83',
+      background: isDark ? '#00e5ff12' : '#00b8c410',
+      borderRadius: '6px', padding: '4px 8px',
+      minWidth: '48px', textAlign: 'center'
+    },
+    // ─────────────────────────────────────────────────────────
+
     cmdBar: {
       marginTop: '10px', fontSize: '13px', color: isDark ? '#9e9ec0' : '#666666',
       fontFamily: 'monospace', background: isDark ? '#ffffff06' : '#f0f0f0',
@@ -768,6 +1052,43 @@ function KeyboardController({ ros, isDark }) {
 
   return (
     <div style={S.wrap}>
+      <style>{`
+        input[type="range"].tele-slider {
+          -webkit-appearance: none;
+          appearance: none;
+          height: 6px;
+          border-radius: 3px;
+          outline: none;
+          cursor: pointer;
+        }
+        input[type="range"].tele-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: var(--thumb-color);
+          border: 3px solid var(--thumb-ring);
+          box-shadow: 0 0 8px var(--thumb-glow);
+          cursor: pointer;
+          transition: transform 0.15s ease;
+        }
+        input[type="range"].tele-slider::-webkit-slider-thumb:hover {
+          transform: scale(1.15);
+        }
+        input[type="range"].tele-slider::-moz-range-thumb {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: var(--thumb-color);
+          border: 3px solid var(--thumb-ring);
+          box-shadow: 0 0 8px var(--thumb-glow);
+          cursor: pointer;
+        }
+        input[type="range"].tele-slider:disabled::-webkit-slider-thumb {
+          box-shadow: none;
+        }
+      `}</style>
+
       <div style={S.titleRow}>
         <div style={S.title}>Robot Control</div>
         
@@ -793,22 +1114,49 @@ function KeyboardController({ ros, isDark }) {
         </div>
 
         <div style={S.sliderCol}>
-          <div style={S.sliderRow}>
-            <div style={{ display: 'flex', flexDirection: 'column', width: '55px' }}>
-              <span>Speed</span>
-              <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '-2px' }}>w / x</span>
-            </div>
-            <input type="range" min="0.1" max="2.0" step="0.1" value={speed} onChange={e => setSpeed(parseFloat(e.target.value))} style={S.slider} disabled={!webControl} />
-            <span style={S.val}>{speed.toFixed(2)}</span>
-          </div>
-          <div style={S.sliderRow}>
-            <div style={{ display: 'flex', flexDirection: 'column', width: '55px' }}>
-              <span>Angle</span>
-              <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '-2px' }}>e / c</span>
-            </div>
-            <input type="range" min="0.1" max="3.0" step="0.1" value={turnSpeed} onChange={e => setTurnSpeed(parseFloat(e.target.value))} style={S.slider} disabled={!webControl} />
-            <span style={S.val}>{turnSpeed.toFixed(2)}</span>
-          </div>
+          <div>
+  <div style={S.sliderHeader}>
+    <span style={S.sliderLabel}>Speed</span>
+  </div>
+  <div style={S.sliderTrackRow}>
+    <div style={S.sliderTrackCol}>
+      <input
+        type="range" className="tele-slider"
+        min="0.1" max="2.0" step="0.1" value={speed}
+        onChange={e => setSpeed(parseFloat(e.target.value))}
+        style={S.slider(speed, 0.1, 2.0, isDark ? '#90caf9' : '#1976d2')}
+        disabled={!webControl}
+      />
+      <div style={S.sliderLegendRow}>
+        <span style={S.sliderKeyBadge('min', isDark ? '#90caf9' : '#1976d2')}>X −</span>
+        <span style={S.sliderKeyBadge('max', isDark ? '#90caf9' : '#1976d2')}>W +</span>
+      </div>
+    </div>
+    <span style={S.val}>{speed.toFixed(2)}</span>
+  </div>
+</div>
+
+<div>
+  <div style={S.sliderHeader}>
+    <span style={S.sliderLabel}>Angle</span>
+  </div>
+  <div style={S.sliderTrackRow}>
+    <div style={S.sliderTrackCol}>
+      <input
+        type="range" className="tele-slider"
+        min="0.1" max="3.0" step="0.1" value={turnSpeed}
+        onChange={e => setTurnSpeed(parseFloat(e.target.value))}
+        style={S.slider(turnSpeed, 0.1, 3.0, isDark ? '#00e676' : '#2e7d32')}
+        disabled={!webControl}
+      />
+      <div style={S.sliderLegendRow}>
+        <span style={S.sliderKeyBadge('min', isDark ? '#00e676' : '#2e7d32')}>C -</span>
+        <span style={S.sliderKeyBadge('max', isDark ? '#00e676' : '#2e7d32')}>E +</span>
+      </div>
+    </div>
+    <span style={S.val}>{turnSpeed.toFixed(2)}</span>
+  </div>
+</div>
 
           <div style={S.cmdBar}>
             <span>X: <span style={{color: webControl ? (isDark ? '#00e5ff' : '#007b83') : (isDark ? '#9e9ec0' : '#aaaaaa')}}>{(keys['i']) && webControl ? speed.toFixed(2) : (keys[',']) && webControl ? (-speed).toFixed(2) : '0.00'}</span></span>
@@ -819,9 +1167,141 @@ function KeyboardController({ ros, isDark }) {
     </div>
   );
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// CustomDropdown  — defined OUTSIDE SimSelector so it never remounts
+// ─────────────────────────────────────────────────────────────────────────────
+function CustomDropdown({ label, value, onChange, options, isDark }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  const accent   = isDark ? '#90caf9' : '#1976d2';
+  const border   = isDark ? '#ffffff12' : '#e8eaed';
+  const inputBg  = isDark ? '#1a1a2e'  : '#f8f9fa';
+  const textSub  = isDark ? '#6b7280'  : '#9ca3af';
+  const textMain = isDark ? '#e2e8f0'  : '#1a1a2a';
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selected = options.find(o => o.value === value);
+
+  return (
+    <div>
+      {/* Label */}
+      <div style={{
+        fontSize: '10px', fontWeight: 700, color: textSub,
+        textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '6px',
+      }}>
+        {label}
+      </div>
+
+      {/* Container */}
+      <div ref={ref} style={{ position: 'relative' }}>
+
+        {/* Trigger */}
+        <div
+          onMouseDown={(e) => { e.preventDefault(); setOpen(o => !o); }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 12px',
+            background: open ? (isDark ? '#22223a' : '#f0f4ff') : inputBg,
+            border: `1.5px solid ${open ? accent : border}`,
+            boxShadow: open ? `0 0 0 3px ${accent}22` : 'none',
+            borderRadius: open ? '10px 10px 0 0' : '10px',
+            color: textMain, fontSize: '14px', fontWeight: 600,
+            cursor: 'pointer', userSelect: 'none', transition: 'all 0.15s',
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+            {selected?.label ?? '— select —'}
+          </span>
+          <svg
+            width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke={open ? accent : textSub} strokeWidth="2.5"
+            strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              marginLeft: '8px', flexShrink: 0, pointerEvents: 'none',
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s',
+            }}
+          >
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+
+        {/* Options list */}
+        {open && (
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0,
+            background: isDark ? '#1a1a2e' : '#ffffff',
+            border: `1.5px solid ${accent}`, borderTop: 'none',
+            borderRadius: '0 0 10px 10px',
+            boxShadow: isDark ? '0 8px 24px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.12)',
+            zIndex: 9999, maxHeight: '200px', overflowY: 'auto',
+            scrollbarWidth: 'thin',
+            scrollbarColor: `${isDark ? '#333' : '#ccc'} transparent`,
+          }}>
+            {options.length === 0 ? (
+              <div style={{ padding: '10px 14px', color: textSub, fontSize: '13px', fontStyle: 'italic' }}>
+                Loading…
+              </div>
+            ) : (
+              options.map((opt, i) => {
+                const isSelected = opt.value === value;
+                const isLast     = i === options.length - 1;
+                return (
+                  <div
+                    key={opt.value}
+                    onMouseDown={(e) => { e.preventDefault(); onChange(opt.value); setOpen(false); }}
+                    style={{
+                      padding: '10px 14px', fontSize: '14px',
+                      fontWeight: isSelected ? 700 : 500,
+                      color: isSelected ? accent : textMain,
+                      background: isSelected
+                        ? (isDark ? `${accent}18` : `${accent}12`)
+                        : 'transparent',
+                      borderBottom: !isLast ? `1px solid ${border}` : 'none',
+                      borderRadius: isLast ? '0 0 8px 8px' : '0',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isSelected) e.currentTarget.style.background = isDark ? '#ffffff0a' : '#f5f5f5';
+                    }}
+                    onMouseLeave={e => {
+                      if (!isSelected) e.currentTarget.style.background = isSelected
+                        ? (isDark ? `${accent}18` : `${accent}12`) : 'transparent';
+                    }}
+                  >
+                    <div style={{ width: '16px', flexShrink: 0 }}>
+                      {isSelected && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                          stroke={accent} strokeWidth="3"
+                          strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      )}
+                    </div>
+                    {opt.label}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SimSelector
+// SimSelector  — now uses CustomDropdown as a stable external component
 // ─────────────────────────────────────────────────────────────────────────────
 function SimSelector({ onSwitch, onStop, isDark, isWaitingOdom }) {
   const [robotList,  setRobotList]  = useState([]);
@@ -836,21 +1316,25 @@ function SimSelector({ onSwitch, onStop, isDark, isWaitingOdom }) {
 
   const doSwitch = useCallback(async (robot, world) => {
     if (!robot || !world) return;
-    setSwitching(true);
-    setSwitchMsg('');
+    setSwitching(true); setSwitchMsg('');
     try {
       const res  = await fetch(SWITCH_URL, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ robot, world }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ robot, world }),
       });
       const data = await res.json();
       setSwitchMsg(data.message ?? (data.ok ? 'Launching…' : 'Error'));
-      if (data.ok && onSwitch) setTimeout(() => onSwitch(robot, world), 3000);
-    } catch (err) {
-      setSwitchMsg(`${err.message}`);
-    } finally {
-      setSwitching(false);
+      
+      // 🌟 ทริกเกอร์ onSwitch ทันทีเพื่อให้ isWaitingOdom = true 
+      // ปุ่มจะได้เข้าสู่สถานะ 'Waiting' ทันทีโดยไม่ต้องรอให้ Polling ของ Server ส่งค่ากลับมา
+      if (data.ok && onSwitch) {
+        onSwitch(robot, world);
+      }
+    } catch (err) { 
+      setSwitchMsg(`${err.message}`); 
+    } finally { 
+      // 🌟 หน่วงเวลาสั้นๆ ก่อนปิดสถานะ request เพื่อให้ Server เปลี่ยนสถานะเป็น launching ได้ทันเวลา
+      setTimeout(() => setSwitching(false), 1500); 
     }
   }, [onSwitch]);
 
@@ -865,134 +1349,188 @@ function SimSelector({ onSwitch, onStop, isDark, isWaitingOdom }) {
         const robotData  = await robotRes.json();
         const worldData  = await worldRes.json();
         const statusData = await statusRes.json();
-
         const robots = robotData.robots ?? [];
         const worlds = worldData.worlds ?? [];
-        setRobotList(robots);
-        setWorldList(worlds);
-
+        setRobotList(robots); setWorldList(worlds);
         const defaultRobot = statusData.robot ?? robots[0]?.name ?? '';
         const defaultWorld = statusData.world ?? worlds[0]?.name ?? '';
-        setSelRobot(defaultRobot);
-        setSelWorld(defaultWorld);
-
-        if (!autoLaunched.current && statusData.status !== 'running' && statusData.status !== 'launching' && defaultRobot && defaultWorld) {
+        setSelRobot(defaultRobot); setSelWorld(defaultWorld);
+        if (!autoLaunched.current &&
+            statusData.status !== 'running' &&
+            statusData.status !== 'launching' &&
+            defaultRobot && defaultWorld) {
           autoLaunched.current = true;
-          setSwitchMsg('Auto-launching simulation…');
           await doSwitch(defaultRobot, defaultWorld);
         }
-      } catch (err) {
-        setSwitchMsg(`Cannot reach map-server: ${err.message}`);
-      }
+      } catch (err) { setSwitchMsg(`Cannot reach server: ${err.message}`); }
     };
     init();
   }, [doSwitch]);
 
   useEffect(() => {
     const poll = async () => {
-      try {
-        const r = await fetch(STATUS_URL);
-        const d = await r.json();
-        setSimStatus(d);
-      } catch { /* ignore */ }
+      try { const r = await fetch(STATUS_URL); setSimStatus(await r.json()); }
+      catch { /* ignore */ }
     };
     poll();
     statusRef.current = setInterval(poll, STATUS_INTERVAL);
     return () => clearInterval(statusRef.current);
   }, []);
 
-  const handleSwitch = () => doSwitch(selRobot, selWorld);
-  const handleStop   = async () => {
-    try {
-      await fetch(STOP_URL, { method: 'POST' });
-      setSwitchMsg('ROS stopped');
-      if (onStop) onStop();
-    } catch (err) {
-      setSwitchMsg(`${err.message}`);
-    }
-  };
-
   let displayStatus = simStatus?.status ?? 'idle';
   if (displayStatus === 'running' && isWaitingOdom) {
-    displayStatus = 'waiting for robot';
+    displayStatus = 'waiting';
   }
 
-  const statusColor = {
-    running: isDark ? '#4caf50' : '#2e7d32', 
-    launching: isDark ? '#ff9800' : '#f57c00',
-    'waiting for robot': isDark ? '#29b6f6' : '#0288d1',
-    stopping: isDark ? '#ff9800' : '#f57c00', 
-    error: isDark ? '#f44336' : '#c62828', 
-    idle: isDark ? '#9e9ec0' : '#999999',
-  }[displayStatus] ?? (isDark ? '#9e9ec0' : '#999999');
+  // 🌟 รวมเงื่อนไขของ Animation ให้อยู่ในช่วงที่ระบบยุ่ง (Requesting, Launching, Waiting, Stopping)
+  const isBusy = switching || ['launching', 'waiting', 'stopping'].includes(displayStatus);
 
-  const S = {
-    wrap:  { 
-      background: isDark ? '#121212' : '#ffffff', 
-      border: `1px solid ${isDark ? '#333333' : '#e0e0e0'}`, 
-      borderRadius: '16px', padding: '20px',
-      boxShadow: isDark ? 'none' : '0 4px 16px rgba(0,0,0,0.05)',
-      display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
-      minWidth: 0, overflow: 'hidden'
-    },
-    title: { fontSize:'18px', fontWeight:600, color: isDark ? '#90caf9' : '#1976d2', marginBottom:'16px', textAlign: 'center' },
-    grid:  { display:'grid', gridTemplateColumns:'minmax(0, 1fr) minmax(0, 1fr)', gap:'12px', marginBottom:'16px', flex: 1, minHeight: 0 },
-    col:   { display:'flex', flexDirection:'column', gap:'6px', overflowY: 'auto', paddingRight: '6px' },
-    label: { fontSize:'12px', color: isDark ? '#9e9ec0' : '#666666', textTransform:'uppercase', position: 'sticky', top: 0, background: isDark ? '#121212' : '#ffffff', zIndex: 1, paddingBottom: '6px', fontWeight: 600, letterSpacing: '1px', textAlign: 'center' },
-    card:  (active) => ({
-      padding:'10px 14px', borderRadius:'8px',
-      border: active ? `2px solid ${isDark ? '#90caf9' : '#1976d2'}` : `1px solid ${isDark ? '#ffffff20' : '#e0e0e0'}`,
-      background: active ? (isDark ? '#1a237e55' : '#e3f2fd') : (isDark ? '#ffffff08' : '#f8f9fa'),
-      cursor:'pointer', transition:'all 0.15s', userSelect:'none', flexShrink: 0
-    }),
-    cardName: (active) => ({ fontWeight:600, fontSize:'14px', color: active ? (isDark ? '#90caf9' : '#1565c0') : (isDark ? '#e0e0e0' : '#333333'), display: 'block', textAlign: 'center' }),
-    btnRow:  { display:'flex', gap:'12px', alignItems: 'stretch' },
-    btnLaunch: { background: isDark ? '#3949ab' : '#1976d2', border: 'none', color:'#fff', borderRadius:'8px', padding:'10px 16px', cursor:'pointer', fontSize:'14px', fontWeight:600, flex: 1 },
-    btnStop: { background: isDark ? '#b71c1c44' : '#ffebee', border: 'none', color: isDark ? '#ef9a9a' : '#c62828', borderRadius:'8px', padding:'10px 20px', cursor:'pointer', fontSize:'14px', fontWeight:600 },
-    statusBar: { display:'flex', alignItems:'center', gap:'10px', background: isDark ? '#ffffff06' : '#f5f5f5', borderRadius:'8px', padding:'0 16px' },
-    dot: { width:'10px', height:'10px', borderRadius:'50%', background:statusColor, boxShadow:`0 0 6px ${statusColor}`, flexShrink:0 },
-  };
+  const statusMeta = {
+    running:  { color: '#00e676', label: 'RUNNING',   glow: '#00e67622' },
+    launching:{ color: '#ff9800', label: 'LAUNCHING', glow: '#ff980022' },
+    waiting:  { color: '#29b6f6', label: 'WAITING',   glow: '#29b6f622' },
+    stopping: { color: '#ff9800', label: 'STOPPING',  glow: '#ff980022' },
+    error:    { color: '#f44336', label: 'ERROR',     glow: '#f4433622' },
+    idle:     { color: '#555555', label: 'IDLE',      glow: 'transparent' },
+  }[displayStatus] ?? { color: '#555555', label: displayStatus.toUpperCase(), glow: 'transparent' };
+
+  const accent  = isDark ? '#90caf9' : '#1976d2';
+  const cardBg  = isDark ? '#111118' : '#ffffff';
+  const border  = isDark ? '#ffffff12' : '#e8eaed';
 
   return (
-    <div style={S.wrap}>
-      <div style={S.title}>Simulation Config</div>
-      <div style={S.grid}>
-        <div style={S.col}>
-          <div style={S.label}>Robot</div>
-          {robotList.map((r) => {
-            const displayName = r.robotName || r.name.replace(/\.urdf$/i, '');
-            return (
-              <div key={r.name} style={S.card(selRobot === r.name)} onClick={() => setSelRobot(r.name)}>
-                <span style={S.cardName(selRobot === r.name)}>{displayName}</span>
-              </div>
-            );
-          })}
-        </div>
-        <div style={S.col}>
-          <div style={S.label}>World</div>
-          {worldList.map((w) => {
-            const displayName = w.mapName || w.name.replace(/\.json$/i, '');
-            return (
-              <div key={w.name} style={S.card(selWorld === w.name)} onClick={() => setSelWorld(w.name)}>
-                <span style={S.cardName(selWorld === w.name)}>{displayName}</span>
-              </div>
-            );
-          })}
+    <div style={{
+      background: cardBg, borderRadius: '16px',
+      border: `1px solid ${border}`,
+      boxShadow: isDark ? '0 4px 24px rgba(0,0,0,0.4)' : '0 4px 24px rgba(0,0,0,0.06)',
+      overflow: 'visible', flexShrink: 0,
+      position: 'relative', zIndex: 10,
+    }}>
+      {/* ── Header ── */}
+      <div style={{
+        padding: '14px 20px', borderBottom: `1px solid ${border}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <span style={{ fontSize: '15px', fontWeight: 700, color: accent }}>
+          Simulation Config
+        </span>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          background: statusMeta.glow,
+          border: `1px solid ${statusMeta.color}55`,
+          borderRadius: '20px', padding: '4px 10px',
+          opacity: displayStatus === 'idle' ? 0 : 1,
+          transition: 'opacity 0.3s',
+        }}>
+          <div style={{
+            width: '7px', height: '7px', borderRadius: '50%',
+            background: statusMeta.color, boxShadow: `0 0 6px ${statusMeta.color}`,
+            animation: ['launching', 'waiting', 'stopping'].includes(displayStatus)
+              ? 'simPulse 1.5s ease-in-out infinite' : 'none',
+          }}/>
+          <span style={{ fontSize: '11px', fontWeight: 700, color: statusMeta.color, letterSpacing: '1px' }}>
+            {statusMeta.label}
+          </span>
         </div>
       </div>
-      <div style={S.btnRow}>
-        <button style={S.btnLaunch} onClick={handleSwitch} disabled={switching || !selRobot || !selWorld}>{switching ? 'Wait…' : 'Launch'}</button>
-        <button style={S.btnStop} onClick={handleStop}>Stop</button>
-        
-        {(displayStatus !== 'idle') && (
-          <div style={S.statusBar}>
-            <div style={S.dot}/>
-            <span style={{ fontSize:'12px', color:statusColor, fontWeight:700, letterSpacing: '1px', whiteSpace: 'nowrap' }}>
-              {displayStatus.toUpperCase()}
-            </span>
-          </div>
-        )}
+
+      {/* ── Dropdowns ── */}
+      <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <CustomDropdown
+          isDark={isDark}
+          label="Robot"
+          value={selRobot}
+          onChange={setSelRobot}
+          options={robotList.map(r => ({
+            value: r.name,
+            label: r.robotName || r.name.replace(/\.urdf$/i, ''),
+          }))}
+        />
+        <CustomDropdown
+          isDark={isDark}
+          label="World"
+          value={selWorld}
+          onChange={setSelWorld}
+          options={worldList.map(w => ({
+            value: w.name,
+            label: w.mapName || w.name.replace(/\.json$/i, ''),
+          }))}
+        />
       </div>
+
+      {/* ── Buttons ── */}
+      <div style={{ padding: '0 20px 16px', display: 'flex', gap: '10px' }}>
+        <button
+          onClick={() => doSwitch(selRobot, selWorld)}
+          disabled={isBusy || !selRobot || !selWorld}
+          style={{
+            flex: 1, padding: '10px', borderRadius: '10px', border: 'none',
+            background: isBusy
+              ? (isDark ? '#1a237e' : '#bbdefb')
+              : (isDark ? '#3949ab' : '#1976d2'),
+            color: isBusy ? (isDark ? '#7986cb' : '#1565c0') : '#fff',
+            fontSize: '14px', fontWeight: 700,
+            cursor: isBusy ? 'not-allowed' : 'pointer',
+            opacity: (!selRobot || !selWorld) ? 0.5 : 1,
+            transition: 'all 0.25s',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+          }}
+        >
+          {isBusy ? (
+            <>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"
+                style={{ animation: 'simSpin 0.9s linear infinite' }}>
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+              </svg>
+              {/* 🌟 แสดงข้อความแบบ Real-time ตามสเตตัสเป๊ะๆ */}
+              {displayStatus === 'waiting' ? 'Waiting Robot…' :
+               displayStatus === 'launching' ? 'Launching…' :
+               displayStatus === 'stopping' ? 'Stopping…' : 'Requesting…'}
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              Launch
+            </>
+          )}
+        </button>
+
+        <button
+          onClick={async () => {
+            setSwitching(true); // เพิ่มเพื่อให้ปุ่ม Stop มีสถานะเชื่อมต่อที่เนียนขึ้น
+            try { 
+              await fetch(STOP_URL, { method: 'POST' }); 
+              if (onStop) onStop(); 
+            }
+            catch (err) { setSwitchMsg(`${err.message}`); }
+            finally { setTimeout(() => setSwitching(false), 1500); }
+          }}
+          disabled={isBusy && displayStatus !== 'running' && displayStatus !== 'idle'}
+          style={{
+            padding: '10px 18px', borderRadius: '10px', border: 'none',
+            background: isDark ? '#3a0a0a' : '#ffebee',
+            color: isDark ? '#ef9a9a' : '#c62828',
+            fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+          </svg>
+          Stop
+        </button>
+      </div>
+
+      <style>{`
+        @keyframes simPulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+        @keyframes simSpin  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+      `}</style>
     </div>
   );
 }
@@ -1126,6 +1664,9 @@ export default function App() {
   const [showMonitor, setShowMonitor] = useState(false); 
   const [isDark,      setIsDark]      = useState(true);
   const [isWaitingOdom, setIsWaitingOdom] = useState(false);
+  
+  // 🌟 NEW: Application Mode ('dashboard' | 'editor')
+  const [appMode,     setAppMode]     = useState('dashboard');
 
   const mapWrapRef = useRef(null);
   const [canvasSize, setCanvasSize] = useState({ w: 400, h: 300 });
@@ -1218,75 +1759,250 @@ export default function App() {
     setActiveRobot(robot); setActiveWorld(world);
     setTimeout(() => { fetchUrdf(robot); fetchMap(); }, 2000);
   }, [fetchUrdf, fetchMap]);
+  
+  const [winSize, setWinSize] = useState({
+    w: window.innerWidth,
+    h: window.innerHeight,
+  });
 
+  useEffect(() => {
+    const onResize = () => setWinSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const isNarrow  = winSize.w < 900;   // stack vertically
+  const isShort   = winSize.h < 600;   // compress padding
+  
   const rosConnected = status.includes('Connected');
-  const mapBadgeText = mapStatus === 'ok' ? 'Loaded' : mapStatus === 'loading' ? 'Loading' : mapStatus === 'error' ? 'Error' : 'Waiting';
+const mapBadgeText = mapStatus === 'ok' ? 'Loaded' : mapStatus === 'loading' ? 'Loading' : mapStatus === 'error' ? 'Error' : 'Waiting';
 
-  const S = {
-    app: { 
-      height: '100vh', width: '100vw', overflow: 'hidden', 
-      background: isDark ? '#08080c' : '#f0f2f5', 
-      color: isDark ? '#e0e0e0' : '#333333', 
-      fontFamily: "'Segoe UI',sans-serif", padding: '20px', display: 'flex', justifyContent: 'center', boxSizing: 'border-box' 
-    },
-    wrap: { width: '100%', maxWidth: '1600px', display: 'flex', flexDirection: 'column', height: '100%' },
-    
-    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 },
-    titleBox: { display: 'flex', alignItems: 'center', gap: '24px' },
-    h1: { fontSize: '24px', fontWeight: 700, margin: 0, color: isDark ? '#fff' : '#111' },
-    statusBox: { display: 'flex', alignItems: 'center', gap: '10px', background: isDark ? '#121212' : '#ffffff', padding: '8px 16px', borderRadius: '10px', fontSize: '14px', border: `1px solid ${isDark ? '#333' : '#ddd'}`, boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)', fontWeight: 500 },
-    dot: (on) => ({ width: '12px', height: '12px', borderRadius: '50%', background: on ? (isDark?'#4caf50':'#388e3c') : (isDark?'#f44336':'#d32f2f'), boxShadow: on ? `0 0 8px ${isDark?'#4caf50':'#388e3c'}` : 'none' }),
-    
-    btnGroup: { display: 'flex', gap: '12px' },
-    topBtn: {
-      display: 'flex', alignItems: 'center', gap: '8px',
-      background: isDark ? '#121212' : '#ffffff', border: `1px solid ${isDark ? '#333' : '#ccc'}`,
-      color: isDark ? '#90caf9' : '#1976d2', borderRadius: '10px', padding: '8px 16px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)', transition: 'all 0.2s'
-    },
-    topBtnActive: {
-      display: 'flex', alignItems: 'center', gap: '8px',
-      background: isDark ? '#1a237e' : '#e3f2fd', border: `1px solid ${isDark ? '#3949ab' : '#90caf9'}`,
-      color: isDark ? '#ffffff' : '#1565c0', borderRadius: '10px', padding: '8px 16px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', boxShadow: isDark ? 'none' : '0 2px 8px rgba(0,0,0,0.04)', transition: 'all 0.2s'
-    },
+const S = {
+  app: {
+    height:         '100vh',
+    width:          '100vw',
+    overflow:       'hidden',
+    background:      isDark ? '#08080c' : '#f0f2f5',
+    color:           isDark ? '#e0e0e0' : '#333333',
+    fontFamily:     "'Segoe UI',sans-serif",
+    padding:         isShort ? '8px' : isNarrow ? '12px' : '20px',
+    display:        'flex',
+    justifyContent: 'center',
+    boxSizing:      'border-box',
+  },
 
-    mainContent: {
-      display: 'grid',
-      gridTemplateColumns: 'minmax(0, 2.5fr) minmax(0, 1fr)',
-      gridTemplateRows: 'minmax(0, 1fr)',
-      gap: '20px', flex: 1, minHeight: 0
-    },
+  wrap: {
+    width:         '100%',
+    maxWidth:      '1600px',
+    display:       'flex',
+    flexDirection: 'column',
+    height:        '100%',
+    minHeight:      0,
+  },
 
-    mapCard: { 
-      display: 'flex', flexDirection: 'column', 
-      background: isDark ? '#121212' : '#ffffff', border: `1px solid ${isDark ? '#333333' : '#e0e0e0'}`, borderRadius: '16px', padding: '16px', height: '100%', boxSizing: 'border-box', boxShadow: isDark ? 'none' : '0 6px 16px rgba(0,0,0,0.04)',
-      minWidth: 0, minHeight: 0
-    },
-    mapHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexShrink: 0 },
-    mapCanvasWrap: { flex: 1, minHeight: 0, background: isDark ? '#0d0d1a' : '#e6e9ec', borderRadius: '10px', border: `1px solid ${isDark ? '#ffffff15' : '#cccccc'}`, overflow: 'hidden' },
+  header: {
+    display:        'flex',
+    justifyContent: 'space-between',
+    alignItems:     'center',
+    marginBottom:    isShort ? '8px' : '20px',
+    flexShrink:      0,
+    flexWrap:       'wrap',        // ← wrap when narrow
+    gap:            '8px',
+  },
 
-    rightPanel: {
-      display: 'flex', flexDirection: 'column', gap: '20px', height: '100%', minHeight: 0, minWidth: 0 
-    },
+  titleBox: {
+    display:    'flex',
+    alignItems: 'center',
+    gap:        '12px',
+    flexWrap:   'wrap',
+  },
 
-    poseCard: { background: isDark ? '#121212' : '#ffffff', border: `1px solid ${isDark ? '#333333' : '#e0e0e0'}`, borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', flexShrink: 0, boxShadow: isDark ? 'none' : '0 6px 16px rgba(0,0,0,0.04)', overflow: 'hidden' },
-    poseGrid: { display: 'flex', gap: '16px', alignItems: 'stretch', minWidth: 0 },
-    poseItem: { background: isDark ? '#ffffff08' : '#f8f9fa', border: `1px solid ${isDark ? '#ffffff10' : '#eeeeee'}`, borderRadius: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', flex: '1 1 0', minWidth: 0, padding: '20px 10px' },
-    poseLabel: { fontSize: '20px', fontWeight: 700, color: isDark ? '#9e9ec0' : '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' },
-    poseVal: { fontSize: '32px', fontWeight: 700, color: isDark ? '#00e5ff' : '#007b83', fontFamily: 'monospace' },
+  h1: {
+    fontSize:   isNarrow ? '18px' : '24px',
+    fontWeight:  700,
+    margin:      0,
+    color:       isDark ? '#fff' : '#111',
+    whiteSpace: 'nowrap',
+  },
 
-    popupWrap2: { position: 'fixed', top: '75px', right: '20px', width: '380px', zIndex: 1000, display: showMonitor ? 'block' : 'none' }
-  };
+  statusBox: {
+    display:      'flex',
+    alignItems:   'center',
+    gap:          '8px',
+    background:    isDark ? '#121212' : '#ffffff',
+    padding:      '6px 12px',
+    borderRadius: '10px',
+    fontSize:      isNarrow ? '12px' : '14px',
+    border:       `1px solid ${isDark ? '#333' : '#ddd'}`,
+    fontWeight:    500,
+    whiteSpace:   'nowrap',
+  },
+
+  dot: (on) => ({
+    width:        '10px',
+    height:       '10px',
+    borderRadius: '50%',
+    background:    on ? (isDark ? '#4caf50' : '#388e3c') : (isDark ? '#f44336' : '#d32f2f'),
+    boxShadow:     on ? `0 0 8px ${isDark ? '#4caf50' : '#388e3c'}` : 'none',
+    flexShrink:    0,
+  }),
+
+  btnGroup: {
+    display:  'flex',
+    gap:      '8px',
+    flexWrap: 'wrap',              // ← wrap buttons when narrow
+  },
+
+  topBtn: {
+    display:      'flex',
+    alignItems:   'center',
+    gap:          '6px',
+    background:    isDark ? '#121212' : '#ffffff',
+    border:       `1px solid ${isDark ? '#333' : '#ccc'}`,
+    color:         isDark ? '#90caf9' : '#1976d2',
+    borderRadius: '10px',
+    padding:       isNarrow ? '6px 10px' : '8px 16px',
+    fontSize:      isNarrow ? '12px' : '14px',
+    fontWeight:    600,
+    cursor:       'pointer',
+    whiteSpace:   'nowrap',
+    transition:   'all 0.2s',
+  },
+
+  topBtnActive: {
+    display:      'flex',
+    alignItems:   'center',
+    gap:          '6px',
+    background:    isDark ? '#1a237e' : '#e3f2fd',
+    border:       `1px solid ${isDark ? '#3949ab' : '#90caf9'}`,
+    color:         isDark ? '#ffffff' : '#1565c0',
+    borderRadius: '10px',
+    padding:       isNarrow ? '6px 10px' : '8px 16px',
+    fontSize:      isNarrow ? '12px' : '14px',
+    fontWeight:    600,
+    cursor:       'pointer',
+    whiteSpace:   'nowrap',
+    transition:   'all 0.2s',
+  },
+
+  // ── KEY CHANGE: single column when narrow ────────────────────────────────
+  mainContent: {
+    display:             'grid',
+    gridTemplateColumns:  isNarrow ? '1fr' : 'minmax(0, 2.5fr) minmax(0, 1fr)',
+    gridTemplateRows:    'minmax(0, 1fr)',
+    gap:                 '12px',
+    flex:                 1,
+    minHeight:            0,
+    overflow:             isNarrow ? 'auto' : 'hidden',   // ← scroll when stacked
+  },
+
+  mapCard: {
+    display:       'flex',
+    flexDirection: 'column',
+    background:     isDark ? '#121212' : '#ffffff',
+    border:        `1px solid ${isDark ? '#333333' : '#e0e0e0'}`,
+    borderRadius:  '16px',
+    padding:       '16px',
+    boxSizing:     'border-box',
+    boxShadow:      isDark ? 'none' : '0 6px 16px rgba(0,0,0,0.04)',
+    minWidth:       0,
+    minHeight:      0,
+    height:         isNarrow ? '55vh' : '100%',   // ← fixed height when stacked
+  },
+
+  mapHeader: {
+    display:        'flex',
+    justifyContent: 'space-between',
+    alignItems:     'center',
+    marginBottom:   '12px',
+    flexShrink:      0,
+    flexWrap:       'wrap',
+    gap:            '8px',
+  },
+
+  mapCanvasWrap: {
+    flex:         1,
+    minHeight:    0,
+    background:    isDark ? '#0d0d1a' : '#e6e9ec',
+    borderRadius: '10px',
+    border:       `1px solid ${isDark ? '#ffffff15' : '#cccccc'}`,
+    overflow:     'hidden',
+  },
+
+  // ── KEY CHANGE: right panel scrolls instead of clipping ─────────────────
+  rightPanel: {
+  display:       'flex',
+  flexDirection: 'column',
+  gap:           '12px',
+  height:        '100%',
+  minHeight:      0,
+  minWidth:       0,
+  overflowY:     'auto',          // ← KEY: scroll instead of clip
+  overflowX:     'hidden',
+  paddingRight:  '2px',
+  // Thin scrollbar
+  scrollbarWidth: 'thin',
+  scrollbarColor: `${isDark ? '#333' : '#ccc'} transparent`,
+},
+
+  poseCard: {
+  background:    isDark ? '#121212' : '#ffffff',
+  border:       `1px solid ${isDark ? '#333333' : '#e0e0e0'}`,
+  borderRadius: '16px',
+  padding:       isNarrow ? '10px' : isShort ? '12px' : '20px',  // ← tighter padding
+  display:      'flex',
+  flexDirection:'column',
+  flexShrink:    0,
+  boxShadow:     isDark ? 'none' : '0 6px 16px rgba(0,0,0,0.04)',
+  overflow:     'hidden',
+},
+
+  poseGrid: {
+    display:    'flex',
+    gap:        '10px',
+    alignItems: 'stretch',
+    minWidth:    0,
+  },
+
+  poseItem: { background: isDark ? '#ffffff08' : '#f8f9fa', border: `1px solid ${isDark ? '#ffffff10' : '#eeeeee'}`, borderRadius: '10px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', flex: '1 1 0', minWidth: 0, padding: 'clamp(10px, 1.5vw, 20px) 5px', overflow: 'hidden' },
+  poseLabel: { fontSize: 'clamp(11px, 1.2vw, 14px)', fontWeight: 700, color: isDark ? '#9e9ec0' : '#666', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' },
+  poseVal: { fontSize: 'clamp(16px, 2.2vw, 32px)', fontWeight: 700, color: isDark ? '#00e5ff' : '#007b83', fontFamily: 'monospace', whiteSpace: 'nowrap' },
+
+  popupWrap2: {
+    position: 'fixed',
+    top:      '75px',
+    right:    '20px',
+    width:     isNarrow ? 'calc(100vw - 40px)' : '380px',
+    zIndex:    1000,
+    display:   showMonitor ? 'block' : 'none',
+  },
+};
 
   return (
     <>
       <style>{`
-        body, html, #root { margin: 0 !important; padding: 0 !important; width: 100% !important; height: 100% !important; background-color: ${isDark ? '#08080c' : '#f0f2f5'} !important; overflow: hidden; }
+        body, html, #root {
+          margin: 0 !important; padding: 0 !important;
+          width: 100% !important; height: 100% !important;
+          background-color: ${isDark ? '#08080c' : '#f0f2f5'} !important;
+          overflow: hidden;
+        }
         * { box-sizing: border-box; }
+
+        /* Thin scrollbar for right panel */
+        .right-panel::-webkit-scrollbar       { width: 4px; }
+        .right-panel::-webkit-scrollbar-track { background: transparent; }
+        .right-panel::-webkit-scrollbar-thumb {
+          background: ${isDark ? '#333' : '#ccc'};
+          border-radius: 4px;
+        }
       `}</style>
 
       <div style={S.app}>
 
-        <div style={S.popupWrap2}><TopicMonitor ros={rosObj} isDark={isDark} /></div>
+        {appMode === 'dashboard' && (
+          <div style={S.popupWrap2}><TopicMonitor ros={rosObj} isDark={isDark} /></div>
+        )}
 
         <div style={S.wrap}>
           
@@ -1312,36 +2028,63 @@ export default function App() {
                 )}
               </button>
 
+              {/* Monitor Toggle (Dashboard Only) */}
+              {appMode === 'dashboard' && (
+                <button 
+                  style={showMonitor ? S.topBtnActive : S.topBtn} 
+                  onClick={() => setShowMonitor(!showMonitor)}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  Monitor
+                </button>
+              )}
+
+              {/* 🌟 NEW: Map Editor Toggle Button */}
               <button 
-                style={showMonitor ? S.topBtnActive : S.topBtn} 
-                onClick={() => setShowMonitor(!showMonitor)}
+                style={appMode === 'editor' ? S.topBtnActive : S.topBtn} 
+                onClick={() => {
+                   setAppMode(appMode === 'editor' ? 'dashboard' : 'editor');
+                   setShowMonitor(false);
+                }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                Monitor
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4zm0 8l9 4-9 4-9-4 9-4z"></path></svg>
+                Map Editor
               </button>
             </div>
           </div>
 
-          <div style={S.mainContent}>
-            <div style={S.mapCard}>
-              <div style={S.mapHeader}>
-                <div style={{ fontSize:'18px', fontWeight:600, color: isDark ? '#90caf9' : '#1976d2' }}>
-                  Map: <span style={{ color: isDark ? '#fff' : '#111' }}>{mapName || 'Loading...'}</span>
-                  <span style={{ padding:'3px 8px', fontSize:'12px', borderRadius:'6px', border:'1px solid', marginLeft:'12px',
-                    background: isDark?'#1b5e2033':'#e8f5e9', color: isDark?'#81c784':'#2e7d32', borderColor: isDark?'#4caf5055':'#81c784' 
-                  }}>{mapBadgeText}</span>
+          {/* 🌟 View Routing based on appMode */}
+          {appMode === 'editor' ? (
+            <MapEditor onExit={() => setAppMode('dashboard')} isDark={isDark} />
+          ) : (
+            <div style={S.mainContent}>
+              <div style={S.mapCard}>
+                <div style={S.mapHeader}>
+                  <div style={{ fontSize:'18px', fontWeight:600, color: isDark ? '#90caf9' : '#1976d2' }}>
+                    Map: <span style={{ color: isDark ? '#fff' : '#111' }}>{mapName || 'Loading...'}</span>
+                    <span style={{ padding:'3px 8px', fontSize:'12px', borderRadius:'6px', border:'1px solid', marginLeft:'12px',
+                      background: isDark?'#1b5e2033':'#e8f5e9', color: isDark?'#81c784':'#2e7d32', borderColor: isDark?'#4caf5055':'#81c784' 
+                    }}>{mapBadgeText}</span>
+                  </div>
+                  <button style={{ background: 'transparent', border: 'none', color: isDark ? '#90caf9' : '#1976d2', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }} onClick={fetchMap}>↻ REFRESH</button>
                 </div>
-                <button style={{ background: 'transparent', border: 'none', color: isDark ? '#90caf9' : '#1976d2', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }} onClick={fetchMap}>↻ REFRESH</button>
+
+                <div style={S.mapCanvasWrap} ref={mapWrapRef}>
+                  <WorldMap mapData={mapData} pose={pose} urdf={urdf} width={canvasSize.w} height={canvasSize.h} isDark={isDark} />
+                </div>
               </div>
 
-              <div style={S.mapCanvasWrap} ref={mapWrapRef}>
-                <WorldMap mapData={mapData} pose={pose} urdf={urdf} width={canvasSize.w} height={canvasSize.h} isDark={isDark} />
-              </div>
-            </div>
-
-            <div style={S.rightPanel}>
+            <div style={S.rightPanel} className="right-panel">
               <div style={S.poseCard}>
-                <div style={{ fontSize:'18px', fontWeight:600, color: isDark ? '#90caf9' : '#1976d2', marginBottom:'16px', textAlign: 'center' }}>Odometry</div>
+                <div style={{
+                  fontSize:     isNarrow ? '13px' : '18px',   // ← scales down
+                  fontWeight:    600,
+                  color:         isDark ? '#90caf9' : '#1976d2',
+                  marginBottom:  isNarrow ? '8px' : '16px',   // ← tighter gap
+                  textAlign:    'center',
+                }}>
+                  Odometry
+                </div>
                 <div style={S.poseGrid}>
                   {[
                     { label:'X', value: pose.x, unit:'[m]' },
@@ -1351,7 +2094,9 @@ export default function App() {
                     <div key={label} style={S.poseItem}>
                       <div style={S.poseLabel}>{label}</div>
                       <div style={S.poseVal}>{value}</div>
-                      <div style={{ fontSize: '12px', color: isDark ? '#9e9ec0' : '#888', marginTop: '4px' }}>{unit}</div>
+                      <div style={{ fontSize: 'clamp(10px, 1vw, 13px)', fontWeight: 600, color: isDark ? '#7a7a9e' : '#999999', marginTop: '8px', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>
+                        {unit}
+                      </div>
                     </div>
                   ))}
                 </div>
