@@ -110,7 +110,6 @@ function drawRobot(ctx, rx, ry, thetaRad, worldX, worldY, urdf, scale, isDark, v
   ctx.save();
   ctx.translate(rx, ry);
   
-  // Rotate canvas so that +X is UP (-PI/2) and apply robot's heading
   ctx.rotate(-Math.PI / 2 - thetaRad);
 
   if (shapes.length === 0) {
@@ -183,11 +182,10 @@ function drawRobot(ctx, rx, ry, thetaRad, worldX, worldY, urdf, scale, isDark, v
   ctx.closePath(); ctx.fill();
   ctx.restore();
 
-  // 🌟 Text rendering isolated from Map Rotation to stay perfectly upright
   ctx.save();
   ctx.translate(rx, ry);
-  ctx.rotate(-view.rotation); // Reverse the map rotation
-  ctx.scale(1 / view.zoom, 1 / view.zoom); // Keep text constant size
+  ctx.rotate(-view.rotation); 
+  ctx.scale(1 / view.zoom, 1 / view.zoom); 
   
   const textOffset = (labelR * view.zoom) + 6;
   ctx.textAlign    = 'center';
@@ -278,11 +276,11 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
   const [cursor, setCursor] = useState('crosshair');
 
   const handleMouseDown = (e) => {
-    if (e.button === 0) { // คลิกซ้าย: หมุน (Rotate)
+    if (e.button === 0) { 
       e.preventDefault();
       dragRef.current = { isMiddle: false, isLeft: true, lastX: e.clientX, lastY: e.clientY };
       setCursor('ew-resize');
-    } else if (e.button === 1) { // คลิกกลาง: เลื่อน (Pan)
+    } else if (e.button === 1) { 
       dragRef.current = { isMiddle: true, isLeft: false, lastX: e.clientX, lastY: e.clientY };
       setCursor('grabbing');
     }
@@ -455,19 +453,18 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
 
     ctx.restore(); 
 
-    // 🌟 HUD Axis: Fixed at Bottom Left, Rotates with World
     const hudX = 50;
-    const hudY = height - 70; // Just above the scale bar
+    const hudY = height - 70; 
 
     ctx.save();
     ctx.translate(hudX, hudY);
     ctx.rotate(view.rotation); 
 
     ctx.lineWidth = 2.5;
-    ctx.strokeStyle = '#ff4444'; // X axis
+    ctx.strokeStyle = '#ff4444'; 
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -30); ctx.stroke();
     
-    ctx.strokeStyle = '#44ff44'; // Y axis
+    ctx.strokeStyle = '#44ff44'; 
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-30, 0); ctx.stroke();
 
     ctx.fillStyle = isDark ? '#000000dd' : '#ffffffdd';
@@ -475,14 +472,12 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    // Draw X label upright
     ctx.save();
     ctx.translate(0, -42);
     ctx.rotate(-view.rotation);
     ctx.fillText('X', 0, 0);
     ctx.restore();
 
-    // Draw Y label upright
     ctx.save();
     ctx.translate(-42, 0);
     ctx.rotate(-view.rotation);
@@ -585,23 +580,23 @@ function KeyboardController({ ros, isDark }) {
       const k = e.key.toLowerCase();
       if (k === 'k') {
         e.preventDefault();
-        setKeys({}); // Stop
+        setKeys({}); 
       } else if (['i', ',', 'j', 'l'].includes(k)) {
         e.preventDefault();
-        setKeys({ [k]: true }); // Lock direction
+        setKeys({ [k]: true }); 
       } else if (k === 'w') {
-        setSpeed(s => Math.min(2.0, s * 1.1)); // Increase Linear
+        setSpeed(s => Math.min(2.0, s * 1.1)); 
       } else if (k === 'x') {
-        setSpeed(s => Math.max(0.1, s * 0.9)); // Decrease Linear
+        setSpeed(s => Math.max(0.1, s * 0.9)); 
       } else if (k === 'e') {
-        setTurnSpeed(t => Math.min(3.0, t * 1.1)); // Increase Angular
+        setTurnSpeed(t => Math.min(3.0, t * 1.1)); 
       } else if (k === 'c') {
-        setTurnSpeed(t => Math.max(0.1, t * 0.9)); // Decrease Angular
+        setTurnSpeed(t => Math.max(0.1, t * 0.9)); 
       } else if (k === 'q') {
-        setSpeed(s => Math.min(2.0, s * 1.1));     // Increase Both
+        setSpeed(s => Math.min(2.0, s * 1.1));     
         setTurnSpeed(t => Math.min(3.0, t * 1.1));
       } else if (k === 'z') {
-        setSpeed(s => Math.max(0.1, s * 0.9));     // Decrease Both
+        setSpeed(s => Math.max(0.1, s * 0.9));     
         setTurnSpeed(t => Math.max(0.1, t * 0.9));
       }
     };
@@ -685,7 +680,7 @@ function KeyboardController({ ros, isDark }) {
       opacity: webControl ? 1 : 0.6,
       transition: 'opacity 0.3s',
       display: 'flex', flexDirection: 'column', boxSizing: 'border-box', flexShrink: 0,
-      overflow: 'hidden'   // ← ADD THIS
+      overflow: 'hidden'
     },
     titleRow: {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px'
@@ -938,7 +933,7 @@ function SimSelector({ onSwitch, onStop, isDark, isWaitingOdom }) {
       borderRadius: '16px', padding: '20px',
       boxShadow: isDark ? 'none' : '0 4px 16px rgba(0,0,0,0.05)',
       display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0,
-      minWidth: 0, overflow: 'hidden'   // ← ADD
+      minWidth: 0, overflow: 'hidden'
     },
     title: { fontSize:'18px', fontWeight:600, color: isDark ? '#90caf9' : '#1976d2', marginBottom:'16px', textAlign: 'center' },
     grid:  { display:'grid', gridTemplateColumns:'minmax(0, 1fr) minmax(0, 1fr)', gap:'12px', marginBottom:'16px', flex: 1, minHeight: 0 },
@@ -1069,7 +1064,7 @@ function TopicMonitor({ ros, isDark }) {
       background: isDark ? '#ffffff10' : '#f5f5f5', color: isDark ? '#e0e0e0' : '#333',
       border: `1px solid ${isDark ? '#ffffff20' : '#ccc'}`,
       fontSize: '14px', outline: 'none', cursor: 'pointer', fontWeight: 500,
-      colorScheme: isDark ? 'dark' : 'light'   // ← ADD THIS
+      colorScheme: isDark ? 'dark' : 'light'
     },
     dataBox: {
       height: '240px', overflowY: 'auto', padding: '12px',
@@ -1257,20 +1252,20 @@ export default function App() {
     mainContent: {
       display: 'grid',
       gridTemplateColumns: 'minmax(0, 2.5fr) minmax(0, 1fr)',
-      gridTemplateRows: 'minmax(0, 1fr)',   // ← ADD THIS
+      gridTemplateRows: 'minmax(0, 1fr)',
       gap: '20px', flex: 1, minHeight: 0
     },
 
     mapCard: { 
       display: 'flex', flexDirection: 'column', 
       background: isDark ? '#121212' : '#ffffff', border: `1px solid ${isDark ? '#333333' : '#e0e0e0'}`, borderRadius: '16px', padding: '16px', height: '100%', boxSizing: 'border-box', boxShadow: isDark ? 'none' : '0 6px 16px rgba(0,0,0,0.04)',
-      minWidth: 0, minHeight: 0   // ← ADD
+      minWidth: 0, minHeight: 0
     },
     mapHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexShrink: 0 },
     mapCanvasWrap: { flex: 1, minHeight: 0, background: isDark ? '#0d0d1a' : '#e6e9ec', borderRadius: '10px', border: `1px solid ${isDark ? '#ffffff15' : '#cccccc'}`, overflow: 'hidden' },
 
     rightPanel: {
-      display: 'flex', flexDirection: 'column', gap: '20px', height: '100%', minHeight: 0, minWidth: 0   // ← ADD minWidth
+      display: 'flex', flexDirection: 'column', gap: '20px', height: '100%', minHeight: 0, minWidth: 0 
     },
 
     poseCard: { background: isDark ? '#121212' : '#ffffff', border: `1px solid ${isDark ? '#333333' : '#e0e0e0'}`, borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', flexShrink: 0, boxShadow: isDark ? 'none' : '0 6px 16px rgba(0,0,0,0.04)', overflow: 'hidden' },
@@ -1302,7 +1297,7 @@ export default function App() {
             </div>
             
             <div style={S.btnGroup}>
-              {/* สลับไอคอน: โหมดมืดแสดงรูปพระจันทร์, โหมดสว่างแสดงรูปพระอาทิตย์ */}
+              {/* Theme Toggle */}
               <button style={S.topBtn} onClick={() => setIsDark(!isDark)}>
                 {isDark ? (
                   <>
@@ -1362,11 +1357,12 @@ export default function App() {
                 </div>
               </div>
 
-              <SimSelector onSwitch={handleSwitch} onStop={() => setIsWaitingOdom(false)} isDark={isDark} isWaitingOdom={isWaitingOdom} />
-              
-              <KeyboardController ros={rosObj} isDark={isDark}/>
+                <SimSelector onSwitch={handleSwitch} onStop={() => setIsWaitingOdom(false)} isDark={isDark} isWaitingOdom={isWaitingOdom} />
+                
+                <KeyboardController ros={rosObj} isDark={isDark}/>
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
       </div>
