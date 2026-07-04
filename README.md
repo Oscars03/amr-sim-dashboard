@@ -27,7 +27,7 @@ cd amr-sim-dashboard
 
 ```bash
 sudo apt install npm
-
+npm install
 
 ```
 
