@@ -65,5 +65,3 @@ npm run dev
 * [Electron](https://www.electronjs.org/)
 
 ---
-
-*หมายเหตุ: ข้อมูลนี้ถูกปรับปรุงเพื่อให้การตั้งค่า Electron บน Ubuntu ราบรื่นที่สุด*
