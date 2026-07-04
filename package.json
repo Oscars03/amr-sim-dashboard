@@ -1,0 +1,57 @@
+{
+  "name": "amr-sim-dashboard",
+  "private": true,
+  "version": "0.0.0",
+  "description": "AMR Simulation Dashboard for autonomous mobile robot navigation",
+  "author": {
+    "name": "Phuthanet Phengphan",
+    "email": "osears.55@gmail.com"
+  },
+  "homepage": "https://github.com/Oscars03/amr_2dsim",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "dist": "electron-vite build && electron-builder",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "roslib": "^2.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "vite": "^7.3.6"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.1": true,
+    "electron-winstaller@5.4.0": true,
+    "electron@43.0.0": true
+  },
+  "build": {
+  "appId": "com.oscars03.amrsimdashboard",
+  "productName": "AMR Sim Dashboard",
+  "files": ["dist/**/*", "dist-electron/**/*", "map-server.cjs"],
+  "asarUnpack": ["map-server.cjs", "node_modules/express/**/*", "node_modules/cors/**/*"],
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Utility"
+  }
+}
+}
