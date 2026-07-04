@@ -26,7 +26,8 @@ cd amr-sim-dashboard
 ติดตั้งแพ็กเกจที่จำเป็นสำหรับโปรเจกต์:
 
 ```bash
-npm install
+sudo apt install npm
+
 
 ```
 
