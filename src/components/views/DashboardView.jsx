@@ -9,14 +9,15 @@ import React, {
 } from "react";
 import * as ROSLIB from "roslib";
 
-const MAP_SERVER_URL = "http://localhost:3001/map";
-const URDF_SERVER_URL = "http://localhost:3001/urdf";
-const ROBOTS_URL = "http://localhost:3001/robots";
-const STATUS_URL = "http://localhost:3001/status";
-const SWITCH_URL = "http://localhost:3001/switch";
-const STOP_URL = "http://localhost:3001/stop";
-const SAVE_MAP_URL = "http://localhost:3001/save_map";
-const ROSBRIDGE_URL = "ws://localhost:9090";
+const HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+const MAP_SERVER_URL = `http://${HOST}:3001/map`;
+const URDF_SERVER_URL = `http://${HOST}:3001/urdf`;
+const ROBOTS_URL = `http://${HOST}:3001/robots`;
+const STATUS_URL = `http://${HOST}:3001/status`;
+const SWITCH_URL = `http://${HOST}:3001/switch`;
+const STOP_URL = `http://${HOST}:3001/stop`;
+const SAVE_MAP_URL = `http://${HOST}:3001/save_map`;
+const ROSBRIDGE_URL = `ws://${HOST}:9090`;
 const FETCH_INTERVAL = 3000;
 const STATUS_INTERVAL = 1500;
 
@@ -2005,7 +2006,7 @@ const SimSelector = forwardRef(function SimSelector(
   
   const fetchRobots = async () => {
     try {
-      const res = await fetch("http://localhost:3001/robots");
+      const res = await fetch(ROBOTS_URL);
       const data = await res.json();
       setRobotList(data.robots ?? []);
     } catch (e) {
@@ -2052,7 +2053,7 @@ const SimSelector = forwardRef(function SimSelector(
       try {
         const [robotRes, worldRes, statusRes] = await Promise.all([
           fetch(ROBOTS_URL),
-          fetch("http://localhost:3001/worlds"),
+          fetch(`http://${HOST}:3001/worlds`),
           fetch(STATUS_URL),
         ]);
         const robotData = await robotRes.json();

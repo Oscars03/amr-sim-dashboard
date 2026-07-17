@@ -4,7 +4,8 @@ import useAppStore from '../../store/useAppStore';
 import SplitButton from '../common/SplitButton';
 import './CreateWorldView.css';
 
-const SAVE_MAP_URL = "http://localhost:3001/save_map";
+const HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+const SAVE_MAP_URL = `http://${HOST}:3001/save_map`;
 
 // Transform helper now accounts for zoom and pan
 function buildTransformEditor(mapInfo, canvasW, canvasH, zoom, pan) {
@@ -46,7 +47,7 @@ export default function CreateWorldView() {
   const [availableMaps, setAvailableMaps] = useState([]);
 
   const fetchMapsList = () => {
-    fetch("http://localhost:3001/worlds")
+    fetch(`http://${HOST}:3001/worlds`)
       .then(r => r.json())
       .then(data => setAvailableMaps(data.files || []))
       .catch(console.error);
@@ -504,10 +505,10 @@ export default function CreateWorldView() {
 
       if (launchAfter) {
          try {
-           const switchRes = await fetch("http://localhost:3001/switch", {
+           const switchRes = await fetch(`http://${HOST}:3001/switch`, {
              method: "POST",
              headers: { "Content-Type": "application/json" },
-             body: JSON.stringify({ world: finalName }),
+             body: JSON.stringify({ robot: "amr.urdf", world: finalName }),
            });
            if (switchRes.ok) {
              navigate("/");
@@ -525,7 +526,7 @@ export default function CreateWorldView() {
 
   const loadMap = async (fileName) => {
     try {
-      const res = await fetch(`http://localhost:3001/api/worlds/${fileName}`);
+      const res = await fetch(`http://${HOST}:3001/api/worlds/${fileName}`);
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       
@@ -543,7 +544,7 @@ export default function CreateWorldView() {
   const deleteMap = async (fileName) => {
     if (!window.confirm(`Delete ${fileName}?`)) return;
     try {
-      const res = await fetch(`http://localhost:3001/api/worlds/${fileName}`, { method: 'DELETE' });
+      const res = await fetch(`http://${HOST}:3001/api/worlds/${fileName}`, { method: 'DELETE' });
       if (!res.ok) throw new Error("Failed to delete");
       fetchMapsList();
       alert(`Deleted ${fileName}`);

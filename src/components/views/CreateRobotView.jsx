@@ -282,7 +282,8 @@ export default function CreateRobotView({ onCreated }) {
     try {
       const sanitizedName = form.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
       const payload = { ...form, name: sanitizedName };
-      const res = await fetch('http://localhost:3001/api/robots', {
+      const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
+      const res = await fetch(`http://${host}:3001/api/robots`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
