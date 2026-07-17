@@ -1,0 +1,178 @@
+/* ── App Header ──────────────────────────────────────────────────────────── */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 28px;
+  height: 82px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+  gap: 17px;
+}
+
+/* Dark theme */
+.app-header.dark {
+  background: #0d0d0d;
+  border-bottom: 1px solid #2a2a2a;
+  color: #e0e0e0;
+}
+
+/* Light theme */
+.app-header.light {
+  background: #ffffff;
+  border-bottom: 1px solid #e0e0e0;
+  color: #111111;
+}
+
+/* ── Left side ─────────────────────────────────────────────────────────── */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+.header-logo {
+  height: 53px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.header-title {
+  font-size: 22px;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+/* ── Badges ───────────────────────────────────────────────────────────── */
+.header-badge {
+  padding: 5px 14px;
+  border-radius: 7px;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.app-header.dark .version-badge {
+  background: #1a237e;
+  color: #90caf9;
+  border: 1px solid #3949ab;
+}
+
+.app-header.light .version-badge {
+  background: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+}
+
+/* ── Connection status ────────────────────────────────────────────────── */
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 17px;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.app-header.dark .header-status {
+  background: #121212;
+  border: 1px solid #2a2a2a;
+}
+
+.app-header.light .header-status {
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+}
+
+.status-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.header-status.connected .status-dot {
+  background: #4caf50;
+  box-shadow: 0 0 6px #4caf50;
+}
+
+.header-status.disconnected .status-dot {
+  background: #f44336;
+  box-shadow: 0 0 6px #f44336;
+}
+
+/* ── Right side ───────────────────────────────────────────────────────── */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ── Icon buttons ─────────────────────────────────────────────────────── */
+.header-icon-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+  border: 1px solid transparent;
+}
+
+.app-header.dark .header-icon-btn {
+  background: #1a1a1a;
+  border-color: #333;
+  color: #c0c0d0;
+}
+
+.app-header.dark .header-icon-btn:hover {
+  background: #252530;
+  border-color: #444;
+  color: #fff;
+}
+
+.app-header.dark .header-icon-btn.active {
+  background: #1a237e;
+  border-color: #3949ab;
+  color: #ffffff;
+}
+
+.app-header.light .header-icon-btn {
+  background: #f5f5f5;
+  border-color: #ddd;
+  color: #333;
+}
+
+.app-header.light .header-icon-btn:hover {
+  background: #e8f0fe;
+  border-color: #90caf9;
+  color: #1565c0;
+}
+
+.app-header.light .header-icon-btn.active {
+  background: #e3f2fd;
+  border-color: #90caf9;
+  color: #1565c0;
+}
+
+/* ── Spin animation for update button ─────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}

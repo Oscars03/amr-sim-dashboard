@@ -1,0 +1,143 @@
+.view-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: var(--bg-card, #121212);
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  flex-shrink: 0;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--border-color, #333);
+  margin: 0 8px;
+  flex-shrink: 0;
+}
+
+/* ── Input wrapper ────────────────────────────────────────────────────── */
+.toolbar-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-app, #08080c);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--text-secondary, #888);
+}
+
+.toolbar-input {
+  background: transparent;
+  border: none;
+  color: var(--text-primary, #e0e0e0);
+  padding: 8px 0;
+  outline: none;
+  font-size: 16px;
+  font-weight: 600;
+  width: 192px;
+}
+
+.toolbar-input::placeholder { color: var(--text-secondary, #666); }
+
+/* ── Base button ──────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-app, #1a1a1a);
+  border: 1px solid var(--border-color, #333);
+  color: var(--text-secondary, #aaa);
+  padding: 9px 17px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn:hover {
+  color: var(--text-primary, #fff);
+  border-color: var(--text-secondary, #666);
+}
+
+/* ── Back to Dashboard — visually distinct ────────────────────────────── */
+.btn-back {
+  background: rgba(25, 118, 210, 0.12);
+  border-color: rgba(25, 118, 210, 0.4);
+  color: #5ba4f5;
+  font-weight: 700;
+  padding: 9px 20px;
+}
+
+.btn-back:hover {
+  background: rgba(25, 118, 210, 0.22);
+  border-color: #5ba4f5;
+  color: #90caf9;
+}
+
+/* ── Tool buttons ─────────────────────────────────────────────────────── */
+.tool-btn.active {
+  background: var(--accent-blue, #1976d2);
+  border-color: var(--accent-blue, #1976d2);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(25, 118, 210, 0.35);
+}
+
+/* ── Clear All ────────────────────────────────────────────────────────── */
+.btn-danger {
+  background: rgba(211, 47, 47, 0.08);
+  border-color: rgba(211, 47, 47, 0.35);
+  color: #ef5350;
+}
+
+.btn-danger:hover {
+  background: rgba(211, 47, 47, 0.18);
+  border-color: #ef5350;
+}
+
+/* ── Save to ROS ──────────────────────────────────────────────────────── */
+.btn-save {
+  background: var(--accent-green, #2e7d32);
+  border: none;
+  color: #fff;
+  padding: 10px 24px;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(56, 142, 60, 0.35);
+  letter-spacing: 0.3px;
+}
+
+.btn-save:hover {
+  filter: brightness(1.12);
+  box-shadow: 0 4px 16px rgba(56, 142, 60, 0.45);
+}
+
+/* ── Canvas area ──────────────────────────────────────────────────────── */
+.canvas-wrap {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-canvas, #0d0d1a);
+  overflow: hidden;
+  position: relative;
+}
+
+.map-canvas {
+  touch-action: none;
+  display: block;
+  width: 100%;
+  height: 100%;
+}

@@ -1,0 +1,91 @@
+:root {
+  /* Light Theme */
+  --bg-app: #f0f2f5;
+  --bg-card: #ffffff;
+  --bg-canvas: #e6e9ec;
+  --text-primary: #111111;
+  --text-secondary: #666666;
+  --border-color: #e0e0e0;
+  --accent-blue: #1976d2;
+  --accent-green: #388e3c;
+  --accent-red: #d32f2f;
+  --shadow-card: 0 6px 16px rgba(0,0,0,0.04);
+}
+
+[data-theme='dark'] {
+  /* Dark Theme */
+  --bg-app: #08080c;
+  --bg-card: #121212;
+  --bg-canvas: #0d0d1a;
+  --text-primary: #ffffff;
+  --text-secondary: #9e9ec0;
+  --border-color: #333333;
+  --accent-blue: #90caf9;
+  --accent-green: #4caf50;
+  --accent-red: #f44336;
+  --shadow-card: none;
+}
+
+body, html, #root {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Layout Utilities */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Routes wrapper — fills remaining height below header */
+.view-container {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+}
+
+/* Every routed view should fill its container */
+.view-container > * {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+}
+
+.app-wrapper {
+  width: 100%;
+  max-width: 1600px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Scrollbar overrides */
+.scrollable {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.scrollable::-webkit-scrollbar { width: 4px; }
+.scrollable::-webkit-scrollbar-track { background: transparent; }
+.scrollable::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}

@@ -8,7 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist/
+# แก้ไขบรรทัดด้านล่างนี้ โดยการเติม # ไว้ด้านหน้า
+# dist/
 dist-ssr
 *.local
 

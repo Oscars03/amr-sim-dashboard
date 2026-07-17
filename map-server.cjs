@@ -1,11 +1,51 @@
 // map-server.cjs  — run manually: node map-server.cjs
-const express      = require('express');
-const cors         = require('cors');
-const path         = require('path');
-const fs           = require('fs');
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { execSync, spawn } = require('child_process');
 
-const app  = express();
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-Detect ROS 2 Distro (Humble, Jazzy, Lyrical)
+// ─────────────────────────────────────────────────────────────────────────────
+let rosDistro = process.env.ROS_DISTRO;
+if (!rosDistro) {
+  // ไล่เช็คเวอร์ชันที่มีอยู่ในเครื่อง
+  const supportedDistros = ['lyrical', 'jazzy', 'humble'];
+  for (const distro of supportedDistros) {
+    if (fs.existsSync(`/opt/ros/${distro}/setup.bash`)) {
+      rosDistro = distro;
+      break;
+    }
+  }
+}
+if (!rosDistro) rosDistro = 'jazzy'; // Fallback ค่าเริ่มต้น
+
+const ROS_SETUP_BASH = `/opt/ros/${rosDistro}/setup.bash`;
+const ROS_BIN_PATH   = `/opt/ros/${rosDistro}/bin`;
+
+let WS_SETUP_BASH = '/opt/irish-amr-simulator/ros2_ws/install/setup.bash';
+
+if (process.env.AMR_WS_SETUP) {
+    WS_SETUP_BASH = process.env.AMR_WS_SETUP;
+} else {
+    // Try to guess
+    const systemWs = '/opt/irish-amr-simulator/ros2_ws/install/setup.bash';
+    const localWs = path.join(os.homedir(), 'simamr_ws', 'install', 'setup.bash');
+    if (fs.existsSync(systemWs)) {
+        WS_SETUP_BASH = systemWs;
+    } else if (fs.existsSync(localWs)) {
+        WS_SETUP_BASH = localWs;
+    }
+}
+
+console.log(`[INIT] Detected ROS 2 Distro: ${rosDistro}`);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Express Setup
+// ─────────────────────────────────────────────────────────────────────────────
+const app = express();
 const PORT = 3001;
 app.use(cors());
 app.use(express.json());
@@ -14,12 +54,12 @@ app.use(express.json());
 // State
 // ─────────────────────────────────────────────────────────────────────────────
 let currentState = {
-  robot:      'amr.urdf',
-  world:      'room.json',
-  status:     'idle',      // idle | launching | running | stopping | error
-  pid:        null,
+  robot: 'amr.urdf',
+  world: 'room.json',
+  status: 'idle',   // idle | launching | running | stopping | error
+  pid: null,
   launchedAt: null,
-  error:      null,
+  error: null,
 };
 
 let rosProcess = null;
@@ -35,12 +75,12 @@ function getShareDir() {
         encoding: 'utf8',
         env: {
           ...process.env,
-          PATH: `${process.env.PATH}:/opt/ros/jazzy/bin`,
+          PATH: `${process.env.PATH}:${ROS_BIN_PATH}`,
         },
       }
     ).trim();
   } catch (err) {
-    console.error('❌ ros2 pkg prefix failed:', err.message);
+    console.error('ros2 pkg prefix failed:', err.message);
     return null;
   }
 }
@@ -54,30 +94,29 @@ function getWorldFiles(shareDir) {
     .map(f => {
       const fullPath = path.join(worldsDir, f);
 
-      // ── FIXED: guard against file disappearing between readdir & stat ──
       let stat;
       try {
         stat = fs.statSync(fullPath);
       } catch {
-        return null;   // file vanished, skip it
+        return null;
       }
 
       let mapName = f;
       try {
         const data = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-        mapName    = data.name ?? path.parse(f).name;
+        mapName = data.name ?? path.parse(f).name;
       } catch { /* keep filename */ }
 
       return {
-        name:     f,
+        name: f,
         mapName,
         fullPath,
-        sizeKB:   (stat.size / 1024).toFixed(2),
+        sizeKB: (stat.size / 1024).toFixed(2),
         modified: stat.mtime.toISOString(),
-        url:      `http://localhost:${PORT}/map?file=${f}`,
+        url: `http://localhost:${PORT}/map?file=${f}`,
       };
     })
-    .filter(Boolean);   // ← remove any null entries
+    .filter(Boolean);
 }
 
 function getRobotFiles(shareDir) {
@@ -87,10 +126,10 @@ function getRobotFiles(shareDir) {
     .filter(f => f.endsWith('.urdf') || f.endsWith('.xacro'))
     .map(f => {
       const fullPath = path.join(urdfDir, f);
-      const stat     = fs.statSync(fullPath);
-      let   robotName = path.parse(f).name;
+      const stat = fs.statSync(fullPath);
+      let robotName = path.parse(f).name;
       try {
-        const xml   = fs.readFileSync(fullPath, 'utf8');
+        const xml = fs.readFileSync(fullPath, 'utf8');
         const match = xml.match(/robot\s+name="([^"]+)"/);
         if (match) robotName = match[1];
       } catch { /* keep filename */ }
@@ -98,20 +137,36 @@ function getRobotFiles(shareDir) {
         name: f,
         robotName,
         fullPath,
-        sizeKB:   (stat.size / 1024).toFixed(2),
+        sizeKB: (stat.size / 1024).toFixed(2),
         modified: stat.mtime.toISOString(),
       };
     });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Kill ROS process tree
-// ─────────────────────────────────────────────────────────────────────────────
+function forceKillOrphans() {
+  const patterns = ['ros2 launch', 'amr_sim_node', 'robot_state_publisher', 'rosbridge'];
+  patterns.forEach((p) => {
+    try {
+      execSync(`pkill -9 -f "${p}"`, { stdio: 'ignore' });
+      console.log(`pkill -9 -f "${p}" matched`);
+    } catch {
+      // exit code 1 = nothing matched, not an error
+    }
+  });
+}
+
 function killRosProcess() {
   return new Promise((resolve) => {
-    if (!rosProcess) {
-      console.log('ℹ️  No ROS process to kill');
+    const finish = () => {
+      forceKillOrphans();
+      rosProcess = null;
+      console.log('ROS stopped (orphan sweep included)');
       resolve();
+    };
+
+    if (!rosProcess) {
+      console.log('ℹ No tracked process — sweeping orphans anyway');
+      finish();
       return;
     }
 
@@ -119,32 +174,22 @@ function killRosProcess() {
     currentState.status = 'stopping';
 
     let resolved = false;
-    const done = () => {
-      if (!resolved) {
-        resolved   = true;
-        rosProcess = null;
-        console.log('✅ ROS process stopped');
-        resolve();
-      }
-    };
+    const done = () => { if (!resolved) { resolved = true; finish(); } };
 
-    // Listen for exit before sending signal
     rosProcess.once('exit', done);
 
-    // Send SIGTERM to the entire process group
     try {
-      process.kill(-rosProcess.pid, 'SIGTERM');
+      process.kill(-rosProcess.pid, 'SIGINT');
     } catch (e) {
-      console.warn('   SIGTERM failed:', e.message);
+      console.warn('   SIGINT failed:', e.message);
       done();
       return;
     }
 
-    // Force kill after 4 s
     setTimeout(() => {
       if (!resolved) {
-        console.warn('⚠️  Force killing with SIGKILL...');
-        try { process.kill(-rosProcess.pid, 'SIGKILL'); } catch { /* dead */ }
+        console.warn('Force killing with SIGKILL...');
+        try { process.kill(-rosProcess.pid, 'SIGKILL'); } catch { }
         done();
       }
     }, 4000);
@@ -152,89 +197,60 @@ function killRosProcess() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Launch ROS (sim_bringup.launch.py only — no map-server inside)
+// Launch ROS
 // ─────────────────────────────────────────────────────────────────────────────
-// map-server.cjs  — replace launchRos() with this debug version
-
 function launchRos(shareDir, robotFile, worldFile) {
-  const urdfPath  = path.join(shareDir, 'urdf',   robotFile);
+  const urdfPath = path.join(shareDir, 'urdf', robotFile);
   const worldPath = path.join(shareDir, 'worlds', worldFile);
 
-  // ── Pre-flight checks ────────────────────────────────────────────────────
   console.log('\n' + '═'.repeat(55));
-  console.log('🚀 launchRos() called');
+  console.log('🚀 launchRos() called [MULTI-DISTRO READY]');
   console.log('═'.repeat(55));
-  console.log(`   shareDir  : ${shareDir}`);
-  console.log(`   urdfPath  : ${urdfPath}`);
-  console.log(`   worldPath : ${worldPath}`);
-  console.log(`   urdf exists  : ${fs.existsSync(urdfPath)}`);
-  console.log(`   world exists : ${fs.existsSync(worldPath)}`);
+  console.log(`Distro    : ${rosDistro}`);
+  console.log(`shareDir  : ${shareDir}`);
+  console.log(`urdfPath  : ${urdfPath}`);
+  console.log(`worldPath : ${worldPath}`);
+  console.log(`urdf exists  : ${fs.existsSync(urdfPath)}`);
+  console.log(`world exists : ${fs.existsSync(worldPath)}`);
 
-  // ── Check files exist before launching ───────────────────────────────────
   if (!fs.existsSync(urdfPath)) {
-    console.error(`❌ URDF not found: ${urdfPath}`);
+    console.error(`URDF not found: ${urdfPath}`);
     currentState.status = 'error';
-    currentState.error  = `URDF not found: ${urdfPath}`;
+    currentState.error = `URDF not found: ${urdfPath}`;
     return;
   }
   if (!fs.existsSync(worldPath)) {
-    console.error(`❌ World not found: ${worldPath}`);
+    console.error(`World not found: ${worldPath}`);
     currentState.status = 'error';
-    currentState.error  = `World not found: ${worldPath}`;
+    currentState.error = `World not found: ${worldPath}`;
     return;
   }
 
-  // ── Build shell command ───────────────────────────────────────────────────
   const shellCmd =
-    `source /opt/ros/jazzy/setup.bash && ` +
-    `source ~/robot_ws/install/setup.bash && ` +
+    `source ${ROS_SETUP_BASH} && ` +
+    `source ${WS_SETUP_BASH} && ` +
     `ros2 launch amr_2dsim sim_bringup.launch.py ` +
     `urdf_file:=${urdfPath} ` +
     `world_file:=${worldPath}`;
 
-  console.log('\n📋 Shell command:');
-  console.log(`   ${shellCmd}`);
+  console.log('\n Shell command:');
+  console.log(`  ${shellCmd}`);
   console.log('');
 
-  // ── Verify ros2 launch file exists in package ─────────────────────────────
-  try {
-    const launchCheck = execSync(
-      'source /opt/ros/jazzy/setup.bash && ' +
-      'source ~/robot_ws/install/setup.bash && ' +
-      'ros2 launch amr_2dsim sim_bringup.launch.py --show-args',
-      {
-        encoding: 'utf8',
-        shell:    '/bin/bash',
-        env: {
-          ...process.env,
-          PATH: `${process.env.PATH}:/opt/ros/jazzy/bin`,
-        },
-      }
-    );
-    console.log('✅ Launch file found. Args:');
-    console.log(launchCheck);
-  } catch (err) {
-    console.error('❌ Launch file check failed:');
-    console.error(err.message);
-    currentState.status = 'error';
-    currentState.error  = `Launch file not accessible: ${err.message}`;
-    return;
-  }
 
-  // ── Spawn ─────────────────────────────────────────────────────────────────
+
   rosProcess = spawn('bash', ['-c', shellCmd], {
     detached: true,
-    stdio:    ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      PATH:          `${process.env.PATH}:/opt/ros/jazzy/bin`,
-      AMR_MAP_FILE:  worldPath,
+      PATH: `${process.env.PATH}:${ROS_BIN_PATH}`,
+      AMR_MAP_FILE: worldPath,
       AMR_URDF_FILE: urdfPath,
     },
   });
 
   rosProcess.stdout.on('data', (d) => {
-    // Print every line with [ROS] prefix
     const lines = d.toString().split('\n').filter(l => l.trim());
     lines.forEach(l => console.log(`[ROS stdout] ${l}`));
   });
@@ -247,18 +263,17 @@ function launchRos(shareDir, robotFile, worldFile) {
   rosProcess.on('exit', (code, signal) => {
     console.log('\n' + '─'.repeat(40));
     console.log(`[ROS] Process EXITED`);
-    console.log(`      code   = ${code   ?? 'null'}`);
+    console.log(`      code   = ${code ?? 'null'}`);
     console.log(`      signal = ${signal ?? 'null'}`);
     console.log('─'.repeat(40));
 
-    // ── Detect common failures ─────────────────────────────────────────────
     if (code === 1) {
-      console.error('❌ ROS launch failed (code 1)');
-      console.error('   → Check: colcon build ran successfully?');
-      console.error('   → Check: all packages installed?');
+      console.error('ROS launch failed (code 1)');
+      console.error('   → Check: Was the .deb package installed completely?');
+      console.error('   → Check: Are all dependencies listed in control file?');
     }
     if (code === 2) {
-      console.error('❌ ROS launch argument error (code 2)');
+      console.error('ROS launch argument error (code 2)');
       console.error('   → Check: urdf_file / world_file args accepted?');
       console.error(`   → Run: ros2 launch amr_2dsim sim_bringup.launch.py --show-args`);
     }
@@ -275,16 +290,16 @@ function launchRos(shareDir, robotFile, worldFile) {
   rosProcess.on('error', (err) => {
     console.error(`[ROS] spawn error: ${err.message}`);
     currentState.status = 'error';
-    currentState.error  = err.message;
+    currentState.error = err.message;
     rosProcess = null;
   });
 
-  currentState.pid        = rosProcess.pid;
-  currentState.status     = 'running';
+  currentState.pid = rosProcess.pid;
+  currentState.status = 'running';
   currentState.launchedAt = new Date().toISOString();
-  currentState.error      = null;
+  currentState.error = null;
 
-  console.log(`✅ Spawned  PID=${rosProcess.pid}`);
+  console.log(`Spawned  PID=${rosProcess.pid}`);
   console.log('   Waiting for ROS nodes to start...\n');
 }
 
@@ -306,18 +321,18 @@ app.get('/map', (req, res) => {
     return res.status(404).json({ error: `${fileName} not found`, tried: mapPath });
 
   try {
-    const data    = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
     const mapName = data.name ?? path.parse(mapPath).name;
     res.json({
       ...data,
       _meta: {
         mapName,
-        fileName:  path.basename(mapPath),
-        fullPath:  mapPath,
+        fileName: path.basename(mapPath),
+        fullPath: mapPath,
         fetchedAt: new Date().toISOString(),
       },
     });
-    console.log(`📤 /map → "${mapName}" (${fileName})`);
+    console.log(`/map → "${mapName}" (${fileName})`);
   } catch (err) {
     res.status(500).json({ error: `JSON parse error: ${err.message}` });
   }
@@ -329,7 +344,7 @@ app.get('/worlds', (req, res) => {
   if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
   const worlds = getWorldFiles(shareDir);
   res.json({ worldsDir: path.join(shareDir, 'worlds'), count: worlds.length, worlds });
-  console.log(`📁 /worlds → ${worlds.length} files`);
+  console.log(`/worlds → ${worlds.length} files`);
 });
 
 // GET /robots
@@ -338,7 +353,7 @@ app.get('/robots', (req, res) => {
   if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
   const robots = getRobotFiles(shareDir);
   res.json({ urdfDir: path.join(shareDir, 'urdf'), count: robots.length, robots });
-  console.log(`🤖 /robots → ${robots.length} files`);
+  console.log(`/robots → ${robots.length} files`);
 });
 
 // GET /urdf?file=tango.urdf
@@ -355,14 +370,218 @@ app.get('/urdf', (req, res) => {
   const urdfPath = path.join(shareDir, 'urdf', fileName);
   if (!fs.existsSync(urdfPath))
     return res.status(404).json({
-      error:     `${fileName} not found`,
+      error: `${fileName} not found`,
       available: getRobotFiles(getShareDir() ?? '').map(f => f.name),
     });
 
   res.setHeader('Content-Type', 'application/xml');
   res.send(fs.readFileSync(urdfPath, 'utf8'));
-  console.log(`📤 /urdf → ${urdfPath}`);
+  console.log(`/urdf → ${urdfPath}`);
 });
+
+// POST /api/robots
+app.post('/api/robots', (req, res) => {
+  const shareDir = getShareDir();
+  if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
+
+  const {
+    name, kinematic_model,
+    // Geometry
+    geometry_type = 'rectangle',
+    body_length_x = 0.70, body_width_y = 0.50,
+    body_size = 0.70,
+    body_radius = 0.35,
+    body_height = 0.20,
+    // Wheels
+    wheel_base = 0.5, axle_track,
+    wheel_radius = 0.05, wheel_width = 0.03,
+    // Lidar
+    lidar_x = 0.0, lidar_y = 0.0, lidar_height = 0.1,
+    lidar_radius = 0.05, lidar_range_max = 12.0,
+    // Sim
+    ticks_per_meter = 2000,
+    omni_wheel_count = 3,
+    // Visual
+    color
+  } = req.body;
+
+  if (!name || !kinematic_model) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+
+  // Sanitize filename
+  const fileName = `${name.replace(/[^a-z0-9_]/gi, '_').toLowerCase()}.urdf`;
+  const urdfPath = path.join(shareDir, 'urdf', fileName);
+
+  if (fs.existsSync(urdfPath)) {
+    return res.status(400).json({ error: 'Robot with this name already exists' });
+  }
+
+  // Parse color hex → URDF rgba
+  let rgba = '0.0 0.3 1.0 1.0';
+  if (color && /^#[0-9A-F]{6}$/i.test(color)) {
+    const r = (parseInt(color.slice(1, 3), 16) / 255).toFixed(2);
+    const g = (parseInt(color.slice(3, 5), 16) / 255).toFixed(2);
+    const b = (parseInt(color.slice(5, 7), 16) / 255).toFixed(2);
+    rgba = `${r} ${g} ${b} 1.0`;
+  }
+
+  const bodyZ = parseFloat(body_height).toFixed(3);
+  const bodyZHalf = (parseFloat(body_height) / 2).toFixed(3);
+
+  // Derive geometry-specific values and effective robot_radius
+  let bodyGeomXML, robot_radius;
+  if (geometry_type === 'circle') {
+    const r = parseFloat(body_radius);
+    robot_radius = r;
+    bodyGeomXML = `<cylinder radius="${r.toFixed(3)}" length="${bodyZ}" />`;
+  } else if (geometry_type === 'square') {
+    const s = parseFloat(body_size);
+    robot_radius = s / 2;
+    bodyGeomXML = `<box size="${s.toFixed(3)} ${s.toFixed(3)} ${bodyZ}" />`;
+  } else { // rectangle
+    const lx = parseFloat(body_length_x);
+    const wy = parseFloat(body_width_y);
+    robot_radius = Math.sqrt((lx / 2) ** 2 + (wy / 2) ** 2);
+    bodyGeomXML = `<box size="${lx.toFixed(3)} ${wy.toFixed(3)} ${bodyZ}" />`;
+  }
+
+  // Effective axle track
+  const effectiveAxleTrack = axle_track ?? (robot_radius * 1.6);
+
+  const urdfContent = `<?xml version="1.0"?>
+<robot name="${name}">
+
+  <!-- AMR Simulation Config -->
+  <amr_sim_config>
+    <kinematic_model>${kinematic_model}</kinematic_model>
+    <geometry_type>${geometry_type}</geometry_type>
+    <wheel_base>${parseFloat(wheel_base).toFixed(3)}</wheel_base>
+    <axle_track>${parseFloat(effectiveAxleTrack).toFixed(3)}</axle_track>
+    <robot_radius>${parseFloat(robot_radius).toFixed(3)}</robot_radius>
+    <wheel_radius>${parseFloat(wheel_radius).toFixed(4)}</wheel_radius>
+    <wheel_width>${parseFloat(wheel_width).toFixed(4)}</wheel_width>
+    <laser_range_max>${parseFloat(lidar_range_max).toFixed(1)}</laser_range_max>
+    <laser_x>${parseFloat(lidar_x).toFixed(3)}</laser_x>
+    <laser_y>${parseFloat(lidar_y).toFixed(3)}</laser_y>
+    <laser_height>${parseFloat(lidar_height).toFixed(3)}</laser_height>
+    <ticks_per_meter>${parseFloat(ticks_per_meter).toFixed(1)}</ticks_per_meter>
+    ${kinematic_model === 'omni' ? `<omni_wheel_count>${parseInt(omni_wheel_count, 10)}</omni_wheel_count>` : ''}
+  </amr_sim_config>
+
+  <material name="body_color">
+    <color rgba="${rgba}" />
+  </material>
+
+  <!-- Body (${geometry_type}) -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${bodyZHalf}" rpy="0 0 0" />
+      <geometry>
+        ${bodyGeomXML}
+      </geometry>
+      <material name="body_color" />
+    </visual>
+  </link>
+
+  <!-- LiDAR sensor -->
+  <link name="laser_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="${parseFloat(lidar_radius).toFixed(3)}" length="${parseFloat(lidar_height).toFixed(3)}" />
+      </geometry>
+      <material name="lidar_color">
+        <color rgba="0.1 0.1 0.1 1.0" />
+      </material>
+    </visual>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="laser_link" />
+    <origin xyz="${parseFloat(lidar_x).toFixed(3)} ${parseFloat(lidar_y).toFixed(3)} ${(parseFloat(body_height) + parseFloat(lidar_height) / 2).toFixed(3)}" rpy="0 0 0" />
+  </joint>
+
+</robot>`;
+
+  try {
+    fs.writeFileSync(urdfPath, urdfContent);
+    console.log(`Created new robot URDF: ${urdfPath}`);
+    res.json({ success: true, file: fileName, message: 'Robot created successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to write URDF file' });
+  }
+});
+
+// DELETE /api/robots/:fileName
+app.delete('/api/robots/:fileName', (req, res) => {
+  const shareDir = getShareDir();
+  if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
+  const { fileName } = req.params;
+  if (!fileName || (!fileName.endsWith('.urdf') && !fileName.endsWith('.xacro')) || fileName.includes('/') || fileName.includes('..')) {
+    return res.status(400).json({ error: 'Invalid file name' });
+  }
+  const filePath = path.join(shareDir, 'urdf', fileName);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  try {
+    fs.unlinkSync(filePath);
+    console.log(`Deleted robot URDF: ${filePath}`);
+    res.json({ success: true, message: 'Robot deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete robot file' });
+  }
+});
+
+// GET /api/worlds/:fileName
+app.get('/api/worlds/:fileName', (req, res) => {
+  const shareDir = getShareDir();
+  if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
+  const { fileName } = req.params;
+  if (!fileName || !fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..')) {
+    return res.status(400).json({ error: 'Invalid file name' });
+  }
+  const filePath = path.join(shareDir, 'worlds', fileName);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  try {
+    const data = fs.readFileSync(filePath, 'utf8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to read world file' });
+  }
+});
+
+// DELETE /api/worlds/:fileName
+app.delete('/api/worlds/:fileName', (req, res) => {
+  const shareDir = getShareDir();
+  if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
+  const { fileName } = req.params;
+  if (!fileName || !fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..')) {
+    return res.status(400).json({ error: 'Invalid file name' });
+  }
+  const filePath = path.join(shareDir, 'worlds', fileName);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  try {
+    fs.unlinkSync(filePath);
+    console.log(`Deleted world map: ${filePath}`);
+    res.json({ success: true, message: 'World deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete world file' });
+  }
+});
+
+
+
 
 // GET /status
 app.get('/status', (req, res) => {
@@ -376,12 +595,11 @@ app.get('/status', (req, res) => {
 app.post('/switch', async (req, res) => {
   const { robot, world } = req.body ?? {};
 
-  // ── Validate ─────────────────────────────────────────────────────────────
   if (!robot || !world)
     return res.status(400).json({ error: 'robot and world are required' });
 
   if (robot.includes('/') || robot.includes('..') ||
-      world.includes('/') || world.includes('..'))
+    world.includes('/') || world.includes('..'))
     return res.status(400).json({ error: 'Invalid file name' });
 
   if (!robot.endsWith('.urdf') && !robot.endsWith('.xacro'))
@@ -394,55 +612,52 @@ app.post('/switch', async (req, res) => {
   if (!shareDir)
     return res.status(500).json({ error: 'Cannot resolve ROS package' });
 
-  const urdfPath  = path.join(shareDir, 'urdf',   robot);
+  const urdfPath = path.join(shareDir, 'urdf', robot);
   const worldPath = path.join(shareDir, 'worlds', world);
 
   if (!fs.existsSync(urdfPath))
     return res.status(404).json({
-      error:     `Robot file not found: ${robot}`,
+      error: `Robot file not found: ${robot}`,
       available: getRobotFiles(shareDir).map(f => f.name),
     });
 
   if (!fs.existsSync(worldPath))
     return res.status(404).json({
-      error:     `World file not found: ${world}`,
+      error: `World file not found: ${world}`,
       available: getWorldFiles(shareDir).map(f => f.name),
     });
 
-  // ── Already same config? ──────────────────────────────────────────────────
   if (
-    currentState.robot  === robot &&
-    currentState.world  === world &&
+    currentState.robot === robot &&
+    currentState.world === world &&
     currentState.status === 'running' &&
     rosProcess !== null
   ) {
     return res.json({
-      ok:      true,
+      ok: true,
       message: 'Already running with this configuration',
-      state:   currentState,
+      state: currentState,
     });
   }
 
-  // ── Acknowledge immediately ───────────────────────────────────────────────
   currentState.status = 'launching';
-  currentState.robot  = robot;
-  currentState.world  = world;
+  currentState.robot = robot;
+  currentState.world = world;
 
   res.json({
-    ok:      true,
+    ok: true,
     message: `Switching → robot="${robot}"  world="${world}"`,
-    state:   currentState,
+    state: currentState,
   });
 
-  // ── Kill → wait → relaunch (async after response) ────────────────────────
   try {
     await killRosProcess();
-    await new Promise(r => setTimeout(r, 1500));   // ports settle
+    await new Promise(r => setTimeout(r, 1500));
     launchRos(shareDir, robot, world);
   } catch (err) {
-    console.error('❌ Switch failed:', err.message);
+    console.error('Switch failed:', err.message);
     currentState.status = 'error';
-    currentState.error  = err.message;
+    currentState.error = err.message;
   }
 });
 
@@ -450,37 +665,36 @@ app.post('/switch', async (req, res) => {
 app.post('/save_map', (req, res) => {
   const { filename, data } = req.body;
 
-  if (!filename || !data) {
+  if (!filename || !data)
     return res.status(400).json({ ok: false, message: 'Missing filename or map data.' });
-  }
 
-  // Prevent path traversal attacks
   const safeName = path.basename(filename);
-  if (!safeName.endsWith('.json')) {
+  if (!safeName.endsWith('.json'))
     return res.status(400).json({ ok: false, message: 'Filename must end with .json' });
-  }
 
-  // ── Resolve worlds dir via ROS package (same as other routes) ────────────
   const shareDir = getShareDir();
-  if (!shareDir) {
+  if (!shareDir)
     return res.status(500).json({ ok: false, message: 'Cannot resolve ROS package' });
-  }
 
   const savePath = path.join(shareDir, 'worlds', safeName);
 
   try {
-    // Auto-create worlds dir if missing
     const dir = path.dirname(savePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(savePath, JSON.stringify(data, null, 2), 'utf8');
+    console.log(`[save_map] Saved: ${savePath}`);
+
+    // Also save to the source workspace so it persists across rebuilds
+    const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
+    if (fs.existsSync(srcWorldsDir)) {
+      const srcSavePath = path.join(srcWorldsDir, safeName);
+      fs.writeFileSync(srcSavePath, JSON.stringify(data, null, 2), 'utf8');
+      console.log(`[save_map] Saved to source: ${srcSavePath}`);
     }
 
-    fs.writeFileSync(savePath, JSON.stringify(data, null, 2), 'utf8');
-    console.log(`[save_map] ✅ Saved: ${savePath}`);
     res.json({ ok: true, message: `Saved to ${savePath}` });
-
   } catch (err) {
-    console.error(`[save_map] ❌ ${err.message}`);
+    console.error(`[save_map] ${err.message}`);
     res.status(500).json({ ok: false, message: err.message });
   }
 });
@@ -489,19 +703,19 @@ app.post('/save_map', (req, res) => {
 app.post('/stop', async (req, res) => {
   await killRosProcess();
   currentState.status = 'idle';
-  res.json({ ok: true, message: '🛑 ROS stopped' });
+  res.json({ ok: true, message: 'ROS stopped' });
 });
 
 // GET /health
 app.get('/health', (_req, res) => {
   const shareDir = getShareDir();
   res.json({
-    status:     'ok',
-    shareDir:   shareDir ?? 'not found',
+    status: 'ok',
+    shareDir: shareDir ?? 'not found',
     rosRunning: rosProcess !== null,
-    current:    currentState,
-    worlds:     shareDir ? getWorldFiles(shareDir).map(w => w.name) : [],
-    robots:     shareDir ? getRobotFiles(shareDir).map(r => r.name) : [],
+    current: currentState,
+    worlds: shareDir ? getWorldFiles(shareDir).map(w => w.name) : [],
+    robots: shareDir ? getRobotFiles(shareDir).map(r => r.name) : [],
   });
 });
 
@@ -516,12 +730,12 @@ function walkDir(dirPath, baseDir) {
     } else {
       const stat = fs.statSync(fullPath);
       results.push({
-        name:         entry.name,
+        name: entry.name,
         relativePath: path.relative(baseDir, fullPath),
         fullPath,
-        sizeKB:       (stat.size / 1024).toFixed(2),
-        modified:     stat.mtime.toISOString(),
-        ext:          path.extname(entry.name),
+        sizeKB: (stat.size / 1024).toFixed(2),
+        modified: stat.mtime.toISOString(),
+        ext: path.extname(entry.name),
       });
     }
   });
@@ -543,7 +757,7 @@ async function shutdown(sig) {
   await killRosProcess();
   process.exit(0);
 }
-process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -567,29 +781,29 @@ app.listen(PORT, () => {
 
   const shareDir = getShareDir();
   if (!shareDir) {
-    console.warn('⚠️  ROS package not found. Run:');
-    console.warn('   source ~/robot_ws/install/setup.bash\n');
+    console.warn('⚠ ROS package not found. Run:');
+    console.warn(`   source ${WS_SETUP_BASH}\n`);
     return;
   }
 
-  console.log(`📦 Package : ${shareDir}`);
+  console.log(`Package : ${shareDir}`);
 
   const worlds = getWorldFiles(shareDir);
-  console.log(`\n🌍 Worlds (${worlds.length}):`);
+  console.log(`\n Worlds (${worlds.length}):`);
   worlds.forEach(w =>
     console.log(`   ${w.name.padEnd(22)} "${w.mapName}"`)
   );
 
   const robots = getRobotFiles(shareDir);
-  console.log(`\n🤖 Robots (${robots.length}):`);
+  console.log(`\n Robots (${robots.length}):`);
   robots.forEach(r =>
     console.log(`   ${r.name.padEnd(22)} "${r.robotName}"`)
   );
 
   console.log('');
-  console.log('💡 Start simulation from web UI or:');
+  console.log(' Start simulation from web UI or:');
   console.log(`   curl -X POST http://localhost:${PORT}/switch \\`);
   console.log(`        -H "Content-Type: application/json" \\`);
-  console.log(`        -d \'{"robot":"tango.urdf","world":"room.json"}\'`);
+  console.log(`        -d '{"robot":"tango.urdf","world":"room.json"}'`);
   console.log('');
 });

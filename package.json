@@ -1,13 +1,14 @@
 {
-  "name": "amr-sim-dashboard",
+  "name": "irish-amr-simulator",
+  "productName": "IRiSH AMR Simulator",
   "private": true,
-  "version": "0.0.0",
-  "description": "AMR Simulation Dashboard for autonomous mobile robot navigation",
+  "version": "0.2.0",
+  "description": "IRiSH Lab AMR Simulation for autonomous mobile robot navigation",
   "author": {
     "name": "Phuthanet Phengphan",
     "email": "osears.55@gmail.com"
   },
-  "homepage": "https://github.com/Oscars03/amr_2dsim",
+  "homepage": "https://github.com/Oscars03/amr-sim-dashboard",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -19,10 +20,13 @@
   },
   "dependencies": {
     "cors": "^2.8.6",
+    "electron-updater": "^6.8.9",
     "express": "^5.2.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "roslib": "^2.1.0"
+    "react-router-dom": "^7.18.1",
+    "roslib": "^2.1.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -45,13 +49,44 @@
     "electron@43.0.0": true
   },
   "build": {
-  "appId": "com.oscars03.amrsimdashboard",
-  "productName": "AMR Sim Dashboard",
-  "files": ["dist/**/*", "dist-electron/**/*", "map-server.cjs"],
-  "asarUnpack": ["map-server.cjs", "node_modules/express/**/*", "node_modules/cors/**/*"],
-  "linux": {
-    "target": ["AppImage", "deb"],
-    "category": "Utility"
+    "productName": "IRiSH AMR Simulator",
+    "appId": "com.oscars03.amrsimdashboard",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Oscars03",
+        "repo": "amr-sim-dashboard"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "mac": {
+      "icon": "public/icon.png",
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "icon": "public/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "map-server.cjs",
+      "public/**/*"
+    ]
   }
-}
 }

@@ -1,0 +1,132 @@
+.split-btn-group {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.split-btn-group.active {
+  border-color: var(--accent-blue);
+}
+
+.split-btn-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  padding: 6px 12px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px 0 0 6px;
+  transition: background 0.15s ease;
+}
+
+.split-btn-group.active .split-btn-main {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.split-btn-main:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+.split-btn-group.active .split-btn-main:hover {
+  background: rgba(33, 150, 243, 0.9);
+}
+
+.split-btn-divider {
+  width: 1px;
+  background: var(--border-color);
+  transition: background 0.2s ease;
+}
+.split-btn-group.active .split-btn-divider {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.split-btn-trigger {
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  padding: 0 8px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 0 6px 6px 0;
+  transition: background 0.15s ease;
+}
+
+.split-btn-group.active .split-btn-trigger {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.split-btn-trigger:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+.split-btn-group.active .split-btn-trigger:hover {
+  background: rgba(33, 150, 243, 0.9);
+}
+
+.split-btn-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  min-width: 140px;
+  padding: 4px;
+  z-index: 100;
+  animation: splitMenuFadeIn 0.2s ease forwards;
+}
+
+@keyframes splitMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.split-btn-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  color: var(--text-primary);
+  border: none;
+  padding: 8px 12px;
+  font-size: 14px;
+  text-align: left;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.split-btn-item:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.split-btn-item.selected {
+  background: rgba(33, 150, 243, 0.1);
+  color: var(--accent-blue);
+  font-weight: bold;
+}
+
+.split-btn-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}

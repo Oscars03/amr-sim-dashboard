@@ -16,6 +16,7 @@ export default defineConfig({
       }
     }
   },
+
   preload: {
     build: {
       outDir: 'dist-electron',
@@ -26,13 +27,18 @@ export default defineConfig({
       }
     }
   },
+
   renderer: {
     root: '.',
     build: {
+      outDir: 'dist',            // ✅ THIS was missing!
+      emptyOutDir: true,
       rollupOptions: {
         input: path.join(__dirname, 'index.html')
       }
     },
+    // ✅ เพิ่ม publicDir ชี้ไปที่ images folder
+    publicDir: path.join(__dirname, 'public'),
     plugins: [react()]
   }
 })

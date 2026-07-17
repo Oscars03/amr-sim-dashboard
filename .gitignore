@@ -8,12 +8,13 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+# ปลดล็อกโฟลเดอร์เหล่านี้เพื่อให้ Builder มองเห็น
+# dist
 dist-ssr
 *.local
-node_modules/
-dist/
-dist-electron/
+# node_modules/
+# dist/
+# dist-electron/
 out/
 .DS_Store
 
@@ -26,4 +27,10 @@ out/
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+*.sw?release/
+build/
+
+release/
+build/
+dist/
+dist-electron/
