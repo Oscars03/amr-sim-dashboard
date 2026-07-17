@@ -2,7 +2,7 @@
   "name": "irish-amr-simulator",
   "productName": "IRiSH AMR Simulator",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.3",
   "description": "IRiSH Lab AMR Simulation for autonomous mobile robot navigation",
   "author": {
     "name": "Phuthanet Phengphan",
@@ -81,6 +81,12 @@
         "deb"
       ],
       "category": "Utility"
+    },
+    "deb": {
+      "artifactName": "irish-amr-sim_${version}_jazzy_${arch}.${ext}"
+    },
+    "appImage": {
+      "artifactName": "irish-amr-sim_${version}_jazzy_${arch}.${ext}"
     },
     "files": [
       "dist/**/*",

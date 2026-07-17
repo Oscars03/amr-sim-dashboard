@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import useIsCompact from '../../hooks/useIsCompact';
 import useAppStore from '../../store/useAppStore';
 import logoDark from '/irish-wbg.png?url';
 import logoLight from '/imagermbg.png?url';
@@ -16,6 +17,7 @@ export default function Header() {
 
   const [appVersion, setAppVersion] = useState('0.0.0');
   const [isSpinningUpdate, setIsSpinningUpdate] = useState(false);
+  const compact = useIsCompact(900);
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -37,7 +39,7 @@ export default function Header() {
   const onDashboard = location.pathname === '/';
 
   return (
-    <header className={`app-header ${isDark ? 'dark' : 'light'}`}>
+    <header className={`app-header ${isDark ? 'dark' : 'light'} ${compact ? 'compact' : ''}`}>
       {/* ── Left Side ─────────────────────────────────── */}
       <div className="header-left">
         {/* Logo */}
@@ -45,10 +47,12 @@ export default function Header() {
           src={isDark ? logoDark : logoLight}
           alt="IRiSH Logo"
           className="header-logo"
+          onClick={() => navigate('/')}
+          style={{ cursor: 'pointer' }}
         />
 
         {/* Title */}
-        <span className="header-title">AMR Simulator</span>
+        <span className="header-title" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>AMR Simulator</span>
 
         {/* Version badge */}
         <span className="header-badge version-badge">

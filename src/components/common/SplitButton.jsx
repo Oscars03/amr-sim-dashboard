@@ -34,9 +34,10 @@ export default function SplitButton({
       <button 
         className="split-btn-main" 
         onClick={() => onMainClick()}
+        title={label}
       >
         {icon}
-        {label}
+        <span className="btn-label">{label}</span>
       </button>
       
       <div className="split-btn-divider" />

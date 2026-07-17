@@ -5,11 +5,12 @@
   align-items: center;
   padding: 0 28px;
   height: 82px;
-  flex-wrap: wrap;
-  gap: 17px;
+  flex-wrap: nowrap;
+  gap: clamp(4px, 1vw, 12px);
   box-sizing: border-box;
   width: 100%;
   transition: background 0.3s, border-bottom 0.3s;
+  overflow: hidden;
 }
 
 .app-header.dark {
@@ -26,8 +27,10 @@
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: clamp(4px, 1vw, 12px);
   flex-wrap: nowrap;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .header-logo {
@@ -41,6 +44,7 @@
   font-size: 22px;
   font-weight: 700;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .app-header.dark .header-title {
@@ -57,10 +61,11 @@
   padding: 5px 14px;
   border-radius: 20px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .app-header.dark .version-badge {
-  background: rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: #B4B2A9;
 }
 
@@ -81,34 +86,41 @@
   font-weight: 500;
   white-space: nowrap;
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .header-status.connected {
-  background: rgba(151,196,89,0.18);
-  border: 0.5px solid rgba(151,196,89,0.5);
+  background: rgba(151, 196, 89, 0.18);
+  border: 0.5px solid rgba(151, 196, 89, 0.5);
 }
+
 .header-status.connected .status-dot {
   background: #97C459;
-  box-shadow: 0 0 6px rgba(151,196,89,0.8);
+  box-shadow: 0 0 6px rgba(151, 196, 89, 0.8);
 }
+
 .header-status.connected .status-text {
   color: #c0dd97;
 }
+
 .app-header.light .header-status.connected .status-text {
   color: #2e7d32;
 }
 
 .header-status.disconnected {
-  background: rgba(226,75,74,0.18);
-  border: 0.5px solid rgba(226,75,74,0.5);
+  background: rgba(226, 75, 74, 0.18);
+  border: 0.5px solid rgba(226, 75, 74, 0.5);
 }
+
 .header-status.disconnected .status-dot {
   background: #E24B4A;
-  box-shadow: 0 0 6px rgba(226,75,74,0.8);
+  box-shadow: 0 0 6px rgba(226, 75, 74, 0.8);
 }
+
 .header-status.disconnected .status-text {
   color: #F09595;
 }
+
 .app-header.light .header-status.disconnected .status-text {
   color: #c62828;
 }
@@ -125,85 +137,120 @@
   width: 1px;
   height: 30px;
   margin: 0 4px;
+  flex-shrink: 0;
 }
 
 .app-header.dark .header-divider {
-  background: rgba(255,255,255,0.12);
+  background: rgba(255, 255, 255, 0.12);
 }
+
 .app-header.light .header-divider {
-  background: rgba(0,0,0,0.12);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 /* ── Right side ───────────────────────────────────────────────────────── */
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12px; /* Just general spacing, flex gap */
-  flex-wrap: wrap;
+  gap: clamp(4px, 1vw, 12px);
+  /* Just general spacing, flex gap */
+  flex-wrap: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────── */
 .header-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 22px;
+  gap: clamp(4px, 0.5vw, 10px);
+  padding: clamp(4px, 0.6vw, 8px) clamp(6px, 1vw, 16px);
+  font-size: clamp(11px, 1.2vw, 16px);
   border-radius: 8px;
-  font-size: 17px; /* Default for standardizing text if needed */
+  /* Default for standardizing text if needed */
   cursor: pointer;
   white-space: nowrap;
   box-sizing: border-box;
   transition: all 0.2s;
-  display: flex;
   justify-content: center;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .btn-label {
-  /* text is already sentence case in jsx */
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 /* TIER 1 - Primary */
 .tier1-btn {
-  background: linear-gradient(135deg, #1a3a8f, #2b5cd9);
-  border: none;
+  background: rgba(43, 92, 217, 0.15);
+  border: 1px solid rgba(43, 92, 217, 0.3);
   color: #e6f1fb;
+  font-weight: 700;
+  opacity: 1;
 }
+
 .tier1-btn:hover {
-  filter: brightness(1.1);
+  background: rgba(43, 92, 217, 0.25);
+  border-color: rgba(43, 92, 217, 0.5);
+}
+
+.tier1-btn.active {
+  background: linear-gradient(135deg, #2b5cd9, #4a7ff9);
+  box-shadow: 0 0 12px rgba(43, 92, 217, 0.5);
+  border: 1px solid #73a5ff;
+  color: #ffffff;
+}
+
+.app-header.light .tier1-btn {
+  color: #1565c0;
+}
+
+.app-header.light .tier1-btn.active {
+  color: #ffffff;
 }
 
 /* TIER 2 - Secondary Toggles */
 .monitor-toggle {
-  background: rgba(56,140,240,0.12);
-  border: 0.5px solid rgba(56,140,240,0.35);
+  background: rgba(56, 140, 240, 0.12);
+  border: 0.5px solid rgba(56, 140, 240, 0.35);
   color: #85B7EB;
 }
+
 .monitor-toggle:hover {
-  background: rgba(56,140,240,0.2);
+  background: rgba(56, 140, 240, 0.2);
 }
+
 .app-header.light .monitor-toggle {
   color: #1565c0;
 }
+
 .app-header.light .monitor-toggle:hover {
-  background: rgba(56,140,240,0.25);
+  background: rgba(56, 140, 240, 0.25);
 }
 
 .theme-toggle {
   background: none;
 }
+
 .app-header.dark .theme-toggle {
-  border: 0.5px solid rgba(255,255,255,0.14);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
   color: #B4B2A9;
 }
+
 .app-header.dark .theme-toggle:hover {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
 }
+
 .app-header.light .theme-toggle {
-  border: 0.5px solid rgba(0,0,0,0.14);
+  border: 0.5px solid rgba(0, 0, 0, 0.14);
   color: #555555;
 }
+
 .app-header.light .theme-toggle:hover {
-  background: rgba(0,0,0,0.05);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 /* TIER 3 - Low Frequency */
@@ -211,45 +258,41 @@
   background: none;
   border: none;
 }
+
 .app-header.dark .tier3-btn {
   color: #888780;
 }
+
 .app-header.dark .tier3-btn:hover {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
 }
+
 .app-header.light .tier3-btn {
   color: #555555;
 }
+
 .app-header.light .tier3-btn:hover {
-  background: rgba(0,0,0,0.05);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 /* ── Spin animation for update button ─────────────────────────────────── */
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .spin {
   animation: spin 0.8s linear infinite;
 }
 
-/* ── Responsive rules ─────────────────────────────────────────────────── */
-@media (max-width: 980px) {
-  .btn-label {
-    display: none;
-  }
-  .header-btn {
-    padding: 7px 8px;
-  }
-  .header-title {
-    display: none;
-  }
-  .status-text {
-    display: none;
-  }
-  .header-status {
-    padding: 7px 8px;
-  }
+/* Responsive labels logic */
+.app-header.compact .btn-label,
+.app-header.compact .header-title,
+.app-header.compact .status-text {
+  display: none;
 }
-

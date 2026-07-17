@@ -81,14 +81,17 @@ function checkAutoUpdate() {
   })
 
   autoUpdater.on('error', (err) => {
+    if (err.message.includes('404')) return;
     win?.webContents.send('update-status', { status: 'error', message: err.message })
   })
 
   autoUpdater.on('download-progress', (progressObj) => {
+    const percent = Math.floor(progressObj.percent)
     win?.webContents.send('update-status', {
       status: 'downloading',
-      percent: Math.floor(progressObj.percent),
-      message: `Downloading update... ${Math.floor(progressObj.percent)}%`
+      percent: percent,
+      progress: percent,
+      message: `Downloading update... ${percent}%`
     })
   })
 

@@ -1793,7 +1793,7 @@ function KeyboardController({ ros, isDark }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CustomDropdown  — defined OUTSIDE SimSelector so it never remounts
 // ─────────────────────────────────────────────────────────────────────────────
-function CustomDropdown({ label, value, onChange, options, isDark }) {
+function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -1945,6 +1945,7 @@ function CustomDropdown({ label, value, onChange, options, isDark }) {
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "space-between",
                       gap: "8px",
                       transition: "background 0.1s",
                     }}
@@ -1963,23 +1964,68 @@ function CustomDropdown({ label, value, onChange, options, isDark }) {
                           : "transparent";
                     }}
                   >
-                    <div style={{ width: "16px", flexShrink: 0 }}>
-                      {isSelected && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden", flex: 1 }}>
+                      <div style={{ width: "16px", flexShrink: 0 }}>
+                        {isSelected && (
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke={accent}
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </div>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {opt.label}
+                      </span>
+                    </div>
+                    {onDelete && (
+                      <button
+                        title={`Delete ${opt.label}`}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onDelete(opt);
+                        }}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: isDark ? "#ef4444" : "#dc2626",
+                          cursor: "pointer",
+                          padding: "2px 4px",
+                          borderRadius: "4px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          opacity: 0.7,
+                          transition: "opacity 0.2s",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
+                      >
                         <svg
                           width="14"
                           height="14"
                           viewBox="0 0 24 24"
                           fill="none"
-                          stroke={accent}
-                          strokeWidth="3"
+                          stroke="currentColor"
+                          strokeWidth="2"
                           strokeLinecap="round"
                           strokeLinejoin="round"
                         >
-                          <polyline points="20 6 9 17 4 12" />
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          <line x1="10" y1="11" x2="10" y2="17" />
+                          <line x1="14" y1="11" x2="14" y2="17" />
                         </svg>
-                      )}
-                    </div>
-                    {opt.label}
+                      </button>
+                    )}
                   </div>
                 );
               })
@@ -2018,6 +2064,47 @@ const SimSelector = forwardRef(function SimSelector(
   const [switchMsg, setSwitchMsg] = useState("");
   const statusRef = useRef(null);
   const autoLaunched = useRef(false);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const handleDeleteRobot = (robotOpt) => {
+    setDeleteTarget({ type: 'robot', opt: robotOpt });
+  };
+
+  const handleDeleteWorld = (worldOpt) => {
+    setDeleteTarget({ type: 'world', opt: worldOpt });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { type, opt } = deleteTarget;
+    setDeleteTarget(null);
+    try {
+      if (type === 'robot') {
+        const res = await fetch(`http://${HOST}:3001/api/robots/${opt.value}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error("Failed to delete robot");
+        const updatedList = robotList.filter((r) => r.name !== opt.value);
+        setRobotList(updatedList);
+        if (selRobot === opt.value) {
+          setSelRobot(updatedList[0]?.name ?? "");
+        }
+      } else {
+        const res = await fetch(`http://${HOST}:3001/api/worlds/${opt.value}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error("Failed to delete world");
+        const updatedList = worldList.filter((w) => w.name !== opt.value);
+        setWorldList(updatedList);
+        if (selWorld === opt.value) {
+          setSelWorld(updatedList[0]?.name ?? "");
+        }
+      }
+    } catch (err) {
+      alert(`Error deleting ${type}: ${err.message}`);
+    }
+  };
 
   const doSwitch = useCallback(
     async (robot, world) => {
@@ -2206,6 +2293,7 @@ const SimSelector = forwardRef(function SimSelector(
           label="Robot"
           value={selRobot}
           onChange={setSelRobot}
+          onDelete={handleDeleteRobot}
           options={robotList.map((r) => ({
             value: r.name,
             label: r.robotName || r.name.replace(/\.urdf$/i, ""),
@@ -2216,6 +2304,7 @@ const SimSelector = forwardRef(function SimSelector(
           label="World"
           value={selWorld}
           onChange={setSelWorld}
+          onDelete={handleDeleteWorld}
           options={worldList.map((w) => ({
             value: w.name,
             label: w.mapName || w.name.replace(/\.json$/i, ""),
@@ -2334,6 +2423,79 @@ const SimSelector = forwardRef(function SimSelector(
         @keyframes simPulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
         @keyframes simSpin  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
       `}</style>
+
+      {/* ── Custom Delete Confirmation Modal ── */}
+      {deleteTarget && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            style={{
+              background: isDark ? "#1e1e2d" : "#fff",
+              padding: "32px",
+              borderRadius: "16px",
+              width: "320px",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+              border: `1px solid ${border}`,
+              color: isDark ? "#fff" : "#1a1a2a",
+              textAlign: "center",
+            }}
+          >
+            <h3 style={{ margin: "0 0 16px 0", fontSize: "22px", fontWeight: 700 }}>
+              Delete {deleteTarget.type === 'robot' ? 'Robot' : 'World'}?
+            </h3>
+            <p style={{ margin: "0 0 24px 0", fontSize: "18px", color: isDark ? "#ccc" : "#444" }}>
+              <strong>{deleteTarget.opt.label}</strong>
+            </p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: "8px",
+                  border: `1px solid ${border}`,
+                  background: "transparent",
+                  color: isDark ? "#fff" : "#333",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: "16px",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                style={{
+                  flex: 1,
+                  padding: "12px 16px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "#dc2626",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: "16px",
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
@@ -2586,33 +2748,7 @@ export default function DashboardView() {
   const odomRef = useRef(null);
   const fetchRef = useRef(null);
 
-  useEffect(() => {
-    let retryTimer = null;
-    const connect = () => {
-      const ros = new ROSLIB.Ros({ url: ROSBRIDGE_URL });
-      rosRef.current = ros;
 
-      ros.on("connection", () => {
-        setStatus("Connected to ROS 2");
-        setRosObj(ros);
-      });
-      ros.on("error", () => {
-        setStatus("Connection error");
-        setRosObj(null);
-        retryTimer = setTimeout(connect, 3000);
-      });
-      ros.on("close", () => {
-        setStatus("Disconnected");
-        setRosObj(null);
-        retryTimer = setTimeout(connect, 3000);
-      });
-    };
-    connect();
-    return () => {
-      clearTimeout(retryTimer);
-      rosRef.current?.close();
-    };
-  }, []);
 
   useEffect(() => {
     if (!rosObj) return;
@@ -3053,7 +3189,7 @@ export default function DashboardView() {
                 : updateInfo.status === "available"
                   ? "Update available! Downloading..."
                   : updateInfo.status === "downloading"
-                    ? `Downloading: ${updateInfo.progress}%`
+                    ? `Downloading: ${updateInfo.percent ?? updateInfo.progress ?? 0}%`
                     : updateInfo.status === "downloaded"
                       ? "Update ready. Restarting..."
                       : updateInfo.status === "error"

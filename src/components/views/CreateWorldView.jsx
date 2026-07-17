@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore';
 import SplitButton from '../common/SplitButton';
+import useIsCompact from '../../hooks/useIsCompact';
 import './CreateWorldView.css';
 
 const HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
@@ -35,6 +36,7 @@ function buildTransformEditor(mapInfo, canvasW, canvasH, zoom, pan) {
 export default function CreateWorldView() {
   const navigate = useNavigate();
   const { isDark } = useAppStore();
+  const compact = useIsCompact(1100);
   
   const [mapName, setMapName] = useState("custom_map");
   const [tool, setTool] = useState("wall"); // "wall", "obstacle", "eraser", "pan"
@@ -49,7 +51,7 @@ export default function CreateWorldView() {
   const fetchMapsList = () => {
     fetch(`http://${HOST}:3001/worlds`)
       .then(r => r.json())
-      .then(data => setAvailableMaps(data.files || []))
+      .then(data => setAvailableMaps(data.worlds || []))
       .catch(console.error);
   };
 
@@ -537,7 +539,7 @@ export default function CreateWorldView() {
       pushHistory(loadedWalls, loadedObstacles);
     } catch (err) {
       console.error(err);
-      alert("Error loading map");
+      alert("Error loading world");
     }
   };
 
@@ -550,7 +552,7 @@ export default function CreateWorldView() {
       alert(`Deleted ${fileName}`);
     } catch (err) {
       console.error(err);
-      alert("Error deleting map");
+      alert("Error deleting world");
     }
   };
 
@@ -565,24 +567,24 @@ export default function CreateWorldView() {
 
   return (
     <div className="view-wrap">
-      <div className="toolbar">
+      <div className={`toolbar ${compact ? 'compact' : ''}`}>
         {/* Navigation */}
-        <button onClick={() => navigate('/')} className="btn btn-back">
+        <button onClick={() => navigate('/')} className="btn btn-back" title="Main Page">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
-          Main Page
+          <span className="btn-label">Main Page</span>
         </button>
 
         <div className="toolbar-divider" />
 
         {/* Undo / Redo */}
-        <button onClick={handleUndo} disabled={historyIndex === 0} className="btn">
+        <button onClick={handleUndo} disabled={historyIndex === 0} className="btn" title="Undo">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
           </svg>
         </button>
-        <button onClick={handleRedo} disabled={historyIndex === history.length - 1} className="btn">
+        <button onClick={handleRedo} disabled={historyIndex === history.length - 1} className="btn" title="Redo">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/>
           </svg>
@@ -591,24 +593,26 @@ export default function CreateWorldView() {
         <div className="toolbar-divider" />
 
         {/* Drawing Tools */}
-        <button onClick={() => setTool("wall")} className={`btn tool-btn ${tool === "wall" ? "active" : ""}`}>
+        <button onClick={() => setTool("wall")} className={`btn tool-btn ${tool === "wall" ? "active" : ""}`} title="Draw Wall">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="7" x2="5" y2="17"/><line x1="19" y1="7" x2="19" y2="17"/>
           </svg>
-          Draw Wall
+          <span className="btn-label">Draw Wall</span>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '4px' }}>
-          <label style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--text-secondary)' }}>Thickness:</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
           <select 
             value={wallThickness} 
             onChange={(e) => setWallThickness(parseFloat(e.target.value))}
-            style={{ background: 'var(--bg-app)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '4px', fontSize: '16px' }}
+            style={{ background: 'var(--bg-app)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '4px', fontSize: '14px', width: '100%', maxWidth: 'clamp(60px, 10vw, 140px)', cursor: 'pointer', WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
           >
             <option value={0.05}>Thin</option>
             <option value={0.12}>Normal</option>
             <option value={0.25}>Thick</option>
           </select>
+          <svg width="24" height="24" viewBox="0 0 24 24" style={{ marginLeft: '2px' }}>
+            <line x1="2" y1="12" x2="22" y2="12" stroke="var(--text-primary)" strokeWidth={wallThickness === 0.05 ? 2 : wallThickness === 0.12 ? 4 : 8} strokeLinecap="round" />
+          </svg>
         </div>
 
         <SplitButton
@@ -636,24 +640,24 @@ export default function CreateWorldView() {
           onOptionSelect={(val) => { setEraserMode(val); setTool("eraser"); }}
         />
 
-        <button onClick={() => pushHistory([], [])} className="btn btn-danger" style={{ marginLeft: '8px' }}>
+        <button onClick={() => pushHistory([], [])} className="btn btn-danger" style={{ marginLeft: '8px' }} title="Clear All">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
           </svg>
-          Clear All
+          <span className="btn-label">Clear All</span>
         </button>
 
         <div style={{ flex: 1 }} />
 
-        {/* Map Name Input & Load Map */}
+        {/* World Name Input & Load World */}
         <div className="toolbar-input-wrap">
-          <span style={{ fontSize: '16px', fontWeight: 'bold', marginLeft: '8px' }}>Map:</span>
+          <span className="btn-label" style={{ fontSize: '16px', fontWeight: 'bold', marginLeft: '8px' }}>World:</span>
           <input
             value={mapName}
             onChange={(e) => setMapName(e.target.value)}
             className="toolbar-input"
-            placeholder="custom_map"
-            style={{ width: '120px', fontSize: '16px' }}
+            placeholder="custom_world"
+            style={{ width: '100%', maxWidth: 'clamp(60px, 10vw, 140px)', fontSize: '16px', WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
           />
           
           <select 
@@ -667,7 +671,7 @@ export default function CreateWorldView() {
                  e.target.value = "";
                }
              }}
-             style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: 'none', outline: 'none', cursor: 'pointer', maxWidth: '100px', fontSize: '16px' }}
+             style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: 'none', outline: 'none', cursor: 'pointer', width: '100%', maxWidth: 'clamp(60px, 10vw, 140px)', fontSize: '16px', WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
              defaultValue=""
           >
             <option value="" disabled>Load...</option>
@@ -683,17 +687,17 @@ export default function CreateWorldView() {
         <div className="toolbar-divider" />
 
         {/* Actions */}
-        <button onClick={() => saveMap(false)} className="btn btn-save" style={{ background: 'var(--bg-app)', border: '1px solid var(--accent-green)', color: 'var(--accent-green)', boxShadow: 'none' }}>
+        <button onClick={() => saveMap(false)} className="btn btn-save" style={{ background: 'var(--bg-app)', border: '1px solid var(--accent-green)', color: 'var(--accent-green)', boxShadow: 'none' }} title="Save World">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
           </svg>
-          Save
+          <span className="btn-label">Save World</span>
         </button>
-        <button onClick={() => saveMap(true)} className="btn btn-save">
+        <button onClick={() => saveMap(true)} className="btn btn-save" title="Save & Launch">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="5 3 19 12 5 21 5 3"/>
           </svg>
-          Save & Launch
+          <span className="btn-label">Save & Launch</span>
         </button>
       </div>
       

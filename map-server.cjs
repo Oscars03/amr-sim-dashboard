@@ -93,61 +93,77 @@ function getShareDir() {
 }
 
 function getWorldFiles(shareDir) {
-  const worldsDir = path.join(shareDir, 'worlds');
-  if (!fs.existsSync(worldsDir)) return [];
+  const dirs = [path.join(shareDir, 'worlds')];
+  const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
+  if (fs.existsSync(srcWorldsDir)) dirs.push(srcWorldsDir);
+  const fallbackWorldsDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'worlds');
+  if (fs.existsSync(fallbackWorldsDir)) dirs.push(fallbackWorldsDir);
 
-  return fs.readdirSync(worldsDir)
-    .filter(f => f.endsWith('.json'))
-    .map(f => {
+  const seen = new Set();
+  const results = [];
+
+  for (const worldsDir of dirs) {
+    if (!fs.existsSync(worldsDir)) continue;
+    fs.readdirSync(worldsDir).filter(f => f.endsWith('.json')).forEach(f => {
+      if (seen.has(f)) return;
+      seen.add(f);
       const fullPath = path.join(worldsDir, f);
-
       let stat;
-      try {
-        stat = fs.statSync(fullPath);
-      } catch {
-        return null;
-      }
-
+      try { stat = fs.statSync(fullPath); } catch (e) { return; }
+      
       let mapName = f;
       try {
         const data = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
         mapName = data.name ?? path.parse(f).name;
-      } catch { /* keep filename */ }
+      } catch (e) { /* keep filename */ }
 
-      return {
+      results.push({
         name: f,
         mapName,
         fullPath,
         sizeKB: (stat.size / 1024).toFixed(2),
         modified: stat.mtime.toISOString(),
         url: `http://localhost:${PORT}/map?file=${f}`,
-      };
-    })
-    .filter(Boolean);
+      });
+    });
+  }
+  return results;
 }
 
 function getRobotFiles(shareDir) {
-  const urdfDir = path.join(shareDir, 'urdf');
-  if (!fs.existsSync(urdfDir)) return [];
-  return fs.readdirSync(urdfDir)
-    .filter(f => f.endsWith('.urdf') || f.endsWith('.xacro'))
-    .map(f => {
+  const dirs = [path.join(shareDir, 'urdf')];
+  const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
+  if (fs.existsSync(srcUrdfDir)) dirs.push(srcUrdfDir);
+  const fallbackUrdfDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'urdf');
+  if (fs.existsSync(fallbackUrdfDir)) dirs.push(fallbackUrdfDir);
+
+  const seen = new Set();
+  const results = [];
+
+  for (const urdfDir of dirs) {
+    if (!fs.existsSync(urdfDir)) continue;
+    fs.readdirSync(urdfDir).filter(f => f.endsWith('.urdf') || f.endsWith('.xacro')).forEach(f => {
+      if (seen.has(f)) return;
+      seen.add(f);
       const fullPath = path.join(urdfDir, f);
-      const stat = fs.statSync(fullPath);
+      let stat;
+      try { stat = fs.statSync(fullPath); } catch (e) { return; }
       let robotName = path.parse(f).name;
       try {
         const xml = fs.readFileSync(fullPath, 'utf8');
         const match = xml.match(/robot\s+name="([^"]+)"/);
         if (match) robotName = match[1];
-      } catch { /* keep filename */ }
-      return {
+      } catch (e) { /* keep filename */ }
+      results.push({
         name: f,
         robotName,
         fullPath,
         sizeKB: (stat.size / 1024).toFixed(2),
         modified: stat.mtime.toISOString(),
-      };
+      });
     });
+  }
+  return results;
 }
 
 function forceKillOrphans() {
@@ -210,10 +226,8 @@ function killRosProcess() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Launch ROS
 // ─────────────────────────────────────────────────────────────────────────────
-function launchRos(shareDir, robotFile, worldFile) {
-  const urdfPath = path.join(shareDir, 'urdf', robotFile);
-  const worldPath = path.join(shareDir, 'worlds', worldFile);
-
+function launchRos(shareDir, urdfPath, worldPath) {
+  
   console.log('\n' + '═'.repeat(55));
   console.log('🚀 launchRos() called [MULTI-DISTRO READY]');
   console.log('═'.repeat(55));
@@ -327,10 +341,11 @@ app.get('/map', (req, res) => {
   if (!fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..'))
     return res.status(400).json({ error: 'Invalid file name' });
 
-  const mapPath = path.join(shareDir, 'worlds', fileName);
-  if (!fs.existsSync(mapPath))
-    return res.status(404).json({ error: `${fileName} not found`, tried: mapPath });
-
+  const worldFiles = getWorldFiles(shareDir);
+  const fileObj = worldFiles.find(w => w.name === fileName);
+  if (!fileObj)
+    return res.status(404).json({ error: `${fileName} not found` });
+  const mapPath = fileObj.fullPath;
   try {
     const data = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
     const mapName = data.name ?? path.parse(mapPath).name;
@@ -378,12 +393,10 @@ app.get('/urdf', (req, res) => {
     fileName.includes('/') || fileName.includes('..')
   ) return res.status(400).json({ error: 'Invalid file name' });
 
-  const urdfPath = path.join(shareDir, 'urdf', fileName);
-  if (!fs.existsSync(urdfPath))
-    return res.status(404).json({
-      error: `${fileName} not found`,
-      available: getRobotFiles(getShareDir() ?? '').map(f => f.name),
-    });
+  const robotFiles = getRobotFiles(shareDir);
+  const fileObj = robotFiles.find(r => r.name === fileName);
+  if (!fileObj) return res.status(404).json({ error: `${fileName} not found` });
+  const urdfPath = fileObj.fullPath;
 
   res.setHeader('Content-Type', 'application/xml');
   res.send(fs.readFileSync(urdfPath, 'utf8'));
@@ -517,8 +530,33 @@ app.post('/api/robots', (req, res) => {
 </robot>`;
 
   try {
-    fs.writeFileSync(urdfPath, urdfContent);
-    console.log(`Created new robot URDF: ${urdfPath}`);
+    let savedAnywhere = false;
+    try {
+      fs.writeFileSync(urdfPath, urdfContent);
+      console.log(`Created new robot URDF: ${urdfPath}`);
+      savedAnywhere = true;
+    } catch(e) {
+      console.warn(`[create_robot] Could not save to shareDir: ${e.message}`);
+    }
+
+    const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
+    if (fs.existsSync(srcUrdfDir)) {
+      const srcUrdfPath = path.join(srcUrdfDir, fileName);
+      fs.writeFileSync(srcUrdfPath, urdfContent);
+      console.log(`[create_robot] Saved to source: ${srcUrdfPath}`);
+      savedAnywhere = true;
+    } else {
+      const fallbackUrdfDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'urdf');
+      if (!fs.existsSync(fallbackUrdfDir)) fs.mkdirSync(fallbackUrdfDir, { recursive: true });
+      const fallbackUrdfPath = path.join(fallbackUrdfDir, fileName);
+      fs.writeFileSync(fallbackUrdfPath, urdfContent);
+      console.log(`[create_robot] Saved to fallback: ${fallbackUrdfPath}`);
+      savedAnywhere = true;
+    }
+    
+    if (!savedAnywhere) {
+      return res.status(500).json({ error: 'Filesystem is read-only and source workspace not found.' });
+    }
     res.json({ success: true, file: fileName, message: 'Robot created successfully' });
   } catch (err) {
     console.error(err);
@@ -623,20 +661,12 @@ app.post('/switch', async (req, res) => {
   if (!shareDir)
     return res.status(500).json({ error: 'Cannot resolve ROS package' });
 
-  const urdfPath = path.join(shareDir, 'urdf', robot);
-  const worldPath = path.join(shareDir, 'worlds', world);
-
-  if (!fs.existsSync(urdfPath))
-    return res.status(404).json({
-      error: `Robot file not found: ${robot}`,
-      available: getRobotFiles(shareDir).map(f => f.name),
-    });
-
-  if (!fs.existsSync(worldPath))
-    return res.status(404).json({
-      error: `World file not found: ${world}`,
-      available: getWorldFiles(shareDir).map(f => f.name),
-    });
+  const rObj = getRobotFiles(shareDir).find(r => r.name === robot);
+  const wObj = getWorldFiles(shareDir).find(w => w.name === world);
+  if (!rObj) return res.status(404).json({ error: `Robot file not found: ${robot}` });
+  if (!wObj) return res.status(404).json({ error: `World file not found: ${world}` });
+  const urdfPath = rObj.fullPath;
+  const worldPath = wObj.fullPath;
 
   if (
     currentState.robot === robot &&
@@ -664,7 +694,7 @@ app.post('/switch', async (req, res) => {
   try {
     await killRosProcess();
     await new Promise(r => setTimeout(r, 1500));
-    launchRos(shareDir, robot, world);
+    launchRos(shareDir, urdfPath, worldPath);
   } catch (err) {
     console.error('Switch failed:', err.message);
     currentState.status = 'error';
@@ -690,20 +720,36 @@ app.post('/save_map', (req, res) => {
   const savePath = path.join(shareDir, 'worlds', safeName);
 
   try {
-    const dir = path.dirname(savePath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(savePath, JSON.stringify(data, null, 2), 'utf8');
-    console.log(`[save_map] Saved: ${savePath}`);
+    let savedAnywhere = false;
+    try {
+      const dir = path.dirname(savePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(savePath, JSON.stringify(data, null, 2), 'utf8');
+      console.log(`[save_map] Saved to shareDir: ${savePath}`);
+      savedAnywhere = true;
+    } catch(e) {
+      console.warn(`[save_map] Could not save to shareDir: ${e.message}`);
+    }
 
-    // Also save to the source workspace so it persists across rebuilds
     const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
     if (fs.existsSync(srcWorldsDir)) {
       const srcSavePath = path.join(srcWorldsDir, safeName);
       fs.writeFileSync(srcSavePath, JSON.stringify(data, null, 2), 'utf8');
       console.log(`[save_map] Saved to source: ${srcSavePath}`);
+      savedAnywhere = true;
+    } else {
+      const fallbackWorldsDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'worlds');
+      if (!fs.existsSync(fallbackWorldsDir)) fs.mkdirSync(fallbackWorldsDir, { recursive: true });
+      const fallbackSavePath = path.join(fallbackWorldsDir, safeName);
+      fs.writeFileSync(fallbackSavePath, JSON.stringify(data, null, 2), 'utf8');
+      console.log(`[save_map] Saved to fallback: ${fallbackSavePath}`);
+      savedAnywhere = true;
     }
 
-    res.json({ ok: true, message: `Saved to ${savePath}` });
+    if (!savedAnywhere) {
+       throw new Error("Filesystem is read-only and source workspace not found.");
+    }
+    res.json({ ok: true, message: `Saved successfully` });
   } catch (err) {
     console.error(`[save_map] ${err.message}`);
     res.status(500).json({ ok: false, message: err.message });
