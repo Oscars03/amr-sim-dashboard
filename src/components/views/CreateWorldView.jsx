@@ -46,19 +46,6 @@ export default function CreateWorldView() {
   const [history, setHistory] = useState([{ walls: [], obstacles: [] }]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
-  const [availableMaps, setAvailableMaps] = useState([]);
-
-  const fetchMapsList = () => {
-    fetch(`http://${HOST}:3001/worlds`)
-      .then(r => r.json())
-      .then(data => setAvailableMaps(data.worlds || []))
-      .catch(console.error);
-  };
-
-  useEffect(() => {
-    fetchMapsList();
-  }, []);
-
   const currentMapState = history[historyIndex];
   const walls = currentMapState.walls;
   const obstacles = currentMapState.obstacles;
@@ -526,35 +513,6 @@ export default function CreateWorldView() {
     }
   };
 
-  const loadMap = async (fileName) => {
-    try {
-      const res = await fetch(`http://${HOST}:3001/api/worlds/${fileName}`);
-      if (!res.ok) throw new Error("Failed to load");
-      const data = await res.json();
-      
-      const loadedWalls = (data.walls || []).map(w => ({ start: w[0], end: w[1], thickness: 0.12 }));
-      const loadedObstacles = data.obstacles || [];
-      
-      setMapName(data.name || fileName.replace('.json', ''));
-      pushHistory(loadedWalls, loadedObstacles);
-    } catch (err) {
-      console.error(err);
-      alert("Error loading world");
-    }
-  };
-
-  const deleteMap = async (fileName) => {
-    if (!window.confirm(`Delete ${fileName}?`)) return;
-    try {
-      const res = await fetch(`http://${HOST}:3001/api/worlds/${fileName}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error("Failed to delete");
-      fetchMapsList();
-      alert(`Deleted ${fileName}`);
-    } catch (err) {
-      console.error(err);
-      alert("Error deleting world");
-    }
-  };
 
   // Determine cursor
   let cursor = "default";
@@ -579,14 +537,16 @@ export default function CreateWorldView() {
         <div className="toolbar-divider" />
 
         {/* Undo / Redo */}
-        <button onClick={handleUndo} disabled={historyIndex === 0} className="btn" title="Undo">
+        <button onClick={handleUndo} disabled={historyIndex === 0} className="btn btn-icon-only" title="Undo">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+            <path d="M 8 4 L 4 8 L 8 12"/>
+            <path d="M 4 8 C 12 8, 16 11, 16 17"/>
           </svg>
         </button>
-        <button onClick={handleRedo} disabled={historyIndex === history.length - 1} className="btn" title="Redo">
+        <button onClick={handleRedo} disabled={historyIndex === history.length - 1} className="btn btn-icon-only" title="Redo">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/>
+            <path d="M 16 4 L 20 8 L 16 12"/>
+            <path d="M 20 8 C 12 8, 8 11, 8 17"/>
           </svg>
         </button>
 
@@ -600,17 +560,17 @@ export default function CreateWorldView() {
           <span className="btn-label">Draw Wall</span>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <select 
             value={wallThickness} 
             onChange={(e) => setWallThickness(parseFloat(e.target.value))}
-            style={{ background: 'var(--bg-app)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '4px', fontSize: '14px', width: '100%', maxWidth: 'clamp(60px, 10vw, 140px)', cursor: 'pointer', WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
+            className="toolbar-select"
           >
             <option value={0.05}>Thin</option>
             <option value={0.12}>Normal</option>
             <option value={0.25}>Thick</option>
           </select>
-          <svg width="24" height="24" viewBox="0 0 24 24" style={{ marginLeft: '2px' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" style={{ marginLeft: '2px', flexShrink: 0 }}>
             <line x1="2" y1="12" x2="22" y2="12" stroke="var(--text-primary)" strokeWidth={wallThickness === 0.05 ? 2 : wallThickness === 0.12 ? 4 : 8} strokeLinecap="round" />
           </svg>
         </div>
@@ -640,7 +600,7 @@ export default function CreateWorldView() {
           onOptionSelect={(val) => { setEraserMode(val); setTool("eraser"); }}
         />
 
-        <button onClick={() => pushHistory([], [])} className="btn btn-danger" style={{ marginLeft: '8px' }} title="Clear All">
+        <button onClick={() => pushHistory([], [])} className="btn btn-danger" title="Clear All">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
           </svg>
@@ -649,45 +609,22 @@ export default function CreateWorldView() {
 
         <div style={{ flex: 1 }} />
 
-        {/* World Name Input & Load World */}
+        {/* World Name Input */}
         <div className="toolbar-input-wrap">
-          <span className="btn-label" style={{ fontSize: '16px', fontWeight: 'bold', marginLeft: '8px' }}>World:</span>
+          <span className="btn-label" style={{ fontSize: '15px', fontWeight: 'bold' }}>World:</span>
           <input
             value={mapName}
             onChange={(e) => setMapName(e.target.value)}
             className="toolbar-input"
             placeholder="custom_world"
-            style={{ width: '100%', maxWidth: 'clamp(60px, 10vw, 140px)', fontSize: '16px', WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
+            style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
           />
-          
-          <select 
-             onChange={(e) => {
-               if (e.target.value) {
-                 if (e.target.value.startsWith("delete:")) {
-                   deleteMap(e.target.value.replace("delete:", ""));
-                 } else {
-                   loadMap(e.target.value);
-                 }
-                 e.target.value = "";
-               }
-             }}
-             style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: 'none', outline: 'none', cursor: 'pointer', width: '100%', maxWidth: 'clamp(60px, 10vw, 140px)', fontSize: '16px', WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
-             defaultValue=""
-          >
-            <option value="" disabled>Load...</option>
-            {availableMaps.map(m => (
-              <optgroup label={m.name} key={m.name}>
-                 <option value={m.name}>Load {m.name}</option>
-                 <option value={`delete:${m.name}`}>Delete {m.name}</option>
-              </optgroup>
-            ))}
-          </select>
         </div>
 
         <div className="toolbar-divider" />
 
         {/* Actions */}
-        <button onClick={() => saveMap(false)} className="btn btn-save" style={{ background: 'var(--bg-app)', border: '1px solid var(--accent-green)', color: 'var(--accent-green)', boxShadow: 'none' }} title="Save World">
+        <button onClick={() => saveMap(false)} className="btn btn-save btn-save-outline" title="Save World">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
           </svg>

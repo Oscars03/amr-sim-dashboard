@@ -3,7 +3,9 @@
   align-items: stretch;
   background: var(--bg-app);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border-radius: 8px;
+  height: 40px;
+  box-sizing: border-box;
   position: relative;
   transition: all 0.2s ease;
 }
@@ -15,17 +17,17 @@
 .split-btn-main {
   display: flex;
   align-items: center;
-  gap: clamp(4px, 0.5vw, 8px);
+  gap: 6px;
   background: transparent;
   color: var(--text-primary);
   border: none;
-  padding: clamp(4px, 0.6vw, 6px) clamp(6px, 1vw, 12px);
-  font-size: clamp(11px, 1.2vw, 16px);
+  padding: 0 12px;
+  font-size: 14px;
   flex: 0 1 auto;
   min-width: 0;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  border-radius: 6px 0 0 6px;
+  border-radius: 7px 0 0 7px;
   transition: background 0.15s ease;
 }
 
@@ -56,11 +58,11 @@
   background: transparent;
   color: var(--text-primary);
   border: none;
-  padding: 0 8px;
+  padding: 0 10px;
   font-size: 14px;
-  font-weight: bold;
+  font-weight: 600;
   cursor: pointer;
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 7px 7px 0;
   transition: background 0.15s ease;
 }
 
