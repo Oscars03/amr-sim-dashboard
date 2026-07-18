@@ -8,6 +8,7 @@ import React, {
   useImperativeHandle,
 } from "react";
 import * as ROSLIB from "roslib";
+import UpdateProgressModal from '../ui/UpdateProgressModal';
 
 const HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
 const MAP_SERVER_URL = `http://${HOST}:3001/map`;
@@ -1251,38 +1252,50 @@ function KeyboardController({ ros, isDark }) {
   const [speed, setSpeed] = useState(0.5);
   const [turnSpeed, setTurnSpeed] = useState(1.0);
   const [webControl, setWebControl] = useState(true);
+  const [isHolonomic, setIsHolonomic] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!webControl) return;
 
-      const k = e.key.toLowerCase();
-      if (k === "k") {
+      if (e.key === "Shift") {
+        setIsHolonomic(true);
+        return;
+      }
+
+      const k = e.key;
+      const lower = k.toLowerCase();
+      
+      if (lower === "k") {
         e.preventDefault();
         setKeys({});
-      } else if (["i", ",", "j", "l"].includes(k)) {
+      } else if (["u","i","o","j","l","m",",",".", "U","I","O","J","L","M","<",">"].includes(k)) {
         e.preventDefault();
         setKeys({ [k]: true });
-      } else if (k === "w") {
+      } else if (lower === "w") {
         setSpeed((s) => Math.min(2.0, s * 1.1));
-      } else if (k === "x") {
+      } else if (lower === "x") {
         setSpeed((s) => Math.max(0.1, s * 0.9));
-      } else if (k === "e") {
+      } else if (lower === "e") {
         setTurnSpeed((t) => Math.min(3.0, t * 1.1));
-      } else if (k === "c") {
+      } else if (lower === "c") {
         setTurnSpeed((t) => Math.max(0.1, t * 0.9));
-      } else if (k === "q") {
+      } else if (lower === "q") {
         setSpeed((s) => Math.min(2.0, s * 1.1));
         setTurnSpeed((t) => Math.min(3.0, t * 1.1));
-      } else if (k === "z") {
+      } else if (lower === "z") {
         setSpeed((s) => Math.max(0.1, s * 0.9));
         setTurnSpeed((t) => Math.max(0.1, t * 0.9));
       }
     };
 
     const handleKeyUp = (e) => {
-      const k = e.key.toLowerCase();
-      if (["i", ",", "j", "l"].includes(k)) {
+      if (e.key === "Shift") {
+        setIsHolonomic(false);
+      }
+
+      const k = e.key;
+      if (["u","i","o","j","l","m",",",".", "U","I","O","J","L","M","<",">"].includes(k)) {
         setKeys((prev) => {
           const next = { ...prev };
           delete next[k];
@@ -1334,21 +1347,34 @@ function KeyboardController({ ros, isDark }) {
       if (!cmdPubRef.current) return;
       if (!webControl) return;
 
-      const fwd = keys["i"];
-      const back = keys[","];
-      const left = keys["j"];
-      const right = keys["l"];
+      let lx = 0, ly = 0, az = 0;
+      let moving = false;
 
-      const isMoving = fwd || back || left || right;
+      // Non-Holonomic
+      if (keys["u"]) { lx = speed; az = turnSpeed; moving = true; }
+      if (keys["i"]) { lx = speed; az = 0; moving = true; }
+      if (keys["o"]) { lx = speed; az = -turnSpeed; moving = true; }
+      if (keys["j"]) { lx = 0; az = turnSpeed; moving = true; }
+      if (keys["l"]) { lx = 0; az = -turnSpeed; moving = true; }
+      if (keys["m"]) { lx = -speed; az = -turnSpeed; moving = true; }
+      if (keys[","]) { lx = -speed; az = 0; moving = true; }
+      if (keys["."]) { lx = -speed; az = turnSpeed; moving = true; }
 
-      const linear = fwd ? speed : back ? -speed : 0;
-      const angular = left ? turnSpeed : right ? -turnSpeed : 0;
+      // Holonomic
+      if (keys["U"]) { lx = speed; ly = speed; moving = true; }
+      if (keys["I"]) { lx = speed; ly = 0; moving = true; }
+      if (keys["O"]) { lx = speed; ly = -speed; moving = true; }
+      if (keys["J"]) { lx = 0; ly = speed; moving = true; }
+      if (keys["L"]) { lx = 0; ly = -speed; moving = true; }
+      if (keys["M"]) { lx = -speed; ly = speed; moving = true; }
+      if (keys["<"]) { lx = -speed; ly = 0; moving = true; }
+      if (keys[">"]) { lx = -speed; ly = -speed; moving = true; }
 
-      if (isMoving) {
+      if (moving) {
         zeroCount = 0;
         cmdPubRef.current.publish({
-          linear: { x: linear, y: 0.0, z: 0.0 },
-          angular: { x: 0.0, y: 0.0, z: angular },
+          linear: { x: lx, y: ly, z: 0.0 },
+          angular: { x: 0.0, y: 0.0, z: az },
         });
       } else {
         if (zeroCount < 10) {
@@ -1423,8 +1449,8 @@ function KeyboardController({ ros, isDark }) {
     },
     dpad: {
       display: "grid",
-      gridTemplateColumns: "repeat(3, 48px)",
-      gridTemplateRows: "repeat(3, 48px)",
+      gridTemplateColumns: "repeat(3, 44px)",
+      gridTemplateRows: "repeat(3, 44px)",
       gap: "6px",
       pointerEvents: webControl ? "auto" : "none",
     },
@@ -1548,25 +1574,42 @@ function KeyboardController({ ros, isDark }) {
     },
   };
 
-  const renderVKey = (keyName, label, styleOverrides) => {
+  const renderVKey = (baseKey, label, styleOverrides) => {
+    let actualKey = isHolonomic ? baseKey.toUpperCase() : baseKey.toLowerCase();
+    if (isHolonomic && baseKey === ',') actualKey = '<';
+    if (isHolonomic && baseKey === '.') actualKey = '>';
+
     const handlePress = (e) => {
       if (e) e.preventDefault();
       if (!webControl) return;
 
-      if (keyName === "k") {
+      if (baseKey === "k") {
         setKeys({});
       } else {
-        setKeys({ [keyName]: true });
+        setKeys({ [actualKey]: true });
       }
+    };
+
+    const handleRelease = (e) => {
+      if (e) e.preventDefault();
+      if (baseKey === "k" || !webControl) return;
+      setKeys((prev) => {
+        const next = { ...prev };
+        delete next[actualKey];
+        return next;
+      });
     };
 
     return (
       <div
-        style={{ ...S.key(!!keys[keyName] && webControl), ...styleOverrides }}
+        style={{ ...S.key(!!keys[actualKey] && webControl), ...styleOverrides }}
         onMouseDown={handlePress}
+        onMouseUp={handleRelease}
+        onMouseLeave={handleRelease}
         onTouchStart={handlePress}
+        onTouchEnd={handleRelease}
       >
-        {label}
+        {isHolonomic ? actualKey : label}
       </div>
     );
   };
@@ -1644,12 +1687,29 @@ function KeyboardController({ ros, isDark }) {
       </div>
 
       <div style={S.controlBody}>
-        <div style={S.dpad}>
-          <div /> {renderVKey("i", "I")} <div />
-          {renderVKey("j", "J")}
-          {renderVKey("k", "K")}
-          {renderVKey("l", "L")}
-          <div /> {renderVKey(",", ",")} <div />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          <div 
+            style={{
+              fontSize: '11px', fontWeight: 800, padding: '4px 10px', borderRadius: '6px',
+              background: isHolonomic ? (isDark ? '#00e67625' : '#00e67625') : (isDark ? '#ffffff15' : '#00000010'),
+              color: isHolonomic ? '#00e676' : (isDark ? '#aaaaaa' : '#666666'),
+              border: `1px solid ${isHolonomic ? '#00e67688' : 'transparent'}`,
+              userSelect: 'none', transition: 'all 0.2s'
+            }}
+          >
+            HOLONOMIC: {isHolonomic ? 'ON' : 'OFF'}
+          </div>
+          <div style={S.dpad}>
+            {renderVKey("u", "u")}
+            {renderVKey("i", "i")}
+            {renderVKey("o", "o")}
+            {renderVKey("j", "j")}
+            {renderVKey("k", "k")}
+            {renderVKey("l", "l")}
+            {renderVKey("m", "m")}
+            {renderVKey(",", ",")}
+            {renderVKey(".", ".")}
+          </div>
         </div>
 
         <div style={S.sliderCol}>
@@ -2718,9 +2778,11 @@ export default function DashboardView() {
         setUpdateInfo(info);
         setShowStatusToast(true);
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = setTimeout(() => {
-          setShowStatusToast(false);
-        }, 10000);
+        if (info.status !== 'downloading') {
+          toastTimerRef.current = setTimeout(() => {
+            setShowStatusToast(false);
+          }, 10000);
+        }
       });
       return () => unsubscribe && unsubscribe();
     }
@@ -3121,7 +3183,7 @@ export default function DashboardView() {
       `}</style>
 
       <div style={S.app}>
-        {showStatusToast && updateInfo && (
+        {showStatusToast && updateInfo && updateInfo.status !== 'downloading' && updateInfo.status !== 'downloaded' && (
           <div
             style={{
               position: "fixed",
@@ -3221,6 +3283,12 @@ export default function DashboardView() {
             </button>
           </div>
         )}
+
+        <UpdateProgressModal 
+          updateInfo={updateInfo}
+          appVersion={appVersion}
+          onClose={() => setUpdateInfo(null)}
+        />
 
         {showMonitor && (
           <div style={S.popupWrap2}>

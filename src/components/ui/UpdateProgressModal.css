@@ -1,0 +1,130 @@
+.upm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.upm-card {
+  position: relative;
+  width: 320px;
+  background: #101216;
+  border: 0.5px solid rgba(56, 140, 240, 0.25);
+  border-radius: 16px;
+  padding: 1.5rem;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.upm-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #F1EFE8;
+  margin: 0 0 2px 0;
+}
+
+.upm-subtitle {
+  font-size: 13px;
+  color: #888780;
+  margin: 0 0 16px 0;
+}
+
+.upm-scan-container {
+  width: 270px;
+  height: 270px;
+  border-radius: 12px;
+  background: transparent;
+  border: none;
+  position: relative;
+  overflow: hidden;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upm-scan-image {
+  width: 270px;
+  height: 270px;
+  /* clip-path is applied inline */
+  object-fit: contain;
+  transition: clip-path 200ms ease;
+}
+
+.upm-progress-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.upm-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1a3a8f, #2b5cd9);
+  border-radius: 20px;
+  transition: width 200ms ease;
+}
+
+.upm-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.upm-label-left {
+  font-size: 12px;
+  color: #B4B2A9;
+}
+
+.upm-label-right {
+  font-size: 12px;
+  font-weight: 500;
+  color: #85B7EB;
+}
+
+.upm-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  border: none;
+  color: #888780;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 200ms ease;
+  z-index: 100; /* Ensure it is clickable over other elements */
+}
+
+.upm-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #F1EFE8;
+}
+
+.upm-restart-btn {
+  width: 100%;
+  background: rgba(43, 92, 217, 0.15);
+  border: 0.5px solid rgba(43, 92, 217, 0.5);
+  color: #e6f1fb;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 14px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 200ms ease;
+  margin-top: 16px;
+}
+
+.upm-restart-btn:hover {
+  background: rgba(43, 92, 217, 0.25);
+}
