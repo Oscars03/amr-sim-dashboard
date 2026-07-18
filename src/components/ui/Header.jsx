@@ -35,7 +35,7 @@ export default function Header() {
     }
   };
 
-  const rosConnected = rosStatus === 'Connected to ROS 2' || rosStatus === 'Connected';
+  const rosConnected = rosStatus === 'Connected to ROS2' || rosStatus === 'Connected';
   const onDashboard = location.pathname === '/';
 
   return (
@@ -124,8 +124,9 @@ export default function Header() {
         {/* Create Robot */}
         <button
           className={`header-btn tier1-btn ${location.pathname === '/create-robot' ? 'active' : ''}`}
-          onClick={() => navigate(location.pathname === '/create-robot' ? '/' : '/create-robot')}
-          title="Create Robot"
+          disabled
+          style={{ opacity: 0.5, cursor: 'not-allowed' }}
+          title="Create Robot (Locked)"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />

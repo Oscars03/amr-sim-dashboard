@@ -2394,12 +2394,12 @@ const SimSelector = forwardRef(function SimSelector(
             border: "none",
             background: isBusy
               ? isDark
-                ? "#1a237e"
-                : "#bbdefb"
+                ? "#1b5e20"
+                : "#c8e6c9"
               : isDark
-                ? "#3949ab"
-                : "#1976d2",
-            color: isBusy ? (isDark ? "#7986cb" : "#1565c0") : "#fff",
+                ? "#2e7d32"
+                : "#16a34a",
+            color: isBusy ? (isDark ? "#81c784" : "#1b5e20") : "#fff",
             fontSize: "14px",
             fontWeight: 700,
             cursor: isBusy ? "not-allowed" : "pointer",
@@ -3317,7 +3317,7 @@ export default function DashboardView() {
                       color: isDark ? "#90caf9" : "#1976d2",
                     }}
                   >
-                    Map:{" "}
+                    World:{" "}
                     <span style={{ color: isDark ? "#fff" : "#111" }}>
                       {mapName || "Loading..."}
                     </span>

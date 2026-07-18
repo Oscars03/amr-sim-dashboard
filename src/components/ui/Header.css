@@ -90,17 +90,23 @@
 }
 
 .header-status.connected {
-  background: rgba(151, 196, 89, 0.18);
-  border: 0.5px solid rgba(151, 196, 89, 0.5);
+  background: rgba(46, 204, 113, 0.16);
+  border: 0.5px solid rgba(46, 204, 113, 0.5);
 }
 
 .header-status.connected .status-dot {
-  background: #97C459;
-  box-shadow: 0 0 6px rgba(151, 196, 89, 0.8);
+  background: #2ecc71;
+  box-shadow: 0 0 8px rgba(46, 204, 113, 0.85);
 }
 
 .header-status.connected .status-text {
-  color: #c0dd97;
+  color: #3cd070;
+  font-weight: 600;
+}
+
+.app-header.light .header-status.connected {
+  background: rgba(151, 196, 89, 0.18);
+  border: 0.5px solid rgba(151, 196, 89, 0.5);
 }
 
 .app-header.light .header-status.connected .status-text {
@@ -175,6 +181,12 @@
   justify-content: center;
   flex: 0 1 auto;
   min-width: 0;
+}
+
+.header-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn-label {
