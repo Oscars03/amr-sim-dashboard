@@ -41,10 +41,49 @@ ipcMain.handle('get-app-version', () => {
   return app.getVersion()
 })
 
+ipcMain.handle('restart-app', () => {
+  if (!app.isPackaged) {
+    console.log("Mocking restart...");
+    app.relaunch();
+    app.quit();
+    return;
+  }
+  autoUpdater.quitAndInstall(false, true)
+})
+
+let devDownloadInterval = null;
+
+ipcMain.handle('start-download', () => {
+  if (!app.isPackaged) {
+    if (devDownloadInterval) clearInterval(devDownloadInterval);
+    let percent = 0;
+    devDownloadInterval = setInterval(() => {
+      percent += 2;
+      if (percent >= 100) {
+        clearInterval(devDownloadInterval);
+        win?.webContents.send('update-status', { status: 'downloaded', version: '0.3.0', message: 'Update ready.' });
+      } else {
+        win?.webContents.send('update-status', {
+          status: 'downloading',
+          percent: percent,
+          progress: percent,
+          message: `Downloading update... ${percent}%`
+        });
+      }
+    }, 100);
+    return;
+  }
+  autoUpdater.downloadUpdate();
+});
+
 ipcMain.handle('check-for-updates', async () => {
   if (!app.isPackaged) {
-    win?.webContents.send('update-status', { status: 'dev', message: 'Auto-update is disabled in Development mode.' })
-    return { status: 'dev', message: 'Auto-update is disabled in Development mode.' }
+    // Mock update flow: send checking, then send available (waits for start-download)
+    win?.webContents.send('update-status', { status: 'checking', message: 'Checking for updates...' })
+    setTimeout(() => {
+      win?.webContents.send('update-status', { status: 'available', version: '0.3.0', message: 'New version v0.3.0 is available!' })
+    }, 1000);
+    return { status: 'dev', message: 'Auto-update is mocked in Development mode.' }
   }
   try {
     const result = await autoUpdater.checkForUpdates()
@@ -64,16 +103,7 @@ function checkAutoUpdate() {
 
   autoUpdater.on('update-available', (info) => {
     win?.webContents.send('update-status', { status: 'available', version: info.version, message: `New version v${info.version} is available!` })
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Update Available',
-      message: `A new version (v${info.version}) of IRiSH AMR Simulation is available. Do you want to download it now?`,
-      buttons: ['Yes', 'No']
-    }).then((result) => {
-      if (result.response === 0) {
-        autoUpdater.downloadUpdate()
-      }
-    })
+    // The front-end custom UI now displays a confirmation popup and calls start-download
   })
 
   autoUpdater.on('update-not-available', (info) => {
@@ -86,7 +116,7 @@ function checkAutoUpdate() {
   })
 
   autoUpdater.on('download-progress', (progressObj) => {
-    const percent = Math.floor(progressObj.percent)
+    const percent = Math.floor(progressObj?.percent || 0)
     win?.webContents.send('update-status', {
       status: 'downloading',
       percent: percent,
