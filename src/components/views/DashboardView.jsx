@@ -48,8 +48,24 @@ function parseURDF(xmlString) {
       }
     });
 
+    // Build map: childLinkName → cumulative {x, y} offset in base_link frame
+    // Only follows fixed joints; wheel/continuous joints kept as-is (still visualised).
+    const jointOffset = {}; // { linkName: {x, y} }
+    xml.querySelectorAll("joint").forEach((j) => {
+      const child = j.querySelector("child")?.getAttribute("link");
+      if (!child) return;
+      const origin = j.querySelector("origin");
+      const xyz = origin?.getAttribute("xyz")?.split(" ").map(Number) ?? [0, 0, 0];
+      // Accumulate: parent's offset + this joint's xyz (x,y only for top-down)
+      const parent = j.querySelector("parent")?.getAttribute("link") ?? "";
+      const parentOff = jointOffset[parent] ?? { x: 0, y: 0 };
+      jointOffset[child] = { x: parentOff.x + xyz[0], y: parentOff.y + xyz[1] };
+    });
+
     xml.querySelectorAll("link").forEach((link) => {
       const linkName = link.getAttribute("name") ?? "";
+      const jOff = jointOffset[linkName] ?? { x: 0, y: 0 };
+
       link.querySelectorAll("visual").forEach((visual) => {
         const originEl = visual.querySelector("origin");
         const xyz = originEl?.getAttribute("xyz")?.split(" ").map(Number) ?? [
@@ -83,6 +99,10 @@ function parseURDF(xmlString) {
         const cylinder = visual.querySelector("geometry cylinder");
         const sphere = visual.querySelector("geometry sphere");
 
+        // Bake joint offset into visual origin (top-down: x,y only)
+        const ox = jOff.x + xyz[0];
+        const oy = jOff.y + xyz[1];
+
         if (box) {
           const size = box.getAttribute("size")?.split(" ").map(Number) ?? [
             0.1, 0.1, 0.1,
@@ -93,8 +113,8 @@ function parseURDF(xmlString) {
             w: size[0],
             d: size[1],
             h: size[2],
-            ox: xyz[0],
-            oy: xyz[1],
+            ox,
+            oy,
             oz: xyz[2],
             yaw: rpy[2],
             color: hexColor,
@@ -106,8 +126,8 @@ function parseURDF(xmlString) {
             type: "cylinder",
             radius: parseFloat(cylinder.getAttribute("radius") ?? "0.05"),
             length: parseFloat(cylinder.getAttribute("length") ?? "0.1"),
-            ox: xyz[0],
-            oy: xyz[1],
+            ox,
+            oy,
             oz: xyz[2],
             yaw: rpy[2],
             color: hexColor,
@@ -118,8 +138,8 @@ function parseURDF(xmlString) {
             link: linkName,
             type: "sphere",
             radius: parseFloat(sphere.getAttribute("radius") ?? "0.05"),
-            ox: xyz[0],
-            oy: xyz[1],
+            ox,
+            oy,
             oz: xyz[2],
             color: hexColor,
           });
@@ -129,8 +149,8 @@ function parseURDF(xmlString) {
 
     let maxR = 0.2;
     shapes.forEach((s) => {
-      if (s.type === "box") maxR = Math.max(maxR, s.w / 2, s.d / 2);
-      else maxR = Math.max(maxR, s.radius);
+      if (s.type === "box") maxR = Math.max(maxR, Math.abs(s.ox) + s.w / 2, Math.abs(s.oy) + s.d / 2);
+      else maxR = Math.max(maxR, Math.abs(s.ox) + s.radius, Math.abs(s.oy) + s.radius);
     });
 
     return { shapes, maxR };
@@ -217,15 +237,16 @@ function drawRobot(
         ctx.arc(0, 0, 2, 0, Math.PI * 2);
         ctx.fill();
       } else if (s.type === "cylinder" || s.type === "sphere") {
-        const pr = Math.max(3, s.radius * scale);
-        ctx.fillStyle = s.color + "dd";
-        ctx.strokeStyle = "#ffffffcc";
-        ctx.lineWidth = 1.5;
+        const pr = Math.max(1.5, s.radius * scale);
         ctx.beginPath();
         ctx.arc(0, 0, pr, 0, Math.PI * 2);
+        ctx.fillStyle = s.color + "dd";
+        ctx.shadowBlur = 8;
         ctx.fill();
-        ctx.stroke();
         ctx.shadowBlur = 0;
+        ctx.strokeStyle = "#ffffff55";
+        ctx.lineWidth = Math.max(0.5, Math.min(1.5, pr * 0.08));
+        ctx.stroke();
       }
       ctx.restore();
     });
@@ -250,21 +271,7 @@ function drawRobot(
   ctx.fill();
   ctx.restore();
 
-  ctx.save();
-  ctx.translate(rx, ry);
-  ctx.rotate(-view.rotation);
-  ctx.scale(1 / view.zoom, 1 / view.zoom);
 
-  const textOffset = labelR * view.zoom + 6;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.font = "bold 10px sans-serif";
-  ctx.fillStyle = textColor;
-  ctx.fillText("AMR", 0, textOffset);
-  ctx.font = "9px monospace";
-  ctx.fillStyle = coordColor;
-  ctx.fillText(`(${worldX}, ${worldY})`, 0, textOffset + 12);
-  ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -338,6 +345,7 @@ function buildTransform(mapInfo, canvasW, canvasH) {
   return {
     scale,
     offsetX,
+    offsetY,
     toCanvas: (wx, wy) => ({
       cx: Math.round(canvasW - offsetX - (wy - origin_y) * scale) + 0.5,
       cy: Math.round(canvasH - offsetY - (wx - origin_x) * scale) + 0.5,
@@ -891,7 +899,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
       return;
     }
 
-    const { scale, offsetX, toCanvas } = buildTransform(
+    const { scale, offsetX, offsetY, toCanvas } = buildTransform(
       mapData.map_info,
       width,
       height,
@@ -1014,17 +1022,19 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     });
 
     if (pose && pose.x !== "-") {
-      const worldX = parseFloat(pose.x);
-      const worldY = parseFloat(pose.y);
-      const thetaRad = (parseFloat(pose.theta) * Math.PI) / 180;
-      const { cx: rx, cy: ry } = toCanvas(worldX, worldY);
+      const worldX = typeof pose.x === 'string' ? parseFloat(pose.x) : pose.x;
+      const worldY = typeof pose.y === 'string' ? parseFloat(pose.y) : pose.y;
+      const thetaRad = typeof pose.theta === 'string' ? (parseFloat(pose.theta) * Math.PI) / 180 : (pose.theta * Math.PI) / 180;
+      // Use precise sub-pixel coordinates to prevent lateral judder when moving diagonally
+      const rx = width - offsetX - (worldY - origin_y) * scale;
+      const ry = height - offsetY - (worldX - origin_x) * scale;
       drawRobot(
         ctx,
         rx,
         ry,
         thetaRad,
-        pose.x,
-        pose.y,
+        worldX,
+        worldY,
         urdf,
         scale,
         isDark,
@@ -2832,13 +2842,13 @@ export default function DashboardView() {
       const q_w = msg.pose.pose.orientation.w;
       const theta = 2.0 * Math.atan2(q_z, q_w);
 
-      setPose({
-        x: x.toFixed(2),
-        y: y.toFixed(2),
-        theta: ((theta * 180) / Math.PI).toFixed(1),
-      });
+      if (!isNaN(x) && !isNaN(y) && !isNaN(theta)) {
+        setPose({
+          x: x,
+          y: y,
+          theta: (theta * 180) / Math.PI,
+        });
 
-      if (Math.abs(x) <= 0.05 && Math.abs(y) <= 0.05) {
         setIsWaitingOdom(false);
       }
     });
@@ -3368,11 +3378,11 @@ export default function DashboardView() {
                   </div>
                   <div style={S.poseGrid}>
                     {[
-                      { label: "X", value: pose.x, unit: "[m]" },
-                      { label: "Y", value: pose.y, unit: "[m]" },
+                      { label: "X", value: typeof pose.x === 'number' ? pose.x.toFixed(2) : pose.x, unit: "[m]" },
+                      { label: "Y", value: typeof pose.y === 'number' ? pose.y.toFixed(2) : pose.y, unit: "[m]" },
                       {
                         label: "Angle",
-                        value: pose.theta === "-" ? "-" : `${pose.theta}°`,
+                        value: pose.theta === "-" ? "-" : `${typeof pose.theta === 'number' ? pose.theta.toFixed(1) : pose.theta}°`,
                         unit: "[degrees]",
                       },
                     ].map(({ label, value, unit }) => (

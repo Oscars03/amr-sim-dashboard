@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import './UpdateProgressModal.css';
+import iconCircleTransparent from '/icon_circle_transparent.png?url';
 
 const samplePointsFromImage = (img, size) => {
   const tempCanvas = document.createElement('canvas');
@@ -43,12 +44,19 @@ function LidarMap({ percent }) {
     exploredCanvasRef.current.height = 270;
 
     const img = new Image();
-    img.src = '/icon_circle_transparent.png';
+    img.src = iconCircleTransparent;
     img.onload = () => {
       logoImgRef.current = img;
       imagePointsRef.current = samplePointsFromImage(img, 270);
     };
   }, []);
+
+  const targetPercentRef = useRef(percent);
+  const currentPercentRef = useRef(percent);
+
+  useEffect(() => {
+    targetPercentRef.current = percent;
+  }, [percent]);
 
   // Clear explored mask when resetting/starting
   useEffect(() => {
@@ -68,12 +76,20 @@ function LidarMap({ percent }) {
     const render = () => {
       ctx.clearRect(0, 0, 270, 270);
       
+      let current = currentPercentRef.current;
+      let target = targetPercentRef.current;
+      if (current < target) {
+        current += (target - current) * 0.05;
+        if (target - current < 0.1) current = target;
+      }
+      currentPercentRef.current = current;
+
       const time = Date.now() % 2500;
       let sweepAngle = (time / 2500) * Math.PI * 2 - Math.PI / 2;
       if (sweepAngle > Math.PI) sweepAngle -= Math.PI * 2;
 
       // Calculate robot position along a coverage spiral based on percent
-      const p = percent / 100;
+      const p = current / 100;
       const radius = 100 * Math.sqrt(p);
       const angle = p * 8 * Math.PI;
       const robotX = radius * Math.cos(angle);
@@ -202,7 +218,7 @@ function LidarMap({ percent }) {
 
     render();
     return () => cancelAnimationFrame(animationId);
-  }, [percent]);
+  }, []);
 
   return <canvas ref={canvasRef} width={270} height={270} className="upm-scan-canvas" style={{position: 'absolute', top: 0, left: 0}} />;
 }
