@@ -577,23 +577,9 @@ app.delete('/api/robots/:fileName', (req, res) => {
   }
 
   let deletedAny = false;
+  let systemFileReadonly = false;
 
-  const shareDir = getShareDir();
-  if (shareDir) {
-    const filePath = path.join(shareDir, 'urdf', fileName);
-    if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); deletedAny = true; } catch (e) { console.error(e); }
-    }
-  }
-
-  const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
-  if (fs.existsSync(srcUrdfDir)) {
-    const srcPath = path.join(srcUrdfDir, fileName);
-    if (fs.existsSync(srcPath)) {
-      try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
-    }
-  }
-
+  // 1. พยายามลบจากโฟลเดอร์ Fallback (ของ User) ก่อน
   const fallbackUrdfDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'urdf');
   if (fs.existsSync(fallbackUrdfDir)) {
     const fallbackPath = path.join(fallbackUrdfDir, fileName);
@@ -602,9 +588,39 @@ app.delete('/api/robots/:fileName', (req, res) => {
     }
   }
 
+  // 2. พยายามลบจาก Source Workspace (กรณีนักพัฒนา)
+  const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
+  if (fs.existsSync(srcUrdfDir)) {
+    const srcPath = path.join(srcUrdfDir, fileName);
+    if (fs.existsSync(srcPath)) {
+      try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
+    }
+  }
+
+  // 3. พยายามลบจาก shareDir (โฟลเดอร์ระบบ / AppImage)
+  const shareDir = getShareDir();
+  if (shareDir) {
+    const filePath = path.join(shareDir, 'urdf', fileName);
+    if (fs.existsSync(filePath)) {
+      try { 
+        fs.unlinkSync(filePath); 
+        deletedAny = true; 
+      } catch (e) { 
+        console.error('Cannot delete from system dir:', e.message);
+        if (e.code === 'EROFS' || e.code === 'EACCES' || e.code === 'EPERM') {
+          systemFileReadonly = true;
+        }
+      }
+    }
+  }
+
+  // สรุปผลการลบ
   if (deletedAny) {
     console.log(`Deleted robot URDF: ${fileName}`);
     res.json({ success: true, message: 'Robot deleted successfully' });
+  } else if (systemFileReadonly) {
+    // ถ้าหาในโฟลเดอร์ User ไม่เจอเลย และไฟล์ระบบติด Read-only
+    res.status(403).json({ error: 'Cannot delete built-in robot (Read-only on AppImage)' });
   } else {
     res.status(404).json({ error: 'File not found or could not be deleted' });
   }
@@ -633,24 +649,15 @@ app.get('/api/worlds/:fileName', (req, res) => {
 
 // DELETE /api/worlds/:fileName
 app.delete('/api/worlds/:fileName', (req, res) => {
+  const { fileName } = req.params;
+  if (!fileName || !fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..')) {
+    return res.status(400).json({ error: 'Invalid file name' });
+  }
+  
   let deletedAny = false;
+  let systemFileReadonly = false;
 
-  const shareDir = getShareDir();
-  if (shareDir) {
-    const filePath = path.join(shareDir, 'worlds', fileName);
-    if (fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); deletedAny = true; } catch (e) { console.error(e); }
-    }
-  }
-
-  const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
-  if (fs.existsSync(srcWorldsDir)) {
-    const srcPath = path.join(srcWorldsDir, fileName);
-    if (fs.existsSync(srcPath)) {
-      try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
-    }
-  }
-
+  // 1. พยายามลบจากโฟลเดอร์ Fallback (ของ User) ก่อน
   const fallbackWorldsDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'worlds');
   if (fs.existsSync(fallbackWorldsDir)) {
     const fallbackPath = path.join(fallbackWorldsDir, fileName);
@@ -659,9 +666,40 @@ app.delete('/api/worlds/:fileName', (req, res) => {
     }
   }
 
+  // 2. พยายามลบจาก Source Workspace (กรณีนักพัฒนา)
+  const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
+  if (fs.existsSync(srcWorldsDir)) {
+    const srcPath = path.join(srcWorldsDir, fileName);
+    if (fs.existsSync(srcPath)) {
+      try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
+    }
+  }
+
+  // 3. พยายามลบจาก shareDir (โฟลเดอร์ระบบ / AppImage)
+  const shareDir = getShareDir();
+  if (shareDir) {
+    const filePath = path.join(shareDir, 'worlds', fileName);
+    if (fs.existsSync(filePath)) {
+      try { 
+        fs.unlinkSync(filePath); 
+        deletedAny = true; 
+      } catch (e) { 
+        console.error('Cannot delete from system dir:', e.message);
+        // ดักจับ Error กรณีติด Permission จาก AppImage หรือ .deb
+        if (e.code === 'EROFS' || e.code === 'EACCES' || e.code === 'EPERM') {
+          systemFileReadonly = true;
+        }
+      }
+    }
+  }
+
+  // สรุปผลการลบ
   if (deletedAny) {
     console.log(`Deleted world map: ${fileName}`);
     res.json({ success: true, message: 'World deleted successfully' });
+  } else if (systemFileReadonly) {
+    // ถ้าหาในโฟลเดอร์ User ไม่เจอเลย และไฟล์ระบบติด Read-only
+    res.status(403).json({ error: 'Cannot delete built-in world map (Read-only on AppImage)' });
   } else {
     res.status(404).json({ error: 'File not found or could not be deleted' });
   }

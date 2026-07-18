@@ -2154,7 +2154,7 @@ const SimSelector = forwardRef(function SimSelector(
         const res = await fetch(`http://${HOST}:3001/api/robots/${opt.value}`, {
           method: "DELETE",
         });
-        if (!res.ok) throw new Error("Failed to delete robot");
+        if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || "Failed to delete robot");
         const updatedList = robotList.filter((r) => r.name !== opt.value);
         setRobotList(updatedList);
         if (selRobot === opt.value) {
@@ -2164,7 +2164,7 @@ const SimSelector = forwardRef(function SimSelector(
         const res = await fetch(`http://${HOST}:3001/api/worlds/${opt.value}`, {
           method: "DELETE",
         });
-        if (!res.ok) throw new Error("Failed to delete world");
+        if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || "Failed to delete world");
         const updatedList = worldList.filter((w) => w.name !== opt.value);
         setWorldList(updatedList);
         if (selWorld === opt.value) {

@@ -10,24 +10,23 @@
 /* ── Toolbar ──────────────────────────────────────────────────────────── */
 .toolbar {
   display: flex;
-  gap: clamp(4px, 1vw, 12px);
+  gap: clamp(4px, 0.6vw, 8px);
   align-items: center;
   background: var(--bg-card, #121212);
-  padding: 12px 20px;
+  padding: 10px clamp(8px, 1.2vw, 16px);
   border-bottom: 1px solid var(--border-color, #2a2a2a);
   flex-shrink: 0;
   flex-wrap: nowrap;
   width: 100%;
   overflow: hidden;
+  box-sizing: border-box;
 }
-
-
 
 .toolbar-divider {
   width: 1px;
-  height: 32px;
+  height: 26px;
   background: var(--border-color, #333);
-  margin: 0 8px;
+  margin: 0 2px;
   flex-shrink: 0;
 }
 
@@ -40,19 +39,23 @@
   border: 1px solid var(--border-color, #333);
   border-radius: 8px;
   padding: 0 10px;
+  height: 40px;
   color: var(--text-secondary, #888);
-  flex-shrink: 1;
+  flex: 0 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .toolbar-input {
   background: transparent;
   border: none;
   color: var(--text-primary, #e0e0e0);
-  padding: 8px 0;
+  padding: 0;
   outline: none;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  width: 192px;
+  width: clamp(70px, 8vw, 120px);
+  min-width: 40px;
   flex-shrink: 1;
 }
 
@@ -60,23 +63,49 @@
   color: var(--text-secondary, #666);
 }
 
+.toolbar-select {
+  height: 40px;
+  background: var(--bg-app, #1a1a1a);
+  color: var(--text-primary, #e0e0e0);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 8px;
+  padding: 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-sizing: border-box;
+  outline: none;
+  WebkitAppRegion: no-drag;
+  pointer-events: auto;
+  flex-shrink: 0;
+}
+
 /* ── Base button ──────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: clamp(4px, 0.5vw, 8px);
+  justify-content: center;
+  gap: clamp(4px, 0.5vw, 6px);
   background: var(--bg-app, #1a1a1a);
   border: 1px solid var(--border-color, #333);
   color: var(--text-secondary, #aaa);
-  padding: clamp(4px, 0.6vw, 9px) clamp(6px, 1.2vw, 17px);
-  font-size: clamp(11px, 1.2vw, 16px);
-  border-radius: 10px;
+  padding: 0 clamp(6px, 0.9vw, 12px);
+  height: 40px;
+  font-size: clamp(12px, 0.9vw, 14px);
+  border-radius: 8px;
   cursor: pointer;
   font-weight: 600;
   transition: all 0.15s;
   white-space: nowrap;
   flex: 0 1 auto;
   min-width: 0;
+  box-sizing: border-box;
+}
+
+.btn-icon-only {
+  width: 40px;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 .btn-label {
@@ -94,13 +123,18 @@
   border-color: var(--text-secondary, #666);
 }
 
-/* ── Back to Dashboard — visually distinct ────────────────────────────── */
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Back to Dashboard ────────────────────────────────────────────────── */
 .btn-back {
   background: rgba(25, 118, 210, 0.12);
   border-color: rgba(25, 118, 210, 0.4);
   color: #5ba4f5;
   font-weight: 700;
-  padding: 9px 20px;
 }
 
 .btn-back:hover {
@@ -134,16 +168,21 @@
   border-color: #ef5350;
 }
 
-/* ── Save to ROS ──────────────────────────────────────────────────────── */
+/* ── Save Buttons ──────────────────────────────────────────────────────── */
 .btn-save {
   background: var(--accent-green, #2e7d32);
-  border: none;
+  border: 1px solid var(--accent-green, #2e7d32);
   color: #fff;
-  padding: 10px 24px;
-  font-size: 16px;
   font-weight: 700;
   box-shadow: 0 2px 10px rgba(56, 142, 60, 0.35);
   letter-spacing: 0.3px;
+}
+
+.btn-save-outline {
+  background: var(--bg-app, #1a1a1a);
+  border: 1px solid var(--accent-green, #2e7d32);
+  color: var(--accent-green, #2e7d32);
+  box-shadow: none;
 }
 
 .btn-save:hover {
@@ -151,7 +190,7 @@
   box-shadow: 0 4px 16px rgba(56, 142, 60, 0.45);
 }
 
-[data-theme='dark'] .btn-save {
+[data-theme='dark'] .btn-save:not(.btn-save-outline) {
   color: #0b0b14;
   font-weight: 800;
 }
