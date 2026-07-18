@@ -23,7 +23,7 @@ export default function App() {
       currentRos = ros;
 
       ros.on("connection", () => {
-        setRosStatus("Connected to ROS 2");
+        setRosStatus("Connected to ROS2");
         setRosObj(ros);
       });
       ros.on("error", () => {
