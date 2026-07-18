@@ -461,6 +461,11 @@ app.post('/api/robots', (req, res) => {
     bodyGeomXML = `<cylinder radius="${r.toFixed(3)}" length="${bodyZ}" />`;
   } else if (geometry_type === 'square') {
     const s = parseFloat(body_size);
+    const r = parseFloat(body_radius);
+    robot_radius = r;
+    bodyGeomXML = `<cylinder radius="${r.toFixed(3)}" length="${bodyZ}" />`;
+  } else if (geometry_type === 'square') {
+    const s = parseFloat(body_size);
     robot_radius = s / 2;
     bodyGeomXML = `<box size="${s.toFixed(3)} ${s.toFixed(3)} ${bodyZ}" />`;
   } else { // rectangle
@@ -566,23 +571,42 @@ app.post('/api/robots', (req, res) => {
 
 // DELETE /api/robots/:fileName
 app.delete('/api/robots/:fileName', (req, res) => {
-  const shareDir = getShareDir();
-  if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
   const { fileName } = req.params;
   if (!fileName || (!fileName.endsWith('.urdf') && !fileName.endsWith('.xacro')) || fileName.includes('/') || fileName.includes('..')) {
     return res.status(400).json({ error: 'Invalid file name' });
   }
-  const filePath = path.join(shareDir, 'urdf', fileName);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
+
+  let deletedAny = false;
+
+  const shareDir = getShareDir();
+  if (shareDir) {
+    const filePath = path.join(shareDir, 'urdf', fileName);
+    if (fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); deletedAny = true; } catch (e) { console.error(e); }
+    }
   }
-  try {
-    fs.unlinkSync(filePath);
-    console.log(`Deleted robot URDF: ${filePath}`);
+
+  const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
+  if (fs.existsSync(srcUrdfDir)) {
+    const srcPath = path.join(srcUrdfDir, fileName);
+    if (fs.existsSync(srcPath)) {
+      try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
+    }
+  }
+
+  const fallbackUrdfDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'urdf');
+  if (fs.existsSync(fallbackUrdfDir)) {
+    const fallbackPath = path.join(fallbackUrdfDir, fileName);
+    if (fs.existsSync(fallbackPath)) {
+      try { fs.unlinkSync(fallbackPath); deletedAny = true; } catch (e) { console.error(e); }
+    }
+  }
+
+  if (deletedAny) {
+    console.log(`Deleted robot URDF: ${fileName}`);
     res.json({ success: true, message: 'Robot deleted successfully' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to delete robot file' });
+  } else {
+    res.status(404).json({ error: 'File not found or could not be deleted' });
   }
 });
 
@@ -609,23 +633,37 @@ app.get('/api/worlds/:fileName', (req, res) => {
 
 // DELETE /api/worlds/:fileName
 app.delete('/api/worlds/:fileName', (req, res) => {
+  let deletedAny = false;
+
   const shareDir = getShareDir();
-  if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
-  const { fileName } = req.params;
-  if (!fileName || !fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..')) {
-    return res.status(400).json({ error: 'Invalid file name' });
+  if (shareDir) {
+    const filePath = path.join(shareDir, 'worlds', fileName);
+    if (fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); deletedAny = true; } catch (e) { console.error(e); }
+    }
   }
-  const filePath = path.join(shareDir, 'worlds', fileName);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
+
+  const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
+  if (fs.existsSync(srcWorldsDir)) {
+    const srcPath = path.join(srcWorldsDir, fileName);
+    if (fs.existsSync(srcPath)) {
+      try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
+    }
   }
-  try {
-    fs.unlinkSync(filePath);
-    console.log(`Deleted world map: ${filePath}`);
+
+  const fallbackWorldsDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'worlds');
+  if (fs.existsSync(fallbackWorldsDir)) {
+    const fallbackPath = path.join(fallbackWorldsDir, fileName);
+    if (fs.existsSync(fallbackPath)) {
+      try { fs.unlinkSync(fallbackPath); deletedAny = true; } catch (e) { console.error(e); }
+    }
+  }
+
+  if (deletedAny) {
+    console.log(`Deleted world map: ${fileName}`);
     res.json({ success: true, message: 'World deleted successfully' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to delete world file' });
+  } else {
+    res.status(404).json({ error: 'File not found or could not be deleted' });
   }
 });
 
