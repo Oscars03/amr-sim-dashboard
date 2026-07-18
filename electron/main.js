@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { fork } from 'child_process'
+import { fork, execSync } from 'child_process'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import pkg from 'electron-updater'
@@ -159,7 +159,22 @@ app.whenReady().then(() => {
   })
 })
 
+app.on('before-quit', () => {
+  if (mapServer) {
+    mapServer.kill();
+  }
+  try {
+    execSync('pkill -f map-server || true');
+    execSync('pkill -f amr_sim_node || true');
+    execSync('pkill -f rosbridge || true');
+    execSync('pkill -f gz || true');
+  } catch (e) {
+    console.log("Cleanup background process finished");
+  }
+});
+
 app.on('window-all-closed', () => {
-  mapServer?.kill()
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
 })

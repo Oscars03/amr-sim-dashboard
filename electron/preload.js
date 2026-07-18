@@ -7,5 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (event, status) => callback(status)
     ipcRenderer.on('update-status', handler)
     return () => ipcRenderer.removeListener('update-status', handler)
-  }
+  },
+  startDownload: () => ipcRenderer.invoke('start-download'),
+  restartApp: () => ipcRenderer.invoke('restart-app')
 })

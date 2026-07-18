@@ -864,3 +864,12 @@ app.listen(PORT, () => {
   console.log(`        -d '{"robot":"tango.urdf","world":"room.json"}'`);
   console.log('');
 });
+
+// ดักจับคำสั่ง Kill จาก Electron (หรือจากระบบปฏิบัติการ)
+process.on('SIGTERM', () => {
+    console.log('Received SIGTERM, shutting down gently...');
+    if (typeof forceKillOrphans === 'function') {
+        forceKillOrphans(); // เรียกใช้ฟังก์ชันเคลียร์ ROS เดิมของคุณ
+    }
+    process.exit(0);
+});
