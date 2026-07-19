@@ -1263,6 +1263,28 @@ function KeyboardController({ ros, isDark }) {
   const [turnSpeed, setTurnSpeed] = useState(1.0);
   const [webControl, setWebControl] = useState(true);
   const [isHolonomic, setIsHolonomic] = useState(false);
+  const [watchdogEnabled, setWatchdogEnabled] = useState(false);
+
+  const toggleWatchdog = (enabled) => {
+    setWatchdogEnabled(enabled);
+    if (enabled) setKeys({});
+    if (!ros) return;
+    const svc = new ROSLIB.Service({
+      ros,
+      name: '/amr_simulator/set_parameters',
+      serviceType: 'rcl_interfaces/srv/SetParameters',
+    });
+    svc.callService(
+      {
+        parameters: [{
+          name: 'enable_watchdog',
+          value: { type: 1, bool_value: enabled },  // type 1 = PARAMETER_BOOL
+        }],
+      },
+      () => {},
+      (err) => console.warn('watchdog toggle failed:', err)
+    );
+  };
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -1306,11 +1328,13 @@ function KeyboardController({ ros, isDark }) {
 
       const k = e.key;
       if (["u","i","o","j","l","m",",",".", "U","I","O","J","L","M","<",">"].includes(k)) {
-        setKeys((prev) => {
-          const next = { ...prev };
-          delete next[k];
-          return next;
-        });
+        if (watchdogEnabled) {
+          setKeys((prev) => {
+            const next = { ...prev };
+            delete next[k];
+            return next;
+          });
+        }
       }
     };
 
@@ -1320,7 +1344,7 @@ function KeyboardController({ ros, isDark }) {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [webControl]);
+  }, [webControl, watchdogEnabled]);
 
   useEffect(() => {
     if (!ros) {
@@ -1398,7 +1422,7 @@ function KeyboardController({ ros, isDark }) {
     }, 50);
 
     return () => clearInterval(loop);
-  }, [keys, speed, turnSpeed, webControl]);
+  }, [keys, speed, turnSpeed, webControl, watchdogEnabled]);
 
   const S = {
     wrap: {
@@ -1603,6 +1627,7 @@ function KeyboardController({ ros, isDark }) {
     const handleRelease = (e) => {
       if (e) e.preventDefault();
       if (baseKey === "k" || !webControl) return;
+      if (!watchdogEnabled) return;
       setKeys((prev) => {
         const next = { ...prev };
         delete next[actualKey];
@@ -1666,32 +1691,59 @@ function KeyboardController({ ros, isDark }) {
       <div style={S.titleRow}>
         <div style={S.title}>Robot Control</div>
 
-        <div style={S.toggleWrap} onClick={() => setWebControl(!webControl)}>
-          <div style={S.toggleOpt(!webControl, "#ff1744")}>
-            <div
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "30%",
-                background: !webControl ? "#ff1744" : "transparent",
-                boxShadow: !webControl ? "0 0 8px #ff1744" : "none",
-                transition: "all 0.2s",
-              }}
-            />
-            Terminal
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Watchdog toggle */}
+          <div
+            title={watchdogEnabled ? 'Watchdog ON — click to disable' : 'Watchdog OFF — click to enable'}
+            onClick={() => toggleWatchdog(!watchdogEnabled)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '4px 10px', borderRadius: '20px', cursor: 'pointer',
+              fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px',
+              userSelect: 'none', transition: 'all 0.2s',
+              background: watchdogEnabled ? '#ff980015' : (isDark ? '#ffffff0d' : '#f0f0f0'),
+              border: watchdogEnabled ? '1px solid #ff9800' : `1px solid ${isDark ? '#333' : '#ddd'}`,
+              color: watchdogEnabled ? '#ff9800' : (isDark ? '#555' : '#aaa'),
+            }}
+          >
+            <div style={{
+              width: '7px', height: '7px', borderRadius: '50%',
+              background: watchdogEnabled ? '#ff9800' : 'transparent',
+              boxShadow: watchdogEnabled ? '0 0 6px #ff9800' : 'none',
+              border: watchdogEnabled ? 'none' : `1px solid ${isDark ? '#555' : '#ccc'}`,
+              transition: 'all 0.2s',
+            }} />
+            WATCHDOG
           </div>
-          <div style={S.toggleOpt(webControl, "#00e676")}>
-            <div
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "30%",
-                background: webControl ? "#00e676" : "transparent",
-                boxShadow: webControl ? "0 0 8px #00e676" : "none",
-                transition: "all 0.2s",
-              }}
-            />
-            UI
+
+          {/* Web/Terminal toggle */}
+          <div style={S.toggleWrap} onClick={() => setWebControl(!webControl)}>
+            <div style={S.toggleOpt(!webControl, "#ff1744")}>
+              <div
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "30%",
+                  background: !webControl ? "#ff1744" : "transparent",
+                  boxShadow: !webControl ? "0 0 8px #ff1744" : "none",
+                  transition: "all 0.2s",
+                }}
+              />
+              Terminal
+            </div>
+            <div style={S.toggleOpt(webControl, "#00e676")}>
+              <div
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "30%",
+                  background: webControl ? "#00e676" : "transparent",
+                  boxShadow: webControl ? "0 0 8px #00e676" : "none",
+                  transition: "all 0.2s",
+                }}
+              />
+              UI
+            </div>
           </div>
         </div>
       </div>
