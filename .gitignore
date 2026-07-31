@@ -37,3 +37,7 @@ dist-electron/
 
 .agents/
 skills-lock.json
+
+coverage/
+graphify-out/
+
