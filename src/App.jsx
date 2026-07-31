@@ -17,31 +17,39 @@ export default function App() {
   useEffect(() => {
     let retryTimer = null;
     let currentRos = null;
+    let isUnmounted = false;
 
     const connect = () => {
+      if (isUnmounted) return;
       const ros = new ROSLIB.Ros({ url: ROSBRIDGE_URL });
       currentRos = ros;
 
       ros.on("connection", () => {
+        if (isUnmounted) return;
         setRosStatus("Connected to ROS2");
         setRosObj(ros);
       });
       ros.on("error", () => {
-        setRosStatus("Connection error");
+        if (isUnmounted) return;
+        setRosStatus("Connecting...");
         setRosObj(null);
-        retryTimer = setTimeout(connect, 3000);
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = setTimeout(connect, 1000);
       });
       ros.on("close", () => {
+        if (isUnmounted) return;
         setRosStatus("Disconnected");
         setRosObj(null);
-        retryTimer = setTimeout(connect, 3000);
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = setTimeout(connect, 1000);
       });
     };
 
     connect();
 
     return () => {
-      clearTimeout(retryTimer);
+      isUnmounted = true;
+      if (retryTimer) clearTimeout(retryTimer);
       currentRos?.close();
     };
   }, [setRosObj, setRosStatus]);
