@@ -147,17 +147,113 @@ function parseURDF(xmlString) {
       });
     });
 
+    let extractedConfig = null;
+    const simConfig = xml.querySelector("amr_sim_config");
+    if (simConfig) {
+      const kinematicModel = simConfig.querySelector("kinematic_model")?.textContent?.trim() ?? "diff_drive";
+      const wheelBase = parseFloat(simConfig.querySelector("wheel_base")?.textContent ?? "0.5");
+      const axleTrack = parseFloat(simConfig.querySelector("axle_track")?.textContent ?? "0.4");
+      const wheelRadius = parseFloat(simConfig.querySelector("wheel_radius")?.textContent ?? "0.1");
+      const wheelWidth = parseFloat(simConfig.querySelector("wheel_width")?.textContent ?? "0.05");
+      const maxSteeringAngle = parseFloat(simConfig.querySelector("max_steering_angle")?.textContent ?? "30");
+      const wheelColor = "#222222"; // Dark gray
+      
+      extractedConfig = { kinematicModel, wheelBase, axleTrack, wheelRadius, wheelWidth, maxSteeringAngle };
+
+      const addWheel = (ox, oy, linkName = "virtual_wheel") => {
+        shapes.push({
+          link: linkName, type: "box", w: wheelRadius * 2, d: wheelWidth, h: wheelRadius * 2,
+          ox, oy, oz: wheelRadius, yaw: 0, color: wheelColor,
+        });
+      };
+
+      if (kinematicModel === "diff_drive") {
+        addWheel(0, axleTrack / 2, "virtual_wheel_rl");
+        addWheel(0, -axleTrack / 2, "virtual_wheel_rr");
+      } else if (kinematicModel === "ackermann") {
+        // Center the wheelbase around the origin for visualization
+        addWheel(-wheelBase / 2, axleTrack / 2, "virtual_wheel_rl");
+        addWheel(-wheelBase / 2, -axleTrack / 2, "virtual_wheel_rr");
+        addWheel(wheelBase / 2, axleTrack / 2, "virtual_wheel_fl");
+        addWheel(wheelBase / 2, -axleTrack / 2, "virtual_wheel_fr");
+      } else if (kinematicModel === "mecanum") {
+        addWheel(wheelBase / 2, axleTrack / 2, "virtual_wheel_fl");
+        addWheel(wheelBase / 2, -axleTrack / 2, "virtual_wheel_fr");
+        addWheel(-wheelBase / 2, axleTrack / 2, "virtual_wheel_rl");
+        addWheel(-wheelBase / 2, -axleTrack / 2, "virtual_wheel_rr");
+      } else if (kinematicModel === "omni") {
+        const radius = parseFloat(simConfig.querySelector("robot_radius")?.textContent ?? "0.3");
+        addWheel(0, radius, "virtual_wheel_fl");
+        addWheel(radius * Math.cos(Math.PI / 6), -radius * Math.sin(Math.PI / 6), "virtual_wheel_fr");
+        addWheel(-radius * Math.cos(Math.PI / 6), -radius * Math.sin(Math.PI / 6), "virtual_wheel_rl");
+      }
+    }
+
     let maxR = 0.2;
     shapes.forEach((s) => {
       if (s.type === "box") maxR = Math.max(maxR, Math.abs(s.ox) + s.w / 2, Math.abs(s.oy) + s.d / 2);
       else maxR = Math.max(maxR, Math.abs(s.ox) + s.radius, Math.abs(s.oy) + s.radius);
     });
 
-    return { shapes, maxR };
+    return { shapes, maxR, config: extractedConfig };
   } catch (err) {
     console.error("URDF parse error:", err);
-    return { shapes: [], maxR: 0.2 };
+    return { shapes: [], maxR: 0.2, config: null };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Color & Gradient Cache Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function hexToHsl(hex) {
+  let c = (hex || "#1a4dcc").replace("#", "");
+  if (c.length === 3) c = c.split("").map((x) => x + x).join("");
+  const num = parseInt(c, 16) || 0x1a4dcc;
+  let r = (num >> 16) / 255;
+  let g = ((num >> 8) & 0xff) / 255;
+  let b = (num & 0xff) / 255;
+
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h * 360, s * 100, l * 100];
+}
+
+function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+
+  if (0 <= h && h < 60) { r = c; g = x; b = 0; }
+  else if (60 <= h && h < 120) { r = x; g = c; b = 0; }
+  else if (120 <= h && h < 180) { r = 0; g = c; b = x; }
+  else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
+  else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
+  else if (300 <= h && h < 360) { r = c; g = 0; b = x; }
+
+  const toHex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function adjustColorLightness(hex, amountPercent) {
+  if (!hex || typeof hex !== "string" || !hex.startsWith("#")) return hex;
+  const [h, s, l] = hexToHsl(hex);
+  return hslToHex(h, s, l + amountPercent);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,11 +270,13 @@ function drawRobot(
   scale,
   isDark,
   view,
+  vx = 0,
+  w = 0
 ) {
-  const { shapes, maxR } = urdf ?? { shapes: [], maxR: 0.2 };
+  const { shapes, maxR, config } = urdf ?? { shapes: [], maxR: 0.2, config: null };
   const labelR = Math.max(10, maxR * scale);
+  const kinematicModel = config?.kinematicModel ?? "diff_drive";
 
-  // เปลี่ยนจากค่าคงที่ เป็นแบบนี้ครับ
   const textColor = isDark ? "#000000" : "#ffffff";
   const lineColor = isDark ? "#000000" : "#ffffff";
   const coordColor = isDark ? "#000652" : "#3ed6fc";
@@ -200,61 +298,221 @@ function drawRobot(
     ctx.stroke();
     ctx.shadowBlur = 0;
   } else {
+    // 5. DROP SHADOW: Cached radial gradient black fading to transparent underneath
+    const shadowR = Math.max(15, maxR * scale * 1.3);
+    const shadowCacheKey = `${shadowR.toFixed(1)}`;
+    if (urdf._shadowCacheKey !== shadowCacheKey) {
+      urdf._shadowCacheKey = shadowCacheKey;
+      const shadowGrad = ctx.createRadialGradient(0, 0, shadowR * 0.1, 0, 0, shadowR);
+      shadowGrad.addColorStop(0, "rgba(0, 0, 0, 0.35)");
+      shadowGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+      urdf._shadowGrad = shadowGrad;
+    }
+    ctx.fillStyle = urdf._shadowGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, shadowR, 0, Math.PI * 2);
+    ctx.fill();
+
     shapes.forEach((s) => {
       const sx = s.ox * scale;
       const sy = -s.oy * scale;
       ctx.save();
       ctx.translate(sx, sy);
-      if (s.yaw) ctx.rotate(-s.yaw);
-      ctx.shadowColor = s.color + "99";
-      ctx.shadowBlur = 8;
+      
+      let finalYaw = s.yaw || 0;
+      if (s.link === "virtual_wheel_fl" || s.link === "virtual_wheel_fr") {
+        if (config?.kinematicModel === "ackermann" && Math.abs(vx) > 1e-4) {
+          const maxSteer = (config?.maxSteeringAngle ?? 30) * (Math.PI / 180);
+          const rawSteer = Math.atan((w * (config?.wheelBase ?? 0.5)) / vx);
+          finalYaw = Math.max(-maxSteer, Math.min(maxSteer, rawSteer));
+        }
+      }
+      if (finalYaw) ctx.rotate(-finalYaw);
 
-      if (s.type === "box") {
-        const hw = (s.w / 2) * scale;
-        const hd = (s.d / 2) * scale;
-        ctx.fillStyle = s.color + "dd";
-        ctx.fillRect(-hw, -hd, hw * 2, hd * 2);
-        ctx.strokeStyle = "#ffffffcc";
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(-hw, -hd, hw * 2, hd * 2);
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(hw, -hd);
-        ctx.lineTo(hw, hd);
-        ctx.stroke();
-        ctx.strokeStyle = "#ffffff55";
+      const isWheel = Boolean(s.link && s.link.toLowerCase().includes("wheel"));
+      const isLidar = !isWheel && Boolean(s.link && (s.link.toLowerCase().includes("laser") || s.link.toLowerCase().includes("lidar") || s.link.toLowerCase().includes("sensor")));
+
+      if (isWheel) {
+        // --- 2. WHEELS (Upright rectangular housing) ---
+        const w = s.w ?? (s.radius ? s.radius * 2 : 0.08);
+        const d = s.d ?? (s.length ? s.length : (s.radius ? s.radius * 2 : 0.04));
+        const hw = Math.max(1, (w / 2) * scale);
+        const hd = Math.max(1, (d / 2) * scale);
+        const wheelRadius = 2;
+
+        const wheelCacheKey = `${hw.toFixed(1)}_${hd.toFixed(1)}_${kinematicModel}`;
+        if (s._wheelCacheKey !== wheelCacheKey) {
+          s._wheelCacheKey = wheelCacheKey;
+
+          const maxDist = Math.hypot(hw, hd);
+          const wheelGrad = ctx.createRadialGradient(hw * 0.3, hd * 0.3, 0, 0, 0, maxDist);
+          wheelGrad.addColorStop(0, "#6a6d72");
+          wheelGrad.addColorStop(0.5, "#2c2e32");
+          wheelGrad.addColorStop(1, "#111214");
+          s._cachedWheelGrad = wheelGrad;
+
+          const wp = new Path2D();
+          if (wp.roundRect) {
+            wp.roundRect(-hw, -hd, hw * 2, hd * 2, wheelRadius);
+          } else {
+            wp.rect(-hw, -hd, hw * 2, hd * 2);
+          }
+          s._cachedWheelPath = wp;
+
+          if (kinematicModel === "mecanum") {
+            const isSameSign = (s.ox * s.oy) >= 0;
+            const dir = isSameSign ? 1 : -1;
+            const numLines = 4;
+            const step = (hw * 2 + hd * 2) / numLines;
+            const mp = new Path2D();
+            for (let i = -numLines; i <= numLines; i++) {
+              const offset = i * (step * 0.5);
+              if (dir === 1) {
+                mp.moveTo(-hw + offset - hd, -hd);
+                mp.lineTo(-hw + offset + hd, hd);
+              } else {
+                mp.moveTo(-hw + offset + hd, -hd);
+                mp.lineTo(-hw + offset - hd, hd);
+              }
+            }
+            s._cachedMecanumRollerPath = mp;
+          }
+        }
+
+        ctx.fillStyle = s._cachedWheelGrad;
+        ctx.fill(s._cachedWheelPath);
+        ctx.strokeStyle = "#4a4d52";
         ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(-hw, 0);
-        ctx.lineTo(hw, 0);
-        ctx.moveTo(0, -hd);
-        ctx.lineTo(0, hd);
-        ctx.stroke();
-        ctx.fillStyle = "#ffffffaa";
-        ctx.beginPath();
-        ctx.arc(0, 0, 2, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (s.type === "cylinder" || s.type === "sphere") {
-        const pr = Math.max(1.5, s.radius * scale);
+        ctx.stroke(s._cachedWheelPath);
+
+        if (kinematicModel === "mecanum") {
+          // --- 2b. MECANUM WHEELS: cached diagonal roller lines clipped to upright wheel rect ---
+          ctx.save();
+          ctx.clip(s._cachedWheelPath);
+          ctx.strokeStyle = "#54575c";
+          ctx.lineWidth = 2;
+          ctx.stroke(s._cachedMecanumRollerPath);
+          ctx.restore();
+        } else {
+          // --- 2a. STANDARD WHEELS: centered vertical tread strip ---
+          ctx.fillStyle = "rgba(69, 72, 77, 0.60)";
+          const stripWidth = Math.max(1, hd * 0.4);
+          ctx.fillRect(-hw, -stripWidth / 2, hw * 2, stripWidth);
+        }
+      } else if (isLidar) {
+        // --- 3. LIDAR / SENSOR PUCK ---
+        const pr = Math.max(1.5, (s.radius || 0.05) * scale);
+        const lidarCacheKey = `${pr.toFixed(1)}`;
+        if (s._lidarCacheKey !== lidarCacheKey) {
+          s._lidarCacheKey = lidarCacheKey;
+          const laserGrad = ctx.createRadialGradient(pr * 0.3, pr * 0.3, 0, 0, 0, pr);
+          laserGrad.addColorStop(0, "#e8eaed");
+          laserGrad.addColorStop(0.5, "#c3c6cb");
+          laserGrad.addColorStop(1, "#8f9296");
+          s._cachedLidarGrad = laserGrad;
+        }
+
+        ctx.fillStyle = s._cachedLidarGrad;
         ctx.beginPath();
         ctx.arc(0, 0, pr, 0, Math.PI * 2);
-        ctx.fillStyle = s.color + "dd";
-        ctx.shadowBlur = 8;
         ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = "#ffffff55";
-        ctx.lineWidth = Math.max(0.5, Math.min(1.5, pr * 0.08));
+        ctx.strokeStyle = "#4a4d52";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        const innerR = Math.max(1, pr * 0.5);
+        ctx.fillStyle = "#2c2e32";
+        ctx.beginPath();
+        ctx.arc(0, 0, innerR, 0, Math.PI * 2);
+        ctx.fill();
+
+        const dotR = Math.max(0.5, innerR * 0.3);
+        ctx.fillStyle = "rgba(232, 234, 237, 0.50)";
+        ctx.beginPath();
+        ctx.arc(innerR * 0.3, innerR * 0.3, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (s.type === "box") {
+        // --- 1. BODY (Rectangular chassis driving gradient from configured color) ---
+        const w = s.w ?? 0.3;
+        const d = s.d ?? 0.3;
+        const hw = Math.max(2, (w / 2) * scale);
+        const hd = Math.max(2, (d / 2) * scale);
+        const cornerRadius = Math.min(hw, hd) * 0.15;
+        const baseColor = s.color || "#1a4dcc";
+
+        const bodyCacheKey = `${hw.toFixed(1)}_${hd.toFixed(1)}_${baseColor}`;
+        if (s._bodyCacheKey !== bodyCacheKey) {
+          s._bodyCacheKey = bodyCacheKey;
+
+          // Linear gradient derived from base color: top (lightened +15%), mid (+5%), bottom (darkened -20%)
+          const bodyGrad = ctx.createLinearGradient(hw, 0, -hw, 0);
+          bodyGrad.addColorStop(0, adjustColorLightness(baseColor, 15));
+          bodyGrad.addColorStop(0.5, adjustColorLightness(baseColor, 5));
+          bodyGrad.addColorStop(1, adjustColorLightness(baseColor, -20));
+          s._cachedBodyGrad = bodyGrad;
+
+          const bp = new Path2D();
+          if (bp.roundRect) {
+            bp.roundRect(-hw, -hd, hw * 2, hd * 2, cornerRadius);
+          } else {
+            bp.rect(-hw, -hd, hw * 2, hd * 2);
+          }
+          s._cachedBodyPath = bp;
+
+          const barInset = 3;
+          const barWidth = Math.max(2, (hd - 6) * 2);
+          const hp = new Path2D();
+          if (hp.roundRect) {
+            hp.roundRect(hw - barInset - 2, -barWidth / 2, 2, barWidth, 1);
+          } else {
+            hp.rect(hw - barInset - 2, -barWidth / 2, 2, barWidth);
+          }
+          s._cachedHighlightPath = hp;
+        }
+
+        ctx.fillStyle = s._cachedBodyGrad;
+        ctx.fill(s._cachedBodyPath);
+
+        // Thin semi-transparent highlight bar
+        ctx.fillStyle = "rgba(69, 71, 76, 0.70)";
+        ctx.fill(s._cachedHighlightPath);
+
+        // 1px stroke outline
+        ctx.strokeStyle = "#4a4d52";
+        ctx.lineWidth = 1;
+        ctx.stroke(s._cachedBodyPath);
+
+        // --- 4. DIRECTION INDICATOR ---
+        const triTipX = hw - 3;
+        const triBaseX = hw - 11;
+        const triHalfW = 4;
+        ctx.fillStyle = "rgba(230, 241, 251, 0.70)";
+        ctx.beginPath();
+        ctx.moveTo(triTipX, 0);
+        ctx.lineTo(triBaseX, -triHalfW);
+        ctx.lineTo(triBaseX, triHalfW);
+        ctx.closePath();
+        ctx.fill();
+      } else if (s.type === "cylinder" || s.type === "sphere") {
+        const pr = Math.max(1.5, (s.radius || 0.05) * scale);
+        ctx.beginPath();
+        ctx.arc(0, 0, pr, 0, Math.PI * 2);
+        ctx.fillStyle = (s.color || "#4a4d52") + "dd";
+        ctx.fill();
         ctx.stroke();
       }
+
       ctx.restore();
     });
   }
 
   ctx.shadowBlur = 0;
-  const arrowStart = Math.max(10, maxR * scale) * 0.6;
-  const arrowEnd = Math.max(10, maxR * scale) * 2.0;
+  const robotRadiusPx = Math.max(10, maxR * scale);
+  const gapPx = 8;
+  const arrowLenPx = 16;
+  const arrowStart = robotRadiusPx + gapPx;
+  const arrowEnd = arrowStart + arrowLenPx;
+
   ctx.strokeStyle = lineColor;
   ctx.lineWidth = 2;
   ctx.lineCap = "round";
@@ -262,11 +520,12 @@ function drawRobot(
   ctx.moveTo(arrowStart, 0);
   ctx.lineTo(arrowEnd, 0);
   ctx.stroke();
+
   ctx.fillStyle = lineColor;
   ctx.beginPath();
-  ctx.moveTo(arrowEnd, 0);
-  ctx.lineTo(arrowEnd - 8, -4);
-  ctx.lineTo(arrowEnd - 8, 4);
+  ctx.moveTo(arrowEnd + 2, 0);
+  ctx.lineTo(arrowEnd - 5, -3.5);
+  ctx.lineTo(arrowEnd - 5, 3.5);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -469,9 +728,9 @@ function MapEditor({ onExit, isDark }) {
     const dist =
       Math.abs(
         (p2[1] - p1[1]) * x -
-          (p2[0] - p1[0]) * y +
-          p2[0] * p1[1] -
-          p2[1] * p1[0],
+        (p2[0] - p1[0]) * y +
+        p2[0] * p1[1] -
+        p2[1] * p1[0],
       ) / (Math.hypot(p2[1] - p1[1], p2[0] - p1[0]) || 1e-6);
     const minX = Math.min(p1[0], p2[0]) - 0.5;
     const maxX = Math.max(p1[0], p2[0]) + 0.5;
@@ -808,6 +1067,12 @@ function MapEditor({ onExit, isDark }) {
 function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
   const canvasRef = useRef(null);
 
+  const [debugStats, setDebugStats] = useState({ fps: 0, rtf: "1.00" });
+  const frameDeltasRef = useRef([]);
+  const lastFrameTimeRef = useRef(performance.now());
+  const lastUiUpdateRef = useRef(0);
+  const odomSamplesRef = useRef([]);
+
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   const dragRef = useRef({
     isMiddle: false,
@@ -816,6 +1081,8 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     lastY: 0,
   });
   const [cursor, setCursor] = useState("crosshair");
+
+  const [followRobot, setFollowRobot] = useState(false);
 
   const handleMouseDown = (e) => {
     if (e.button === 0) {
@@ -845,6 +1112,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
       dragRef.current.lastX = e.clientX;
       dragRef.current.lastY = e.clientY;
     } else if (dragRef.current.isMiddle) {
+      setFollowRobot(false);
       const dx = e.clientX - dragRef.current.lastX;
       const dy = e.clientY - dragRef.current.lastY;
       setView((v) => ({ ...v, panX: v.panX + dx, panY: v.panY + dy }));
@@ -859,6 +1127,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
   };
 
   const handleDoubleClick = () => {
+    setFollowRobot(false);
     setView({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   };
 
@@ -876,6 +1145,38 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
   }, []);
+
+  useEffect(() => {
+    if (!followRobot || !pose || pose.x === "-" || !mapData?.map_info) return;
+    const { scale, offsetX, offsetY } = buildTransform(mapData.map_info, width, height);
+    const { origin_x, origin_y } = mapData.map_info;
+    const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
+    const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
+    const rx = width - offsetX - (worldY - origin_y) * scale;
+    const ry = height - offsetY - (worldX - origin_x) * scale;
+
+    setView((v) => {
+      const desiredPanX = (width / 2 - rx) * v.zoom;
+      const desiredPanY = (height / 2 - ry) * v.zoom;
+      if (Math.abs(v.panX - desiredPanX) > 0.1 || Math.abs(v.panY - desiredPanY) > 0.1) {
+        return { ...v, panX: desiredPanX, panY: desiredPanY };
+      }
+      return v;
+    });
+  }, [followRobot, pose, mapData, width, height]);
+
+  useEffect(() => {
+    if (!pose || pose.x === "-") return;
+    const nowWall = performance.now() / 1000;
+    const stampSec = pose.stampSec ?? null;
+    const samples = odomSamplesRef.current;
+    
+    samples.push({
+      sim: stampSec !== null && stampSec > 0 ? stampSec : (samples.length > 0 ? samples[samples.length - 1].sim + 0.05 : nowWall),
+      wall: nowWall,
+    });
+    if (samples.length > 40) samples.shift();
+  }, [pose]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1039,6 +1340,8 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
         scale,
         isDark,
         view,
+        pose.vx,
+        pose.w
       );
     }
 
@@ -1107,10 +1410,70 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     ctx.font = "bold 12px sans-serif";
     ctx.textAlign = "left";
     ctx.fillText("1 m", bx + barPx + 8, by + 4);
+
+    const now = performance.now();
+    const frameDelta = now - lastFrameTimeRef.current;
+    lastFrameTimeRef.current = now;
+    if (frameDelta > 0 && frameDelta < 1000) {
+      frameDeltasRef.current.push(frameDelta);
+      if (frameDeltasRef.current.length > 60) frameDeltasRef.current.shift();
+    }
+
+    if (now - lastUiUpdateRef.current >= 300) {
+      lastUiUpdateRef.current = now;
+      const deltas = frameDeltasRef.current;
+      const avgDelta = deltas.length > 0 ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0;
+      const calculatedFps = avgDelta > 0 ? Math.round(1000 / avgDelta) : 0;
+
+      const samples = odomSamplesRef.current;
+      let calculatedRtf = 1.0;
+      if (samples.length >= 2) {
+        const first = samples[0];
+        const last = samples[samples.length - 1];
+        const dSim = last.sim - first.sim;
+        const dWall = last.wall - first.wall;
+        if (dWall > 0.05) {
+          calculatedRtf = Math.min(9.99, Math.max(0.0, dSim / dWall));
+        }
+      }
+
+      setDebugStats({
+        fps: calculatedFps,
+        rtf: calculatedRtf.toFixed(2),
+      });
+    }
   }, [mapData, pose, urdf, width, height, isDark, view]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <div
+        style={{
+          position: "absolute",
+          top: "16px",
+          left: "16px",
+          fontSize: "11px",
+          fontFamily: "monospace",
+          color: isDark ? "rgba(248, 250, 252, 0.75)" : "rgba(15, 23, 42, 0.75)",
+          background: isDark
+            ? "rgba(15, 23, 42, 0.65)"
+            : "rgba(255, 255, 255, 0.75)",
+          backdropFilter: "blur(6px)",
+          border: isDark
+            ? "1px solid rgba(255, 255, 255, 0.12)"
+            : "1px solid rgba(15, 23, 42, 0.12)",
+          borderRadius: "8px",
+          padding: "5px 9px",
+          pointerEvents: "none",
+          zIndex: 5,
+          display: "flex",
+          flexDirection: "column",
+          gap: "2px",
+          lineHeight: "1.3",
+        }}
+      >
+        <div>FPS: {debugStats.fps}</div>
+        <div>RTF: {debugStats.rtf}</div>
+      </div>
       <canvas
         ref={canvasRef}
         width={width}
@@ -1128,6 +1491,56 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
           height: "100%",
         }}
       />
+      <button
+        type="button"
+        onClick={() => setFollowRobot((prev) => !prev)}
+        style={{
+          position: "absolute",
+          top: "16px",
+          right: "16px",
+          background: followRobot
+            ? "#2563eb"
+            : isDark
+            ? "rgba(15, 23, 42, 0.88)"
+            : "rgba(255, 255, 255, 0.95)",
+          color: followRobot ? "#ffffff" : isDark ? "#f8fafc" : "#0f172a",
+          border: followRobot
+            ? "1.5px solid #60a5fa"
+            : isDark
+            ? "1.5px solid rgba(255, 255, 255, 0.25)"
+            : "1.5px solid rgba(15, 23, 42, 0.2)",
+          borderRadius: "10px",
+          padding: "8px 14px",
+          fontSize: "13px",
+          fontWeight: 700,
+          cursor: "pointer",
+          backdropFilter: "blur(8px)",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          boxShadow: followRobot
+            ? "0 4px 16px rgba(37, 99, 235, 0.45)"
+            : "0 4px 12px rgba(0, 0, 0, 0.2)",
+          transition: "all 0.2s ease",
+          zIndex: 5,
+        }}
+      >
+        <span style={{ fontSize: "14px" }}>🎯</span>
+        <span style={{ letterSpacing: "0.2px" }}>
+          {followRobot ? "Following Robot" : "Follow Robot"}
+        </span>
+        {followRobot && (
+          <span
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: "#4ade80",
+              boxShadow: "0 0 8px #4ade80",
+            }}
+          />
+        )}
+      </button>
       <div
         style={{
           position: "absolute",
@@ -1253,6 +1666,17 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
   );
 }
 
+const ArrowSvg = ({ angle = 0 }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: `rotate(${angle}deg)` }}>
+    <path d="M12 19V5M5 12l7-7 7 7" />
+  </svg>
+);
+const CircleSvg = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <circle cx="12" cy="12" r="10" />
+  </svg>
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // KeyboardController
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1281,7 +1705,7 @@ function KeyboardController({ ros, isDark }) {
           value: { type: 1, bool_value: enabled },  // type 1 = PARAMETER_BOOL
         }],
       },
-      () => {},
+      () => { },
       (err) => console.warn('watchdog toggle failed:', err)
     );
   };
@@ -1297,11 +1721,11 @@ function KeyboardController({ ros, isDark }) {
 
       const k = e.key;
       const lower = k.toLowerCase();
-      
+
       if (lower === "k") {
         e.preventDefault();
         setKeys({});
-      } else if (["u","i","o","j","l","m",",",".", "U","I","O","J","L","M","<",">"].includes(k)) {
+      } else if (["u", "i", "o", "j", "l", "m", ",", ".", "U", "I", "O", "J", "L", "M", "<", ">"].includes(k)) {
         e.preventDefault();
         setKeys({ [k]: true });
       } else if (lower === "w") {
@@ -1327,7 +1751,7 @@ function KeyboardController({ ros, isDark }) {
       }
 
       const k = e.key;
-      if (["u","i","o","j","l","m",",",".", "U","I","O","J","L","M","<",">"].includes(k)) {
+      if (["u", "i", "o", "j", "l", "m", ",", ".", "U", "I", "O", "J", "L", "M", "<", ">"].includes(k)) {
         if (watchdogEnabled) {
           setKeys((prev) => {
             const next = { ...prev };
@@ -1442,6 +1866,8 @@ function KeyboardController({ ros, isDark }) {
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
+      flexWrap: "wrap",
+      gap: "8px",
       marginBottom: "20px",
     },
     title: {
@@ -1608,7 +2034,7 @@ function KeyboardController({ ros, isDark }) {
     },
   };
 
-  const renderVKey = (baseKey, label, styleOverrides) => {
+  const renderVKey = (baseKey, icon, styleOverrides) => {
     let actualKey = isHolonomic ? baseKey.toUpperCase() : baseKey.toLowerCase();
     if (isHolonomic && baseKey === ',') actualKey = '<';
     if (isHolonomic && baseKey === '.') actualKey = '>';
@@ -1637,14 +2063,26 @@ function KeyboardController({ ros, isDark }) {
 
     return (
       <div
-        style={{ ...S.key(!!keys[actualKey] && webControl), ...styleOverrides }}
+        style={{ ...S.key(!!keys[actualKey] && webControl), position: 'relative', ...styleOverrides }}
         onMouseDown={handlePress}
         onMouseUp={handleRelease}
         onMouseLeave={handleRelease}
         onTouchStart={handlePress}
         onTouchEnd={handleRelease}
       >
-        {isHolonomic ? actualKey : label}
+        <div style={{ fontSize: baseKey === 'k' ? '12px' : '22px' }}>
+          {icon}
+        </div>
+        <div style={{
+          position: 'absolute', top: '4px', right: '6px',
+          fontSize: '11px', fontWeight: 700,
+          color: isDark ? '#B4B2A9' : '#666666',
+          background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          padding: '1px 4px', borderRadius: '4px',
+          fontFamily: 'monospace', lineHeight: 1
+        }}>
+          {isHolonomic ? actualKey : baseKey}
+        </div>
       </div>
     );
   };
@@ -1688,226 +2126,169 @@ function KeyboardController({ ros, isDark }) {
         }
       `}</style>
 
-      <div style={S.titleRow}>
-        <div style={S.title}>Robot Control</div>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px',
+        background: isDark ? '#1e1e2d' : '#f5f5f5', padding: '6px 12px', borderRadius: '12px', marginBottom: '16px',
+        border: `1px solid ${isDark ? '#333' : '#e0e0e0'}`
+      }}>
+        {/* Watchdog toggle */}
+        <div
+          title={watchdogEnabled ? 'Watchdog ON — click to disable' : 'Watchdog OFF — click to enable'}
+          onClick={() => toggleWatchdog(!watchdogEnabled)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '6px 12px', borderRadius: '20px', cursor: 'pointer',
+            fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px',
+            userSelect: 'none', transition: 'all 0.2s', height: '28px',
+            background: watchdogEnabled ? '#00e67625' : (isDark ? '#ffffff0d' : '#e0e0e0'),
+            color: watchdogEnabled ? '#00e676' : (isDark ? '#888' : '#666'),
+          }}
+        >
+          <div style={{
+            width: '8px', height: '8px', borderRadius: '50%',
+            background: watchdogEnabled ? '#00e676' : (isDark ? '#555' : '#aaa'),
+            boxShadow: watchdogEnabled ? '0 0 6px #00e676' : 'none',
+            transition: 'all 0.2s',
+          }} />
+          WATCHDOG
+        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Watchdog toggle */}
-          <div
-            title={watchdogEnabled ? 'Watchdog ON — click to disable' : 'Watchdog OFF — click to enable'}
-            onClick={() => toggleWatchdog(!watchdogEnabled)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '4px 10px', borderRadius: '20px', cursor: 'pointer',
-              fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px',
-              userSelect: 'none', transition: 'all 0.2s',
-              background: watchdogEnabled ? '#ff980015' : (isDark ? '#ffffff0d' : '#f0f0f0'),
-              border: watchdogEnabled ? '1px solid #ff9800' : `1px solid ${isDark ? '#333' : '#ddd'}`,
-              color: watchdogEnabled ? '#ff9800' : (isDark ? '#555' : '#aaa'),
-            }}
-          >
-            <div style={{
-              width: '7px', height: '7px', borderRadius: '50%',
-              background: watchdogEnabled ? '#ff9800' : 'transparent',
-              boxShadow: watchdogEnabled ? '0 0 6px #ff9800' : 'none',
-              border: watchdogEnabled ? 'none' : `1px solid ${isDark ? '#555' : '#ccc'}`,
-              transition: 'all 0.2s',
-            }} />
-            WATCHDOG
+        {/* Web/Terminal toggle */}
+        <div style={{ ...S.toggleWrap, margin: 0 }} onClick={() => setWebControl(!webControl)}>
+          <div style={S.toggleOpt(!webControl, "#ff1744")}>
+            <div style={{ width: "8px", height: "8px", borderRadius: "30%", background: !webControl ? "#ff1744" : "transparent", boxShadow: !webControl ? "0 0 8px #ff1744" : "none", transition: "all 0.2s" }} />
+            Terminal
           </div>
-
-          {/* Web/Terminal toggle */}
-          <div style={S.toggleWrap} onClick={() => setWebControl(!webControl)}>
-            <div style={S.toggleOpt(!webControl, "#ff1744")}>
-              <div
-                style={{
-                  width: "8px",
-                  height: "8px",
-                  borderRadius: "30%",
-                  background: !webControl ? "#ff1744" : "transparent",
-                  boxShadow: !webControl ? "0 0 8px #ff1744" : "none",
-                  transition: "all 0.2s",
-                }}
-              />
-              Terminal
-            </div>
-            <div style={S.toggleOpt(webControl, "#00e676")}>
-              <div
-                style={{
-                  width: "8px",
-                  height: "8px",
-                  borderRadius: "30%",
-                  background: webControl ? "#00e676" : "transparent",
-                  boxShadow: webControl ? "0 0 8px #00e676" : "none",
-                  transition: "all 0.2s",
-                }}
-              />
-              UI
-            </div>
+          <div style={S.toggleOpt(webControl, "#00e676")}>
+            <div style={{ width: "8px", height: "8px", borderRadius: "30%", background: webControl ? "#00e676" : "transparent", boxShadow: webControl ? "0 0 8px #00e676" : "none", transition: "all 0.2s" }} />
+            UI
           </div>
         </div>
       </div>
 
+      <div style={S.titleRow}>
+        <div style={S.title}>Robot Control</div>
+      </div>
+
       <div style={S.controlBody}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-          <div 
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          {/* Holonomic Toggle */}
+          <div
+            onClick={() => {
+              if (!webControl) return;
+              setIsHolonomic(!isHolonomic);
+            }}
+            title={!webControl ? "Enable UI control first" : "Toggle Holonomic Mode"}
             style={{
-              fontSize: '11px', fontWeight: 800, padding: '4px 10px', borderRadius: '6px',
-              background: isHolonomic ? (isDark ? '#00e67625' : '#00e67625') : (isDark ? '#ffffff15' : '#00000010'),
-              color: isHolonomic ? '#00e676' : (isDark ? '#aaaaaa' : '#666666'),
-              border: `1px solid ${isHolonomic ? '#00e67688' : 'transparent'}`,
-              userSelect: 'none', transition: 'all 0.2s'
+              display: 'flex', alignItems: 'center', gap: '8px',
+              fontSize: '11px', fontWeight: 800, padding: '6px 14px', borderRadius: '20px',
+              background: isHolonomic ? (isDark ? '#00e67625' : '#e8f5e9') : (isDark ? '#ffffff10' : '#f0f0f0'),
+              color: isHolonomic ? '#00e676' : (isDark ? '#aaaaaa' : '#888888'),
+              border: `1px solid ${isHolonomic ? '#00e67688' : (isDark ? '#444' : '#ddd')}`,
+              userSelect: 'none', transition: 'all 0.2s',
+              cursor: webControl ? 'pointer' : 'not-allowed',
+              opacity: webControl ? 1 : 0.5
             }}
           >
+            <div style={{
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: isHolonomic ? '#00e676' : (isDark ? '#666' : '#aaa'),
+              boxShadow: isHolonomic ? '0 0 6px #00e676' : 'none',
+              transition: 'all 0.2s'
+            }} />
             HOLONOMIC: {isHolonomic ? 'ON' : 'OFF'}
           </div>
+
           <div style={S.dpad}>
-            {renderVKey("u", "u")}
-            {renderVKey("i", "i")}
-            {renderVKey("o", "o")}
-            {renderVKey("j", "j")}
-            {renderVKey("k", "k")}
-            {renderVKey("l", "l")}
-            {renderVKey("m", "m")}
-            {renderVKey(",", ",")}
-            {renderVKey(".", ".")}
+            {renderVKey("u", <ArrowSvg angle={-45} />)}
+            {renderVKey("i", <ArrowSvg angle={0} />)}
+            {renderVKey("o", <ArrowSvg angle={45} />)}
+            {renderVKey("j", <ArrowSvg angle={-90} />)}
+            {renderVKey("k", <CircleSvg />)}
+            {renderVKey("l", <ArrowSvg angle={90} />)}
+            {renderVKey("m", <ArrowSvg angle={-135} />)}
+            {renderVKey(",", <ArrowSvg angle={180} />)}
+            {renderVKey(".", <ArrowSvg angle={135} />)}
           </div>
         </div>
 
-        <div style={S.sliderCol}>
-          <div>
-            <div style={S.sliderHeader}>
-              <span style={S.sliderLabel}>Speed</span>
-            </div>
-            <div style={S.sliderTrackRow}>
-              <div style={S.sliderTrackCol}>
-                <input
-                  type="range"
-                  className="tele-slider"
-                  min="0.1"
-                  max="2.0"
-                  step="0.1"
-                  value={speed}
-                  onChange={(e) => setSpeed(parseFloat(e.target.value))}
-                  style={S.slider(
-                    speed,
-                    0.1,
-                    2.0,
-                    isDark ? "#90caf9" : "#1976d2",
-                  )}
-                  disabled={!webControl}
-                />
-                <div style={S.sliderLegendRow}>
-                  <span
-                    style={S.sliderKeyBadge(
-                      "min",
-                      isDark ? "#90caf9" : "#1976d2",
-                    )}
-                  >
-                    X −
-                  </span>
-                  <span
-                    style={S.sliderKeyBadge(
-                      "max",
-                      isDark ? "#90caf9" : "#1976d2",
-                    )}
-                  >
-                    W +
-                  </span>
-                </div>
-              </div>
-              <span style={S.val}>{speed.toFixed(2)}</span>
-            </div>
+        {/* Movement Scale Sub-panel */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: '12px',
+          background: isDark ? '#ffffff05' : '#f8f9fa',
+          border: `1px solid ${isDark ? '#ffffff15' : '#e0e0e0'}`,
+          borderRadius: '12px', padding: '16px',
+          flex: 1
+        }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: isDark ? '#aaa' : '#666', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+            Movement Scale
           </div>
 
-          <div>
-            <div style={S.sliderHeader}>
-              <span style={S.sliderLabel}>Angle</span>
-            </div>
-            <div style={S.sliderTrackRow}>
-              <div style={S.sliderTrackCol}>
-                <input
-                  type="range"
-                  className="tele-slider"
-                  min="0.1"
-                  max="3.0"
-                  step="0.1"
-                  value={turnSpeed}
-                  onChange={(e) => setTurnSpeed(parseFloat(e.target.value))}
-                  style={S.slider(
-                    turnSpeed,
-                    0.1,
-                    3.0,
-                    isDark ? "#00e676" : "#2e7d32",
-                  )}
-                  disabled={!webControl}
-                />
-                <div style={S.sliderLegendRow}>
-                  <span
-                    style={S.sliderKeyBadge(
-                      "min",
-                      isDark ? "#00e676" : "#2e7d32",
-                    )}
-                  >
-                    C -
-                  </span>
-                  <span
-                    style={S.sliderKeyBadge(
-                      "max",
-                      isDark ? "#00e676" : "#2e7d32",
-                    )}
-                  >
-                    E +
-                  </span>
-                </div>
-              </div>
-              <span style={S.val}>{turnSpeed.toFixed(2)}</span>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ width: '40px', fontSize: '13px', fontWeight: 600, color: isDark ? '#ccc' : '#444' }}>Speed</span>
+            <button
+              title="Decrease Speed (X)"
+              onClick={() => webControl && setSpeed(Math.max(0.1, speed - 0.1))}
+              style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
+              −<span style={{ position: 'absolute', top: '2px', left: '2px', fontSize: '8px', opacity: 0.5 }}>X</span>
+            </button>
+            <input
+              type="range" className="tele-slider" min="0.1" max="2.0" step="0.1"
+              value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}
+              style={{ ...S.slider(speed, 0.1, 2.0, isDark ? "#85B7EB" : "#1a3a8f"), flex: 1 }}
+              disabled={!webControl}
+            />
+            <button
+              title="Increase Speed (W)"
+              onClick={() => webControl && setSpeed(Math.min(2.0, speed + 0.1))}
+              style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
+              +<span style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '8px', opacity: 0.5 }}>W</span>
+            </button>
+            <span style={{ width: '32px', textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{speed.toFixed(2)}</span>
           </div>
 
-          <div style={S.cmdBar}>
-            <span>
-              X:{" "}
-              <span
-                style={{
-                  color: webControl
-                    ? isDark
-                      ? "#00e5ff"
-                      : "#007b83"
-                    : isDark
-                      ? "#9e9ec0"
-                      : "#aaaaaa",
-                }}
-              >
-                {keys["i"] && webControl
-                  ? speed.toFixed(2)
-                  : keys[","] && webControl
-                    ? (-speed).toFixed(2)
-                    : "0.00"}
-              </span>
-            </span>
-            <span>
-              Z:{" "}
-              <span
-                style={{
-                  color: webControl
-                    ? isDark
-                      ? "#00e5ff"
-                      : "#007b83"
-                    : isDark
-                      ? "#9e9ec0"
-                      : "#aaaaaa",
-                }}
-              >
-                {keys["j"] && webControl
-                  ? turnSpeed.toFixed(2)
-                  : keys["l"] && webControl
-                    ? (-turnSpeed).toFixed(2)
-                    : "0.00"}
-              </span>
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ width: '40px', fontSize: '13px', fontWeight: 600, color: isDark ? '#ccc' : '#444' }}>Angle</span>
+            <button
+              title="Decrease Angle (C)"
+              onClick={() => webControl && setTurnSpeed(Math.max(0.1, turnSpeed - 0.1))}
+              style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
+              −<span style={{ position: 'absolute', top: '2px', left: '2px', fontSize: '8px', opacity: 0.5 }}>C</span>
+            </button>
+            <input
+              type="range" className="tele-slider" min="0.1" max="3.0" step="0.1"
+              value={turnSpeed} onChange={(e) => setTurnSpeed(parseFloat(e.target.value))}
+              style={{ ...S.slider(turnSpeed, 0.1, 3.0, isDark ? "#85B7EB" : "#1a3a8f"), flex: 1 }}
+              disabled={!webControl}
+            />
+            <button
+              title="Increase Angle (E)"
+              onClick={() => webControl && setTurnSpeed(Math.min(3.0, turnSpeed + 0.1))}
+              style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
+              +<span style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '8px', opacity: 0.5 }}>E</span>
+            </button>
+            <span style={{ width: '32px', textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{turnSpeed.toFixed(2)}</span>
           </div>
         </div>
+      </div>
+
+      <div style={{
+        display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '16px',
+        background: isDark ? '#00000033' : '#e0e0e055',
+        padding: '12px 24px', borderRadius: '8px',
+        fontFamily: 'monospace', fontSize: '14px', fontWeight: 600,
+        border: `1px solid ${isDark ? '#333' : '#ccc'}`
+      }}>
+        <span>
+          X: <span style={{ color: webControl ? (isDark ? "#85B7EB" : "#1a3a8f") : (isDark ? "#555" : "#aaa") }}>
+            {keys["i"] && webControl ? speed.toFixed(2) : keys[","] && webControl ? (-speed).toFixed(2) : "0.00"}
+          </span>
+        </span>
+        <span>
+          Z: <span style={{ color: webControl ? (isDark ? "#85B7EB" : "#1a3a8f") : (isDark ? "#555" : "#aaa") }}>
+            {keys["j"] && webControl ? turnSpeed.toFixed(2) : keys["l"] && webControl ? (-turnSpeed).toFixed(2) : "0.00"}
+          </span>
+        </span>
       </div>
     </div>
   );
@@ -2171,7 +2552,7 @@ const SimSelector = forwardRef(function SimSelector(
   const [selRobot, setSelRobot] = useState("");
   const [selWorld, setSelWorld] = useState("");
   const [simStatus, setSimStatus] = useState(null);
-  
+
   const fetchRobots = async () => {
     try {
       const res = await fetch(ROBOTS_URL);
@@ -2206,7 +2587,7 @@ const SimSelector = forwardRef(function SimSelector(
         const res = await fetch(`http://${HOST}:3001/api/robots/${opt.value}`, {
           method: "DELETE",
         });
-        if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || "Failed to delete robot");
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to delete robot");
         const updatedList = robotList.filter((r) => r.name !== opt.value);
         setRobotList(updatedList);
         if (selRobot === opt.value) {
@@ -2216,7 +2597,7 @@ const SimSelector = forwardRef(function SimSelector(
         const res = await fetch(`http://${HOST}:3001/api/worlds/${opt.value}`, {
           method: "DELETE",
         });
-        if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error || "Failed to delete world");
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to delete world");
         const updatedList = worldList.filter((w) => w.name !== opt.value);
         setWorldList(updatedList);
         if (selWorld === opt.value) {
@@ -2437,7 +2818,9 @@ const SimSelector = forwardRef(function SimSelector(
       {/* ── Buttons ── */}
       <div style={{ padding: "0 20px 16px", display: "flex", gap: "10px" }}>
         <button
-          onClick={() => doSwitch(selRobot, selWorld)}
+          onClick={() => {
+            doSwitch(selRobot, selWorld);
+          }}
           disabled={isBusy || !selRobot || !selWorld}
           style={{
             flex: 1,
@@ -2775,6 +3158,108 @@ function TopicMonitor({ ros, isDark }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// NotificationModal Component
+// ─────────────────────────────────────────────────────────────────────────────
+function NotificationModal({ notification, onClose, isDark }) {
+  if (!notification) return null;
+  const { title, message, type = "info", onConfirm } = notification;
+
+  const typeMeta = {
+    success: { icon: "✅", color: "#22c55e", bg: "rgba(34, 197, 94, 0.12)", border: "rgba(34, 197, 94, 0.3)" },
+    error: { icon: "❌", color: "#ef4444", bg: "rgba(239, 68, 68, 0.12)", border: "rgba(239, 68, 68, 0.3)" },
+    warning: { icon: "⚠️", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.12)", border: "rgba(245, 158, 11, 0.3)" },
+    info: { icon: "ℹ️", color: "#3b82f6", bg: "rgba(59, 130, 246, 0.12)", border: "rgba(59, 130, 246, 0.3)" },
+  }[type] || { icon: "ℹ️", color: "#3b82f6", bg: "rgba(59, 130, 246, 0.12)", border: "rgba(59, 130, 246, 0.3)" };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0, 0, 0, 0.65)",
+        backdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99999,
+      }}
+    >
+      <div
+        style={{
+          width: "420px",
+          maxWidth: "90vw",
+          background: isDark ? "#12121c" : "#ffffff",
+          border: `1px solid ${isDark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.1)"}`,
+          borderRadius: "16px",
+          padding: "24px",
+          boxShadow: isDark ? "0 20px 50px rgba(0, 0, 0, 0.8)" : "0 20px 50px rgba(0, 0, 0, 0.15)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div
+            style={{
+              width: "42px",
+              height: "42px",
+              borderRadius: "12px",
+              background: typeMeta.bg,
+              border: `1px solid ${typeMeta.border}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "20px",
+              flexShrink: 0,
+            }}
+          >
+            {typeMeta.icon}
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: isDark ? "#f8fafc" : "#0f172a" }}>
+              {title}
+            </h3>
+          </div>
+        </div>
+
+        <div style={{ fontSize: "13.5px", lineHeight: "1.5", color: isDark ? "#cbd5e1" : "#475569", whiteSpace: "pre-wrap" }}>
+          {message}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (onConfirm) onConfirm();
+              onClose();
+            }}
+            style={{
+              padding: "10px 24px",
+              borderRadius: "10px",
+              border: "none",
+              background: typeMeta.color,
+              color: "#ffffff",
+              fontWeight: 700,
+              fontSize: "14px",
+              cursor: "pointer",
+              boxShadow: `0 4px 14px ${typeMeta.color}55`,
+              transition: "transform 0.15s",
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.transform = "scale(1.02)")}
+            onMouseOut={(e) => (e.currentTarget.style.transform = "scale(1)")}
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // App (Main - No Scroll Layout)
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DashboardView() {
@@ -2810,6 +3295,11 @@ export default function DashboardView() {
   const [isSpinningUpdate, setIsSpinningUpdate] = useState(false);
   const [showStatusToast, setShowStatusToast] = useState(false);
   const toastTimerRef = useRef(null);
+
+  const [notification, setNotification] = useState(null);
+  const showNotification = (title, message, type = "info", onConfirm = null) => {
+    setNotification({ title, message, type, onConfirm });
+  };
 
   const triggerUpdateCheck = () => {
     setIsSpinningUpdate(true);
@@ -2893,12 +3383,18 @@ export default function DashboardView() {
       const q_z = msg.pose.pose.orientation.z;
       const q_w = msg.pose.pose.orientation.w;
       const theta = 2.0 * Math.atan2(q_z, q_w);
+      const vx = msg.twist?.twist?.linear?.x ?? 0;
+      const w = msg.twist?.twist?.angular?.z ?? 0;
 
       if (!isNaN(x) && !isNaN(y) && !isNaN(theta)) {
+        const stampSec = (msg.header?.stamp?.sec ?? 0) + (msg.header?.stamp?.nanosec ?? 0) * 1e-9;
         setPose({
           x: x,
           y: y,
           theta: (theta * 180) / Math.PI,
+          vx: vx,
+          w: w,
+          stampSec: stampSec,
         });
 
         setIsWaitingOdom(false);
@@ -2928,8 +3424,6 @@ export default function DashboardView() {
 
   useEffect(() => {
     fetchMap();
-    fetchRef.current = setInterval(() => fetchMap(), FETCH_INTERVAL);
-    return () => clearInterval(fetchRef.current);
   }, [fetchMap]);
 
   const fetchUrdf = useCallback(
@@ -3258,7 +3752,7 @@ export default function DashboardView() {
               gap: "10px",
               background:
                 updateInfo.status === "available" ||
-                updateInfo.status === "downloaded"
+                  updateInfo.status === "downloaded"
                   ? isDark
                     ? "#1b5e20"
                     : "#e8f5e9"
@@ -3275,7 +3769,7 @@ export default function DashboardView() {
                         : "#fff",
               color:
                 updateInfo.status === "available" ||
-                updateInfo.status === "downloaded"
+                  updateInfo.status === "downloaded"
                   ? isDark
                     ? "#81c784"
                     : "#2e7d32"
@@ -3290,16 +3784,15 @@ export default function DashboardView() {
                       : isDark
                         ? "#ccc"
                         : "#666",
-              border: `1px solid ${
-                updateInfo.status === "available" ||
-                updateInfo.status === "downloaded"
+              border: `1px solid ${updateInfo.status === "available" ||
+                  updateInfo.status === "downloaded"
                   ? "#4caf50"
                   : updateInfo.status === "downloading"
                     ? "#2196f3"
                     : isDark
                       ? "#444"
                       : "#ddd"
-              }`,
+                }`,
               padding: "8px 18px",
               borderRadius: "24px",
               boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
@@ -3346,10 +3839,16 @@ export default function DashboardView() {
           </div>
         )}
 
-        <UpdateProgressModal 
+        <UpdateProgressModal
           updateInfo={updateInfo}
           appVersion={appVersion}
           onClose={() => setUpdateInfo(null)}
+        />
+
+        <NotificationModal
+          notification={notification}
+          onClose={() => setNotification(null)}
+          isDark={isDark}
         />
 
         {showMonitor && (
@@ -3359,118 +3858,91 @@ export default function DashboardView() {
         )}
 
         <div style={S.wrap}>
-            <div style={S.mainContent}>
-              <div style={S.mapCard}>
-                <div style={S.mapHeader}>
-                  <div
-                    style={{
-                      fontSize: "18px",
-                      fontWeight: 600,
-                      color: isDark ? "#90caf9" : "#1976d2",
-                    }}
-                  >
-                    World:{" "}
-                    <span style={{ color: isDark ? "#fff" : "#111" }}>
-                      {mapName || "Loading..."}
-                    </span>
-                    <span
-                      style={{
-                        padding: "3px 8px",
-                        fontSize: "12px",
-                        borderRadius: "6px",
-                        border: "1px solid",
-                        marginLeft: "12px",
-                        background: isDark ? "#1b5e2033" : "#e8f5e9",
-                        color: isDark ? "#81c784" : "#2e7d32",
-                        borderColor: isDark ? "#4caf5055" : "#81c784",
-                      }}
-                    >
-                      {mapBadgeText}
-                    </span>
-                  </div>
-                  <button
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: isDark ? "#90caf9" : "#1976d2",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      fontWeight: 600,
-                    }}
-                    onClick={fetchMap}
-                  >
-                    ↻ REFRESH
-                  </button>
-                </div>
-
-                <div style={S.mapCanvasWrap} ref={mapWrapRef}>
-                  <WorldMap
-                    mapData={mapData}
-                    pose={pose}
-                    urdf={urdf}
-                    width={canvasSize.w}
-                    height={canvasSize.h}
-                    isDark={isDark}
-                  />
+          <div style={S.mainContent}>
+            <div style={S.mapCard}>
+              <div style={S.mapHeader}>
+                <div
+                  style={{
+                    fontSize: "18px",
+                    fontWeight: 600,
+                    color: isDark ? "#90caf9" : "#1976d2",
+                  }}
+                >
+                  World:{" "}
+                  <span style={{ color: isDark ? "#fff" : "#111" }}>
+                    {mapName || "Loading..."}
+                  </span>
                 </div>
               </div>
 
-              <div style={S.rightPanel} className="right-panel">
-                <div style={S.poseCard}>
-                  <div
-                    style={{
-                      fontSize: isNarrow ? "13px" : "18px", // ← scales down
-                      fontWeight: 600,
-                      color: isDark ? "#90caf9" : "#1976d2",
-                      marginBottom: isNarrow ? "8px" : "16px", // ← tighter gap
-                      textAlign: "center",
-                    }}
-                  >
-                    Odometry
-                  </div>
-                  <div style={S.poseGrid}>
-                    {[
-                      { label: "X", value: typeof pose.x === 'number' ? pose.x.toFixed(2) : pose.x, unit: "[m]" },
-                      { label: "Y", value: typeof pose.y === 'number' ? pose.y.toFixed(2) : pose.y, unit: "[m]" },
-                      {
-                        label: "Angle",
-                        value: pose.theta === "-" ? "-" : `${typeof pose.theta === 'number' ? pose.theta.toFixed(1) : pose.theta}°`,
-                        unit: "[degrees]",
-                      },
-                    ].map(({ label, value, unit }) => (
-                      <div key={label} style={S.poseItem}>
-                        <div style={S.poseLabel}>{label}</div>
-                        <div style={S.poseVal}>{value}</div>
-                        <div
-                          style={{
-                            fontSize: "clamp(10px, 1vw, 13px)",
-                            fontWeight: 600,
-                            color: isDark ? "#7a7a9e" : "#999999",
-                            marginTop: "8px",
-                            letterSpacing: "0.5px",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {unit}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <SimSelector
-                  ref={simSelectorRef}
-                  onSwitch={handleSwitch}
-                  onStop={() => setIsWaitingOdom(false)}
+              <div style={S.mapCanvasWrap} ref={mapWrapRef}>
+                <WorldMap
+                  mapData={mapData}
+                  pose={pose}
+                  urdf={urdf}
+                  width={canvasSize.w}
+                  height={canvasSize.h}
                   isDark={isDark}
-                  isWaitingOdom={isWaitingOdom}
                 />
-
-                <KeyboardController ros={rosObj} isDark={isDark} />
               </div>
+            </div>
+
+            <div style={S.rightPanel} className="right-panel">
+              <div style={S.poseCard}>
+                <div
+                  style={{
+                    fontSize: isNarrow ? "13px" : "18px", // ← scales down
+                    fontWeight: 600,
+                    color: isDark ? "#90caf9" : "#1976d2",
+                    marginBottom: isNarrow ? "8px" : "16px", // ← tighter gap
+                    textAlign: "center",
+                  }}
+                >
+                  Odometry
+                </div>
+                <div style={S.poseGrid}>
+                  {[
+                    { label: "X", value: typeof pose.x === 'number' ? pose.x.toFixed(2) : pose.x, unit: "[m]" },
+                    { label: "Y", value: typeof pose.y === 'number' ? pose.y.toFixed(2) : pose.y, unit: "[m]" },
+                    {
+                      label: "Angle",
+                      value: pose.theta === "-" ? "-" : `${typeof pose.theta === 'number' ? pose.theta.toFixed(1) : pose.theta}°`,
+                      unit: "[degrees]",
+                    },
+                  ].map(({ label, value, unit }) => (
+                    <div key={label} style={S.poseItem}>
+                      <div style={S.poseLabel}>{label}</div>
+                      <div style={S.poseVal}>{value}</div>
+                      <div
+                        style={{
+                          fontSize: "clamp(10px, 1vw, 13px)",
+                          fontWeight: 600,
+                          color: isDark ? "#7a7a9e" : "#999999",
+                          marginTop: "8px",
+                          letterSpacing: "0.5px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {unit}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <SimSelector
+                ref={simSelectorRef}
+                onSwitch={handleSwitch}
+                onStop={() => setIsWaitingOdom(false)}
+                isDark={isDark}
+                isWaitingOdom={isWaitingOdom}
+              />
+
+              <KeyboardController ros={rosObj} isDark={isDark} />
             </div>
           </div>
         </div>
+      </div>
     </>
   );
 }

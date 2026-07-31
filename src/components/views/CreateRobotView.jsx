@@ -28,11 +28,28 @@ function ParamRow({ label, unit = '', value, onChange, min, max, step = 0.01, in
   );
 }
 
-function SectionHeader({ label, isDark, icon }) {
+function SectionHeader({ label, isDark, icon, isOpen, onToggle }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', marginBottom: '8px' }}>
-      <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-accent)' }}>{icon} {label}</span>
-      <div style={{ flex: 1, height: '1px', background: isDark ? '#333' : '#e0e0e0' }} />
+    <div
+      onClick={onToggle}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '6px 0',
+        marginTop: '8px',
+        marginBottom: '6px',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-accent)' }}>{icon} {label}</span>
+        <div style={{ flex: 1, height: '1px', background: isDark ? '#333' : '#e0e0e0' }} />
+      </div>
+      <span style={{ fontSize: '10px', color: 'var(--color-text-sub)', marginLeft: '8px', transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+        ▼
+      </span>
     </div>
   );
 }
@@ -41,6 +58,17 @@ export default function CreateRobotView({ onCreated }) {
   const navigate = useNavigate();
   const { isDark } = useAppStore();
   const onExit = () => navigate('/');
+
+  const [openSections, setOpenSections] = useState({
+    identity: true,
+    geometry: true,
+    wheels: false,
+    sensors: false,
+  });
+
+  const toggleSection = (key) => {
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const [form, setForm] = useState({
     name: '', kinematic_model: 'diff_drive', color: '#2196f3',
@@ -179,16 +207,21 @@ export default function CreateRobotView({ onCreated }) {
       }
       ctx.fill(); ctx.stroke();
 
-      // Heading Arrow (points along +X axis)
+      // Heading Arrow (positioned in front of robot with gap)
+      const robotRadiusPx = Math.max(10, rEff * scale);
+      const arrowStart = robotRadiusPx + 8;
+      const arrowEnd = arrowStart + 16;
+
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      const arrowLen = Math.max(15, rEff * scale * 0.8);
-      ctx.lineTo(arrowLen, 0);
+      ctx.moveTo(arrowStart, 0);
+      ctx.lineTo(arrowEnd, 0);
       ctx.strokeStyle = isDark ? '#ffffff' : '#000000';
-      ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.lineWidth = 2; ctx.stroke();
+
+      ctx.fillStyle = isDark ? '#ffffff' : '#000000';
       ctx.beginPath();
-      ctx.moveTo(arrowLen + 6, 0); ctx.lineTo(arrowLen - 5, -5); ctx.lineTo(arrowLen - 5, 5);
-      ctx.fillStyle = isDark ? '#ffffff' : '#000000'; ctx.fill();
+      ctx.moveTo(arrowEnd + 2, 0); ctx.lineTo(arrowEnd - 5, -3.5); ctx.lineTo(arrowEnd - 5, 3.5);
+      ctx.fill();
 
       // Wheels
       const drawWheel = (rx, ry, yaw, isMecanum = false, mecanumDir = 1) => {
@@ -301,11 +334,23 @@ export default function CreateRobotView({ onCreated }) {
   };
 
   const PRESET_COLORS = ['#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#ff9800', '#ff5722', '#795548', '#607d8b'];
+  const COLOR_NAMES = {
+    '#f44336': 'Red', '#e91e63': 'Pink', '#9c27b0': 'Purple', '#673ab7': 'Deep Purple',
+    '#3f51b5': 'Indigo', '#2196f3': 'Blue', '#03a9f4': 'Sky Blue', '#00bcd4': 'Cyan',
+    '#009688': 'Teal', '#4caf50': 'Green', '#8bc34a': 'Light Green', '#ff9800': 'Orange',
+    '#ff5722': 'Deep Orange', '#795548': 'Brown', '#607d8b': 'Blue Grey'
+  };
+  const selectedColorName = COLOR_NAMES[form.color.toLowerCase()] || form.color.toUpperCase();
+
   const bg = 'var(--color-paper)';
   const text = 'var(--color-text)';
   const inputBg = isDark ? '#1a1a24' : '#ffffff';
   const border = 'var(--color-border)';
   const shared = { isDark, inputBg, border, text };
+
+  // Kinematic model relevance rules for wheel parameters
+  const showWheelBase = form.kinematic_model !== 'diff_drive' && !(form.kinematic_model === 'omni' && form.omni_wheel_count === 3);
+  const showSteeringAngle = form.kinematic_model === 'ackermann';
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden', background: isDark ? '#08080c' : '#f0f2f5' }}>
@@ -322,134 +367,167 @@ export default function CreateRobotView({ onCreated }) {
           {error && <div style={{ background: '#ffebee', color: '#c62828', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', fontWeight: 500, border: '1px solid #ffcdd2' }}>{error}</div>}
 
           <form id="robot-creator-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <SectionHeader label="Identity" isDark={isDark} icon="🤖" />
-            <label style={{ fontSize: '12px', fontWeight: 600, color: text, marginBottom: '8px', display: 'block' }}>
-              Robot Name
-              <input required type="text" value={form.name} placeholder="e.g. my_robot"
-                onChange={e => set('name', e.target.value)}
-                style={{ display: 'block', width: '100%', padding: '10px 12px', marginTop: '6px', background: inputBg, border: `1px solid ${border}`, color: text, borderRadius: '8px', boxSizing: 'border-box' }} />
-            </label>
+            {/* Section 1: Identity */}
+            <SectionHeader label="Identity" isDark={isDark} icon="🤖" isOpen={openSections.identity} onToggle={() => toggleSection('identity')} />
+            {openSections.identity && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: text, marginBottom: '8px', display: 'block' }}>
+                  Robot Name
+                  <input required type="text" value={form.name} placeholder="e.g. my_robot"
+                    onChange={e => set('name', e.target.value)}
+                    style={{ display: 'block', width: '100%', padding: '10px 12px', marginTop: '6px', background: inputBg, border: `1px solid ${border}`, color: text, borderRadius: '8px', boxSizing: 'border-box' }} />
+                </label>
 
-            <label style={{ fontSize: '12px', fontWeight: 600, color: text, marginBottom: '8px', display: 'block' }}>
-              Kinematic Model
-              <select value={form.kinematic_model} onChange={e => {
-                const newModel = e.target.value;
-                const allowed = getAllowedGeometries(newModel, form.omni_wheel_count);
-                setForm(f => {
-                  const f2 = { ...f, kinematic_model: newModel };
-                  if (!allowed.includes(f.geometry_type)) f2.geometry_type = allowed[0];
-                  return f2;
-                });
-              }}
-                style={{ display: 'block', width: '100%', padding: '10px 12px', marginTop: '6px', background: inputBg, border: `1px solid ${border}`, color: text, borderRadius: '8px' }}>
-                <option value="diff_drive">Differential Drive (2 Wheels)</option>
-                <option value="mecanum">Mecanum Drive (4 Wheels)</option>
-                <option value="omni">Omni-Directional</option>
-                <option value="ackermann">Ackermann (Car Steering)</option>
-              </select>
-            </label>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: text, marginBottom: '8px', display: 'block' }}>
+                  Kinematic Model
+                  <select value={form.kinematic_model} onChange={e => {
+                    const newModel = e.target.value;
+                    const allowed = getAllowedGeometries(newModel, form.omni_wheel_count);
+                    setForm(f => {
+                      const f2 = { ...f, kinematic_model: newModel };
+                      if (!allowed.includes(f.geometry_type)) f2.geometry_type = allowed[0];
+                      return f2;
+                    });
+                  }}
+                    style={{ display: 'block', width: '100%', padding: '10px 12px', marginTop: '6px', background: inputBg, border: `1px solid ${border}`, color: text, borderRadius: '8px' }}>
+                    <option value="diff_drive">Differential Drive (2 Wheels)</option>
+                    <option value="mecanum">Mecanum Drive (4 Wheels)</option>
+                    <option value="omni">Omni-Directional</option>
+                    <option value="ackermann">Ackermann (Car Steering)</option>
+                  </select>
+                </label>
 
-            {form.kinematic_model === 'omni' && (
-              <label style={{ fontSize: '12px', fontWeight: 600, color: text, marginBottom: '8px', display: 'block' }}>
-                Omni Wheel Count
-                <select value={form.omni_wheel_count} onChange={e => {
-                  const newCount = parseInt(e.target.value, 10);
-                  const allowed = getAllowedGeometries(form.kinematic_model, newCount);
-                  setForm(f => {
-                    const f2 = { ...f, omni_wheel_count: newCount };
-                    if (!allowed.includes(f.geometry_type)) f2.geometry_type = allowed[0];
-                    return f2;
-                  });
-                }}
-                  style={{ display: 'block', width: '100%', padding: '10px 12px', marginTop: '6px', background: inputBg, border: `1px solid ${border}`, color: text, borderRadius: '8px' }}>
-                  <option value={3}>3 Wheels (Circle base)</option>
-                  <option value={4}>4 Wheels (Square/Rect base)</option>
-                </select>
-              </label>
-            )}
+                {form.kinematic_model === 'omni' && (
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: text, marginBottom: '8px', display: 'block' }}>
+                    Omni Wheel Count
+                    <select value={form.omni_wheel_count} onChange={e => {
+                      const newCount = parseInt(e.target.value, 10);
+                      const allowed = getAllowedGeometries(form.kinematic_model, newCount);
+                      setForm(f => {
+                        const f2 = { ...f, omni_wheel_count: newCount };
+                        if (!allowed.includes(f.geometry_type)) f2.geometry_type = allowed[0];
+                        return f2;
+                      });
+                    }}
+                      style={{ display: 'block', width: '100%', padding: '10px 12px', marginTop: '6px', background: inputBg, border: `1px solid ${border}`, color: text, borderRadius: '8px' }}>
+                      <option value={3}>3 Wheels (Circle base)</option>
+                      <option value={4}>4 Wheels (Square/Rect base)</option>
+                    </select>
+                  </label>
+                )}
 
-            <div style={{ fontSize: '12px', fontWeight: 600, color: text, marginTop: '8px', marginBottom: '12px' }}>
-              <div style={{ marginBottom: '8px' }}>Body Color</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {PRESET_COLORS.map(c => (
-                  <div key={c} onClick={() => set('color', c)} style={{ width: '24px', height: '24px', borderRadius: '6px', background: c, border: form.color === c ? `2px solid ${isDark ? '#fff' : '#000'}` : '2px solid transparent', cursor: 'pointer', transition: 'all 0.15s', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
-                ))}
-                <div style={{ width: '24px', height: '24px', borderRadius: '6px', border: `1px solid ${border}`, overflow: 'hidden', cursor: 'pointer', position: 'relative' }}>
-                  <input type="color" value={form.color} onChange={e => set('color', e.target.value)} style={{ width: '150%', height: '150%', position: 'absolute', top: '-25%', left: '-25%', cursor: 'pointer', border: 'none' }} />
+                <div style={{ fontSize: '12px', fontWeight: 600, color: text, marginTop: '8px', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span>Body Color</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-accent)', fontWeight: 700 }}>
+                      Selected: {selectedColorName}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {PRESET_COLORS.map(c => {
+                      const isSelected = form.color.toLowerCase() === c.toLowerCase();
+                      return (
+                        <div
+                          key={c}
+                          onClick={() => set('color', c)}
+                          title={COLOR_NAMES[c] || c}
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '6px',
+                            background: c,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s',
+                            boxShadow: isSelected
+                              ? `0 0 0 2px ${isDark ? '#12121c' : '#ffffff'}, 0 0 0 4px var(--color-accent)`
+                              : '0 2px 4px rgba(0,0,0,0.1)',
+                            transform: isSelected ? 'scale(1.15)' : 'scale(1)',
+                          }}
+                        />
+                      );
+                    })}
+                    <div style={{ width: '24px', height: '24px', borderRadius: '6px', border: `1px solid ${border}`, overflow: 'hidden', cursor: 'pointer', position: 'relative' }}>
+                      <input type="color" value={form.color} onChange={e => set('color', e.target.value)} style={{ width: '150%', height: '150%', position: 'absolute', top: '-25%', left: '-25%', cursor: 'pointer', border: 'none' }} />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <SectionHeader label="Body Geometry" isDark={isDark} icon="📦" />
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-              {[['rectangle', '▭ Rect'], ['square', '□ Square'], ['circle', '○ Circle']]
-                .filter(([gt]) => getAllowedGeometries(form.kinematic_model, form.omni_wheel_count).includes(gt))
-                .map(([gt, label]) => (
-                  <button key={gt} type="button" onClick={() => set('geometry_type', gt)}
-                    style={{
-                      flex: 1, padding: '8px 4px', borderRadius: '8px', cursor: 'pointer', fontSize: '11px', fontWeight: form.geometry_type === gt ? 700 : 500,
-                      border: '1.5px solid ' + (form.geometry_type === gt ? 'var(--color-accent)' : border),
-                      background: form.geometry_type === gt ? 'var(--color-accent-sub)' : inputBg,
-                      color: form.geometry_type === gt ? 'var(--color-accent)' : text,
-                      transition: 'all 0.15s'
-                    }}>{label}</button>
-                ))}
-            </div>
-
-            {form.geometry_type === 'circle' && (
-              <ParamRow label="Radius" unit="m" value={form.body_radius} min={0.1} max={2.0} step={0.01} onChange={v => set('body_radius', v)} {...shared} />
-            )}
-            {form.geometry_type === 'square' && (
-              <ParamRow label="Size (all sides)" unit="m" value={form.body_size} min={0.1} max={2.0} step={0.01} onChange={v => set('body_size', v)} {...shared} />
-            )}
-            {form.geometry_type === 'rectangle' && (
-              <>
-                <ParamRow label="Length X (forward)" unit="m" value={form.body_length_x} min={0.1} max={2.0} step={0.01} onChange={v => set('body_length_x', v)} {...shared} />
-                <ParamRow label="Width Y (lateral)" unit="m" value={form.body_width_y} min={0.1} max={2.0} step={0.01} onChange={v => set('body_width_y', v)} {...shared} />
-              </>
             )}
 
-            <SectionHeader label="Wheel Parameters" isDark={isDark} icon="⚙️" />
+            {/* Section 2: Body Geometry */}
+            <SectionHeader label="Body Geometry" isDark={isDark} icon="📦" isOpen={openSections.geometry} onToggle={() => toggleSection('geometry')} />
+            {openSections.geometry && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  {[['rectangle', '▭ Rect'], ['square', '□ Square'], ['circle', '○ Circle']]
+                    .filter(([gt]) => getAllowedGeometries(form.kinematic_model, form.omni_wheel_count).includes(gt))
+                    .map(([gt, label]) => (
+                      <button key={gt} type="button" onClick={() => set('geometry_type', gt)}
+                        style={{
+                          flex: 1, padding: '8px 4px', borderRadius: '8px', cursor: 'pointer', fontSize: '11px', fontWeight: form.geometry_type === gt ? 700 : 500,
+                          border: '1.5px solid ' + (form.geometry_type === gt ? 'var(--color-accent)' : border),
+                          background: form.geometry_type === gt ? 'var(--color-accent-sub)' : inputBg,
+                          color: form.geometry_type === gt ? 'var(--color-accent)' : text,
+                          transition: 'all 0.15s'
+                        }}>{label}</button>
+                    ))}
+                </div>
 
-            {/* Bundled base parameters for Mecanum/Ackermann, Diff drive uses axle track for separation */}
-            <div style={{ background: isDark ? '#1a1a24' : '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '12px', border: `1px solid ${border}` }}>
-              {form.kinematic_model !== 'diff_drive' && (
-                <ParamRow label="Wheel Base (F-R)" unit="m" value={form.wheel_base} min={0.1} max={2.0} step={0.01} onChange={v => set('wheel_base', v)} {...shared} inputBg={bg} />
-              )}
-              <ParamRow label="Axle Track (L-R)" unit="m" value={form.axle_track} min={0.1} max={2.0} step={0.01} onChange={v => set('axle_track', v)} {...shared} inputBg={bg} />
-            </div>
-
-            {form.kinematic_model === 'ackermann' && (
-              <ParamRow label="Max Steering Angle" unit="°" value={form.max_steering_angle} min={0} max={45} step={1} onChange={v => set('max_steering_angle', v)} {...shared} />
+                {form.geometry_type === 'circle' && (
+                  <ParamRow label="Radius" unit="m" value={form.body_radius} min={0.1} max={2.0} step={0.01} onChange={v => set('body_radius', v)} {...shared} />
+                )}
+                {form.geometry_type === 'square' && (
+                  <ParamRow label="Size (all sides)" unit="m" value={form.body_size} min={0.1} max={2.0} step={0.01} onChange={v => set('body_size', v)} {...shared} />
+                )}
+                {form.geometry_type === 'rectangle' && (
+                  <>
+                    <ParamRow label="Length X (forward)" unit="m" value={form.body_length_x} min={0.1} max={2.0} step={0.01} onChange={v => set('body_length_x', v)} {...shared} />
+                    <ParamRow label="Width Y (lateral)" unit="m" value={form.body_width_y} min={0.1} max={2.0} step={0.01} onChange={v => set('body_width_y', v)} {...shared} />
+                  </>
+                )}
+              </div>
             )}
-            <ParamRow label="Wheel Radius" unit="m" value={form.wheel_radius} min={0.02} max={0.3} step={0.005} onChange={v => set('wheel_radius', v)} {...shared} />
-            <ParamRow label="Wheel Width" unit="m" value={form.wheel_width} min={0.01} max={0.2} step={0.005} onChange={v => set('wheel_width', v)} {...shared} />
 
-            <SectionHeader label="LiDAR / Sensor" isDark={isDark} icon="📡" />
-            <ParamRow label="Range Max" unit="m" value={form.lidar_range_max} min={1.0} max={50.0} step={0.5} onChange={v => set('lidar_range_max', v)} {...shared} />
-            {(() => {
-              let maxLidarX = 0, maxLidarY = 0;
-              if (form.geometry_type === 'circle') {
-                maxLidarX = form.body_radius;
-                maxLidarY = form.body_radius;
-              } else if (form.geometry_type === 'square') {
-                maxLidarX = form.body_size / 2;
-                maxLidarY = form.body_size / 2;
-              } else {
-                maxLidarX = form.body_length_x / 2;
-                maxLidarY = form.body_width_y / 2;
-              }
-              return (
-                <>
-                  <ParamRow label="Mount X (fwd)" unit="m" value={form.lidar_x} min={-maxLidarX} max={maxLidarX} step={0.01} onChange={v => set('lidar_x', v)} {...shared} />
-                  <ParamRow label="Mount Y (lat)" unit="m" value={form.lidar_y} min={-maxLidarY} max={maxLidarY} step={0.01} onChange={v => set('lidar_y', v)} {...shared} />
-                </>
-              );
-            })()}
+            {/* Section 3: Wheel Parameters */}
+            <SectionHeader label="Wheel Parameters" isDark={isDark} icon="⚙️" isOpen={openSections.wheels} onToggle={() => toggleSection('wheels')} />
+            {openSections.wheels && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+                <div style={{ background: isDark ? '#1a1a24' : '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '12px', border: `1px solid ${border}` }}>
+                  {showWheelBase && (
+                    <ParamRow label="Wheel Base (F-R)" unit="m" value={form.wheel_base} min={0.1} max={2.0} step={0.01} onChange={v => set('wheel_base', v)} {...shared} inputBg={bg} />
+                  )}
+                  <ParamRow label="Axle Track (L-R)" unit="m" value={form.axle_track} min={0.1} max={2.0} step={0.01} onChange={v => set('axle_track', v)} {...shared} inputBg={bg} />
+                </div>
+
+                {showSteeringAngle && (
+                  <ParamRow label="Max Steering Angle" unit="°" value={form.max_steering_angle} min={0} max={45} step={1} onChange={v => set('max_steering_angle', v)} {...shared} />
+                )}
+                <ParamRow label="Wheel Radius" unit="m" value={form.wheel_radius} min={0.02} max={0.3} step={0.005} onChange={v => set('wheel_radius', v)} {...shared} />
+                <ParamRow label="Wheel Width" unit="m" value={form.wheel_width} min={0.01} max={0.2} step={0.005} onChange={v => set('wheel_width', v)} {...shared} />
+              </div>
+            )}
+
+            {/* Section 4: Sensors */}
+            <SectionHeader label="LiDAR / Sensor" isDark={isDark} icon="📡" isOpen={openSections.sensors} onToggle={() => toggleSection('sensors')} />
+            {openSections.sensors && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+                <ParamRow label="Range Max" unit="m" value={form.lidar_range_max} min={1.0} max={50.0} step={0.5} onChange={v => set('lidar_range_max', v)} {...shared} />
+                {(() => {
+                  const maxLidarX = form.geometry_type === 'circle' ? form.body_radius : form.geometry_type === 'square' ? form.body_size / 2 : form.body_length_x / 2;
+                  const maxLidarY = form.geometry_type === 'circle' ? form.body_radius : form.geometry_type === 'square' ? form.body_size / 2 : form.body_width_y / 2;
+                  return (
+                    <>
+                      <ParamRow label="Mount X (fwd)" unit="m" value={form.lidar_x} min={-maxLidarX} max={maxLidarX} step={0.01} onChange={v => set('lidar_x', v)} {...shared} />
+                      <ParamRow label="Mount Y (lat)" unit="m" value={form.lidar_y} min={-maxLidarY} max={maxLidarY} step={0.01} onChange={v => set('lidar_y', v)} {...shared} />
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </form>
         </div>
 
-        <div style={{ padding: '20px', borderTop: `1px solid ${border}`, background: isDark ? '#12121c' : '#ffffff', flexShrink: 0 }}>
+        <div style={{ padding: '20px', borderTop: `1px solid ${border}`, background: isDark ? '#12121c' : '#ffffff', flexShrink: 0, boxShadow: isDark ? '0 -4px 12px rgba(0,0,0,0.3)' : '0 -4px 12px rgba(0,0,0,0.05)' }}>
           <button type="submit" form="robot-creator-form" disabled={loading}
             style={{
               width: '100%', padding: '14px', borderRadius: '10px', border: 'none', background: 'var(--color-accent)', color: '#fff', fontWeight: 700, fontSize: '15px', textTransform: 'uppercase', letterSpacing: '0.5px', cursor: loading ? 'wait' : 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(0, 102, 255, 0.3)'

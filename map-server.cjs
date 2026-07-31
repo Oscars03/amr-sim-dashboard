@@ -32,11 +32,11 @@ if (process.env.AMR_WS_SETUP) {
 } else {
     // Try candidate paths in order of priority
     const candidates = [
+        path.join(os.homedir(), 'simamr_ws', 'install', 'setup.bash'),
+        path.join(os.homedir(), 'simamr_ws', 'setup.bash'),
         '/opt/irish-amr-sim/simamr_ws/setup.bash',
         '/opt/irish-amr-sim/simamr_ws/install/setup.bash',
         '/opt/irish-amr-simulator/ros2_ws/install/setup.bash',
-        path.join(os.homedir(), 'simamr_ws', 'install', 'setup.bash'),
-        path.join(os.homedir(), 'simamr_ws', 'setup.bash'),
     ];
     for (const cand of candidates) {
         if (fs.existsSync(cand)) {
@@ -520,8 +520,8 @@ app.post('/api/robots', (req, res) => {
       <geometry>
         <cylinder radius="${parseFloat(lidar_radius).toFixed(3)}" length="${parseFloat(lidar_height).toFixed(3)}" />
       </geometry>
-      <material name="lidar_color">
-        <color rgba="0.1 0.1 0.1 1.0" />
+      <material name="red">
+        <color rgba="1.0 0.0 0.0 1.0" />
       </material>
     </visual>
   </link>
@@ -850,36 +850,6 @@ app.get('/health', (_req, res) => {
     worlds: shareDir ? getWorldFiles(shareDir).map(w => w.name) : [],
     robots: shareDir ? getRobotFiles(shareDir).map(r => r.name) : [],
   });
-});
-
-// GET /files
-function walkDir(dirPath, baseDir) {
-  const results = [];
-  if (!fs.existsSync(dirPath)) return results;
-  fs.readdirSync(dirPath, { withFileTypes: true }).forEach((entry) => {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...walkDir(fullPath, baseDir));
-    } else {
-      const stat = fs.statSync(fullPath);
-      results.push({
-        name: entry.name,
-        relativePath: path.relative(baseDir, fullPath),
-        fullPath,
-        sizeKB: (stat.size / 1024).toFixed(2),
-        modified: stat.mtime.toISOString(),
-        ext: path.extname(entry.name),
-      });
-    }
-  });
-  return results;
-}
-
-app.get('/files', (req, res) => {
-  const shareDir = getShareDir();
-  if (!shareDir) return res.status(404).json({ error: 'Package share dir not found' });
-  const files = walkDir(shareDir, shareDir);
-  res.json({ shareDir, totalFiles: files.length, files });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
