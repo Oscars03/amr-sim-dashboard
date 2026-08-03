@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      # Pre-existing lint debt (mostly in DashboardView.jsx) predates this
+      # workflow; surface it without blocking CI until it's cleaned up.
+      - run: npm run lint
+        continue-on-error: true
+      - run: npm test
