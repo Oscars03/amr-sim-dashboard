@@ -4,8 +4,9 @@
 
 1. **`amr-sim-dashboard`** (repo นี้) — Dashboard แบบ Electron + Vite + React 19
    ใช้ควบคุม/แสดงผล AMR (Autonomous Mobile Robot) simulation
-2. **`amr_2dsim`** (`Oscars03/amr_2dsim`) — sim node ฝั่ง backend เป็น ROS 2 (Jazzy)
-   package แบบ `ament_python` ที่รัน physics simulation จริง
+2. **`amr_2dsim`** (`Oscars03/amr_2dsim`) — sim node ฝั่ง backend เป็น ROS 2
+   package แบบ `ament_python` ที่รัน physics simulation จริง (ROS 2 distro
+   ไหนก็ได้ที่ build ผ่าน — ไม่ fix เป็น Jazzy)
 
 > **สำคัญ**: ต้อง attach repo `amr_2dsim` ทุก session ใหม่ (ผ่าน `add_repo` +
 > clone ไปที่ `/workspace/amr_2dsim` + `register_repo_root`) เพราะ session
@@ -43,24 +44,27 @@ Dashboard (Electron)  ──ws://<host>:9090──▶  rosbridge_websocket
 ## วิธี wire dashboard เข้ากับ amr_2dsim checkout (บนเครื่องจริงที่มี ROS 2)
 
 Sandbox/cloud session **ไม่มี ROS 2 / colcon ติดตั้ง** ดังนั้น run sim node
-จริงไม่ได้ในนี้ — ต้องทำบนเครื่องที่มี ROS 2 Jazzy เท่านั้น
+จริงไม่ได้ในนี้ — ต้องทำบนเครื่องที่มี ROS 2 ติดตั้งอยู่ (distro ไหนก็ได้)
 
 1. **Build `amr_2dsim` เข้า ROS 2 workspace** — `map-server.cjs` (บรรทัด
-   28-47) auto-detect เฉพาะ path พวกนี้: `~/simamr_ws/install/setup.bash`,
+   12-26) auto-detect ROS distro เองจาก `/opt/ros/<distro>/setup.bash`
+   (รองรับ `jazzy`, `humble`, `lyrical` เป็นต้น) และ auto-detect workspace
+   path (บรรทัด 28-47) เฉพาะ path พวกนี้: `~/simamr_ws/install/setup.bash`,
    `/opt/irish-amr-sim/simamr_ws/setup.bash` ฯลฯ วิธีง่ายสุดคือ symlink/clone
-   `amr_2dsim` ไปไว้ที่ path เหล่านี้:
+   `amr_2dsim` ไปไว้ที่ path เหล่านี้ แล้ว source ROS distro ที่เครื่องมีจริง:
    ```bash
    mkdir -p ~/simamr_ws/src
    ln -s /path/to/amr_2dsim ~/simamr_ws/src/amr_2dsim
    cd ~/simamr_ws
-   source /opt/ros/jazzy/setup.bash
+   source /opt/ros/<your-distro>/setup.bash   # เช่น jazzy, humble
    colcon build --symlink-install
    ```
 2. **หรือใช้ path เอง** — ตั้ง env var `AMR_WS_SETUP=/custom/path/install/setup.bash`
    ก่อน `npm run dev` (ต้อง verify ชื่อ env var ที่แน่นอนใน `map-server.cjs`
    อีกที เพราะยังไม่ได้ re-read ล่าสุด)
-3. **ติดตั้ง rosbridge dependency**: `sudo apt install ros-jazzy-rosbridge-suite`
-   (ถ้าไม่มี `sim_bringup.launch.py` จะ fail แม้ build ผ่าน)
+3. **ติดตั้ง rosbridge dependency**: `sudo apt install ros-<your-distro>-rosbridge-suite`
+   (เช่น `ros-jazzy-rosbridge-suite`) ถ้าไม่มี `sim_bringup.launch.py` จะ fail
+   แม้ build ผ่าน
 4. **Start**:
    ```bash
    cd amr-sim-dashboard && npm install && npm run dev
