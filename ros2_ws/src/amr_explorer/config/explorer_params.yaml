@@ -1,0 +1,44 @@
+/**:
+  ros__parameters:
+    # --- robot (must match <amr_sim_config> in amr_robot.urdf)
+    robot_radius: 0.35
+    laser_offset_x: 0.2        # laser_joint origin; /scan is NOT at base_link
+    control_rate: 10.0
+
+    # --- velocity limits (diff_drive: in-place rotation is allowed)
+    max_linear_vel: 0.45
+    min_linear_vel: -0.15
+    max_angular_vel: 1.0
+    linear_accel: 0.6
+    angular_accel: 1.8
+
+    # --- DWA
+    dwa_sim_time: 1.5
+    dwa_v_samples: 7
+    dwa_w_samples: 15
+    w_heading: 1.0
+    w_clearance: 2.0
+    w_velocity: 0.4
+
+    # --- safety FSM
+    slow_dist: 0.60
+    stop_dist: 0.30
+    backoff_dist: 0.30
+    stuck_window_s: 6.0
+    stuck_dist: 0.10
+
+    # --- doorway mode (office.json has three 1.0 m gaps -> 0.30 m of
+    #     lateral margin for the robot centre; arc motion will not fit)
+    doorway_clearance: 0.55    # radius + 0.2
+    doorway_vel: 0.15
+    doorway_align_tol: 0.10    # rad
+
+    # --- frontier
+    min_frontier_cells: 8
+    frontier_min_clearance: 0.40   # radius + 0.05; reject what we cannot enter
+    goal_tolerance: 0.35
+    replan_period: 1.0
+    goal_hysteresis: 0.20      # keep current goal unless 20% better appears
+    w_distance: 1.0
+    w_info_gain: 2.5
+    w_turn: 0.8                # in-place rotation is pure time loss

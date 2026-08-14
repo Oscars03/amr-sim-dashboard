@@ -87,7 +87,24 @@ cp -r release/linux-unpacked/* $DEB_DIR/opt/$APP_NAME/dashboard/
 
 # 6. Copy ROS 2 Workspace Source
 echo "🤖 Copying ROS 2 Workspace..."
-cp -r /home/phutanate/simamr_ws/src/* $DEB_DIR/opt/$APP_NAME/ros2_ws/src/
+# Resolve the simamr_ws workspace without assuming a specific user/home path:
+# 1. AMR_WS_SRC env override, 2. the bundled ros2_ws/src next to this script, 3. ~/simamr_ws
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -n "$AMR_WS_SRC" ]; then
+    ROS_WS_SRC="$AMR_WS_SRC"
+elif [ -d "$SCRIPT_DIR/ros2_ws/src" ]; then
+    ROS_WS_SRC="$SCRIPT_DIR/ros2_ws/src"
+else
+    ROS_WS_SRC="$HOME/simamr_ws/src"
+fi
+
+if [ ! -d "$ROS_WS_SRC" ]; then
+    echo "❌ ERROR: Could not find the ROS 2 workspace source at: $ROS_WS_SRC"
+    echo "   Set AMR_WS_SRC=/path/to/workspace/src and re-run."
+    exit 1
+fi
+echo "   Using ROS 2 workspace source: $ROS_WS_SRC"
+cp -r "$ROS_WS_SRC"/* $DEB_DIR/opt/$APP_NAME/ros2_ws/src/
 
 # 7. Create Desktop Shortcut
 echo "🖥️  Creating Desktop Shortcut..."

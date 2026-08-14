@@ -1,5 +1,6 @@
 const fs = require('fs');
-const file = '/home/phutanate/amr-sim-dashboard/src/App.jsx';
+const path = require('path');
+const file = path.join(__dirname, 'src', 'App.jsx');
 let content = fs.readFileSync(file, 'utf8');
 
 // 1. Replace RobotCreatorModal with RobotCreator
