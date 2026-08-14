@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<robot name="tango_2">
+
+  <!-- AMR Simulation Config -->
+  <amr_sim_config>
+    <kinematic_model>diff_drive</kinematic_model>
+    <geometry_type>square</geometry_type>
+    <wheel_base>0.500</wheel_base>
+    <axle_track>0.200</axle_track>
+    <robot_radius>0.350</robot_radius>
+    <wheel_radius>0.0250</wheel_radius>
+    <wheel_width>0.0300</wheel_width>
+    <laser_range_max>12.0</laser_range_max>
+    <laser_x>0.065</laser_x>
+    <laser_y>-0.005</laser_y>
+    <laser_height>0.100</laser_height>
+    <ticks_per_meter>2000.0</ticks_per_meter>
+    
+  </amr_sim_config>
+
+  <material name="body_color">
+    <color rgba="0.25 0.32 0.71 1.0" />
+  </material>
+
+  <!-- Body (square) -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.100" rpy="0 0 0" />
+      <geometry>
+        <box size="0.700 0.700 0.200" />
+      </geometry>
+      <material name="body_color" />
+    </visual>
+  </link>
+
+  <!-- LiDAR sensor -->
+  <link name="laser_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.050" length="0.100" />
+      </geometry>
+      <material name="red">
+        <color rgba="1.0 0.0 0.0 1.0" />
+      </material>
+    </visual>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="laser_link" />
+    <origin xyz="0.065 -0.005 0.250" rpy="0 0 0" />
+  </joint>
+
+</robot>
