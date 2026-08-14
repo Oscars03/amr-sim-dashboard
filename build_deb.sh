@@ -88,12 +88,12 @@ cp -r release/linux-unpacked/* $DEB_DIR/opt/$APP_NAME/dashboard/
 # 6. Copy ROS 2 Workspace Source
 echo "🤖 Copying ROS 2 Workspace..."
 # Resolve the simamr_ws workspace without assuming a specific user/home path:
-# 1. AMR_WS_SRC env override, 2. the bundled ros2_ws/src next to this script, 3. ~/simamr_ws
+# 1. AMR_WS_SRC env override, 2. the bundled simamr_ws/src next to this script, 3. ~/simamr_ws
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -n "$AMR_WS_SRC" ]; then
     ROS_WS_SRC="$AMR_WS_SRC"
-elif [ -d "$SCRIPT_DIR/ros2_ws/src" ]; then
-    ROS_WS_SRC="$SCRIPT_DIR/ros2_ws/src"
+elif [ -d "$SCRIPT_DIR/simamr_ws/src" ]; then
+    ROS_WS_SRC="$SCRIPT_DIR/simamr_ws/src"
 else
     ROS_WS_SRC="$HOME/simamr_ws/src"
 fi
