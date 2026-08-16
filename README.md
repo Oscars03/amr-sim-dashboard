@@ -89,6 +89,43 @@ Electron จะเปิด dashboard ขึ้นมา เลือก robot/w
 
 ---
 
+## Alternative: Run Without `npm run dev`
+
+`npm run dev` คือโหมด dev server (hot-reload) ถ้าไม่อยากใช้ มีอีก 2 ทางเลือก:
+
+### Option A — Download the Pre-built App
+
+ไม่ต้องติดตั้ง Node.js/npm เลย โหลดตัวติดตั้งจาก
+[GitHub Releases](https://github.com/Oscars03/amr-sim-dashboard/releases/latest)
+(ปัจจุบันมีให้เฉพาะ `.AppImage`) แล้วรัน:
+
+```bash
+chmod +x irish-amr-sim_*.AppImage
+./irish-amr-sim_*.AppImage
+# ถ้าเจอ error เกี่ยวกับ sandbox ให้ลองเพิ่ม --no-sandbox
+```
+
+AppImage มีแค่ตัว dashboard เอง **ไม่ได้ bundle ROS 2 workspace มาด้วย** — ยังต้อง
+clone repo นี้ (หรือดึงแค่โฟลเดอร์ `simamr_ws/src`) มาทำขั้นตอน
+[3. Build the ROS 2 Workspace](#3-build-the-ros-2-workspace) ก่อน แล้วเปิด AppImage
+จาก terminal ที่ source ROS 2 distro + workspace ไว้แล้ว (เหมือนขั้นตอนที่ 5) ไม่งั้น
+map server จะหา package `amr_2dsim` ไม่เจอ
+
+### Option B — Build a Production Package Yourself
+
+```bash
+npm run dist
+```
+
+ได้ installer (AppImage/.deb) อยู่ใน `release/` — รันได้โดยไม่ต้องมี dev server เหมือน
+Option A (ยังต้อง build ROS 2 workspace ตามขั้นตอนที่ 3 ก่อนเช่นกัน)
+
+หรือใช้ `./build_deb.sh` เพื่อรวม dashboard + ROS 2 workspace เป็น `.deb` ไฟล์เดียว —
+`postinst` script ของ `.deb` จะ `colcon build` workspace ให้อัตโนมัติตอนติดตั้ง (ไม่ต้อง
+build เองแบบขั้นตอนที่ 3) แต่ต้องรัน script นี้บนเครื่องที่มี ROS 2 ติดตั้งอยู่แล้วเท่านั้น
+
+---
+
 ## Additional Notes
 
 * `map-server.cjs` (Electron auto-fork ให้ตอน start, พอร์ต 3001) auto-detect ROS distro จาก
