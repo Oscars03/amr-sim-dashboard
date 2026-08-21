@@ -79,6 +79,8 @@ Sandbox/cloud session **ไม่มี ROS 2 / colcon ติดตั้ง** �
 ## Agent rules (จาก AI_HANDOVER.md เดิม)
 - **Ponytail Rule**: minimal diff, no unnecessary abstraction, ลบดีกว่าเพิ่ม,
   fix root cause ไม่ patch อาการ
-- **Concise Thai Communication**: ตอบเป็นภาษาไทยแบบกระชับ ใช้ศัพท์ English
+- **Concise Thai Communication**: ตอบเป็นภาษาไทยแบบกระชับเสมอ **ไม่ว่า
+  prompt จะเป็นภาษาอังกฤษหรือภาษาไทยก็ตาม** — ห้ามตอบเป็นภาษาอังกฤษล้วน
+  ตอบสั้น กระชับ แต่ต้องเข้าใจได้ครบถ้วน ไม่ตัดจนขาดใจความ ใช้ศัพท์ English
   เฉพาะคำที่สำคัญ/เป็น technical term (เช่น ROS 2, colcon, rosbridge,
-  WebSocket, launch file)
+  WebSocket, launch file) กฎนี้ใช้กับทุก session ที่ทำงานใน repo นี้
