@@ -424,6 +424,12 @@ app.post('/api/robots', (req, res) => {
     lidar_radius = 0.05, lidar_range_max = 12.0,
     // Sim
     ticks_per_meter = 2000,
+    // Degrees. CreateRobotView's slider is labelled '°' and capped at 45, and
+    // DashboardView renders it as degrees; simulator_node.py converts to radians
+    // on read. It was collected by the form and then dropped here, so every
+    // generated robot silently fell back to the simulator's 30° default no
+    // matter what the user chose.
+    max_steering_angle = 30,
     omni_wheel_count = 3,
     // Visual
     color
@@ -461,11 +467,6 @@ app.post('/api/robots', (req, res) => {
     bodyGeomXML = `<cylinder radius="${r.toFixed(3)}" length="${bodyZ}" />`;
   } else if (geometry_type === 'square') {
     const s = parseFloat(body_size);
-    const r = parseFloat(body_radius);
-    robot_radius = r;
-    bodyGeomXML = `<cylinder radius="${r.toFixed(3)}" length="${bodyZ}" />`;
-  } else if (geometry_type === 'square') {
-    const s = parseFloat(body_size);
     robot_radius = s / 2;
     bodyGeomXML = `<box size="${s.toFixed(3)} ${s.toFixed(3)} ${bodyZ}" />`;
   } else { // rectangle
@@ -495,6 +496,7 @@ app.post('/api/robots', (req, res) => {
     <laser_y>${parseFloat(lidar_y).toFixed(3)}</laser_y>
     <laser_height>${parseFloat(lidar_height).toFixed(3)}</laser_height>
     <ticks_per_meter>${parseFloat(ticks_per_meter).toFixed(1)}</ticks_per_meter>
+    <max_steering_angle>${parseFloat(max_steering_angle).toFixed(1)}</max_steering_angle>
     ${kinematic_model === 'omni' ? `<omni_wheel_count>${parseInt(omni_wheel_count, 10)}</omni_wheel_count>` : ''}
   </amr_sim_config>
 
