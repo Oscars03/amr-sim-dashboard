@@ -10,7 +10,7 @@ function ParamRow({ label, unit = '', value, onChange, min, max, step = 0.01, in
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <input
             type="number" value={value} min={min} max={max} step={step}
-            onChange={e => onChange(parseFloat(e.target.value) || 0)}
+            onChange={e => onChange(e.target.value)}
             style={{
               width: '70px', padding: '4px 6px', background: inputBg, border: `1px solid ${border}`,
               color: text, borderRadius: '6px', fontSize: '12px', textAlign: 'right'
@@ -315,6 +315,11 @@ export default function CreateRobotView({ onCreated }) {
     try {
       const sanitizedName = form.name.toLowerCase().replace(/[^a-z0-9_]/g, '_');
       const payload = { ...form, name: sanitizedName };
+      Object.keys(payload).forEach(k => {
+        if (k !== 'name' && k !== 'kinematic_model' && k !== 'geometry_type' && k !== 'color') {
+          payload[k] = parseFloat(payload[k]) || 0;
+        }
+      });
       const host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
       const res = await fetch(`http://${host}:3001/api/robots`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
