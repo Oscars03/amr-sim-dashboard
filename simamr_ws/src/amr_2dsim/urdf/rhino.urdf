@@ -1,0 +1,105 @@
+<?xml version="1.0"?>
+<!--
+  Rhino — Ackermann AMR — amr_2dsim / amr-sim-dashboard variant
+  SYNCED 2026-08-21 to rhino-robot-ws@e9f770e  src/rhino/urdf/rhino.urdf
+
+  RELATIONSHIP TO THE AUTHORITATIVE URDF
+    rhino-robot-ws/src/rhino/urdf/rhino.urdf is the twin of record: full wheel and
+    steer kinematic chain, collision, placeholder inertials. Use THAT one for RViz,
+    robot_state_publisher, Gazebo, or anything that needs the joint tree.
+    THIS file is the amr_2dsim variant. amr_2dsim is a 2-D kinematic simulator: it
+    reads <amr_sim_config> plus the base_link box plus the laser joint, and draws
+    the wheels itself from <wheel_base>/<axle_track>. Shipping the four real wheel
+    links here would make the dashboard render eight wheels (its own four, plus
+    ours), so they are deliberately omitted. Every shared number below is
+    byte-identical to the authoritative file — if that file changes, change this one.
+
+  GEOMETRY IS IDENTICAL TO THE AUTHORITATIVE FILE
+    base_link at GROUND LEVEL, directly below the centre of the rear axle
+      [decided 2026-08-14; no base_footprint — the two frames are collapsed]
+    body box 0.600 x 0.440, centre at x = +0.205, spanning z = [0.050, 0.250]
+    laser optical centre at xyz = 0.31 0 0.510, yaw 180 deg  [measured 2026-08-14]
+      — matches the live static_transform_publisher in lidar_bringup.launch.py:19
+        (tf_z = '0.510'; the old 0.295 was wrong by 215 mm and is retracted)
+
+  amr_sim_config VALUES
+    [measured]   wheel_base 0.385 · axle_track 0.345 · wheel_radius 0.0889
+    [source]     max_steering_angle 20 deg (servo_max_steer_deg = 20.0f)
+                 ticks_per_meter from PPR = 800 (PRSH dump 2026-08-13)
+                 laser_range_max 30.0 m (RPLIDAR S2E)
+    [derived]    robot_radius 0.551 = sqrt(0.505^2 + 0.220^2), circumscribed from base_link
+                 ticks_per_meter 1432.2 = 800 / (2*pi*0.0889)
+                 R_min = 0.385 / tan(20 deg) = 1.058 m  ✓ CLAUDE_rhino.md §3
+    [PLACEHOLDER] wheel_width 0.050 — never measured; drawing only, no physics effect
+
+  NO <inertial> HERE, BY DESIGN. M and CoM are NOT MEASURED. amr_2dsim is purely
+  kinematic and ignores inertia; the placeholders live in the authoritative file only.
+
+  UPSTREAM NOTES
+    1. FIXED 2026-08-21: parse_base_link_box() used to read <box size> but not
+       <origin>, centring the collision rectangle on base_link — 0.205 m rearward of
+       Rhino's real body. It now honours the origin, so the +0.205 offset below is
+       the actual collision footprint. Requires that patched simulator_node.py.
+    2. The dashboard draws wheels at +/- wheel_base/2, assuming base_link is at the
+       wheelbase midpoint; Rhino's is at the rear axle, so they sit 0.1925 m back.
+       Cosmetic only — it does not touch the kinematics.
+-->
+<robot name="rhino">
+
+  <!-- AMR Simulation Config -->
+  <amr_sim_config>
+    <kinematic_model>ackermann</kinematic_model>
+    <geometry_type>rectangle</geometry_type>
+    <wheel_base>0.385</wheel_base>
+    <axle_track>0.345</axle_track>
+    <robot_radius>0.551</robot_radius>
+    <wheel_radius>0.0889</wheel_radius>
+    <wheel_width>0.0500</wheel_width>
+    <laser_range_max>30.0</laser_range_max>
+    <laser_x>0.310</laser_x>
+    <laser_y>0.000</laser_y>
+    <laser_height>0.03885</laser_height>
+    <ticks_per_meter>1432.2</ticks_per_meter>
+    <!-- DEGREES (simulator_node.py converts). 20 deg = servo_max_steer_deg = 20.0f -->
+    <max_steering_angle>20.0</max_steering_angle>
+    <drive_axle_x>0.0</drive_axle_x>
+  </amr_sim_config>
+
+  <material name="chassis_grey">
+    <color rgba="0.55 0.55 0.58 1.0"/>
+  </material>
+  <material name="lidar_red">
+    <color rgba="0.70 0.05 0.05 1.0"/>
+  </material>
+
+  <!-- Body: spans x = -0.095 (rear overhang) .. +0.505 (front overhang) from the
+       rear axle, z = [0.050, 0.250] on top of the measured 0.050 ground clearance. -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0.205 0 0.150" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.600 0.440 0.20"/>
+      </geometry>
+      <material name="chassis_grey"/>
+    </visual>
+  </link>
+
+  <!-- LiDAR — RPLIDAR S2E, facing BACKWARDS (the 180 deg yaw is real).
+       The frame origin is the OPTICAL CENTRE, so the body sits -0.0145 off-centre
+       within it: top 0.515 [measured] - 0.03885/2 [datasheet] - 0.510 = -0.0145.
+       amr_2dsim reads only xyz from this joint and ignores rpy, so the simulated
+       scan is not yaw-flipped; on the real robot TF handles that. -->
+  <link name="laser">
+    <visual>
+      <origin xyz="0 0 -0.0145" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0385" length="0.03885"/></geometry>
+      <material name="lidar_red"/>
+    </visual>
+  </link>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser"/>
+    <origin xyz="0.31 0 0.510" rpy="0 0 3.14159"/>
+  </joint>
+
+</robot>

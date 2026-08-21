@@ -54,8 +54,32 @@ def parse_sim_config(urdf_path: str) -> dict:
         if gt is not None and (gt.text or '').strip():
             cfg['geometry_type'] = gt.text.strip()
         # numeric fields — each isolated so one bad value doesn't block others
-        for field in ('wheel_base', 'robot_radius', 'laser_range_max', 'ticks_per_meter', 'max_steering_angle'):
+        for field in ('wheel_base', 'robot_radius', 'laser_range_max', 'ticks_per_meter'):
             cfg[field] = _get_float(sim_cfg, field, cfg[field])
+        # max_steering_angle is authored in DEGREES. Every other place that
+        # touches this field already assumes degrees — the CreateRobotView
+        # slider is labelled '°' and capped at 45, and DashboardView renders
+        # `maxSteeringAngle * (Math.PI / 180)`. This parser used to read the
+        # very same tag as radians, so one file meant 20° to the dashboard and
+        # 20 rad to the simulator. Degrees wins; internally we stay in radians.
+        msa = sim_cfg.find('max_steering_angle')
+        if msa is not None and (msa.text or '').strip():
+            try:
+                deg = float(msa.text.strip())
+            except ValueError as e:
+                logging.warning(
+                    f"amr_sim_config: cannot parse <max_steering_angle>: {e}, "
+                    f"using default {math.degrees(cfg['max_steering_angle']):.1f} deg"
+                )
+            else:
+                if 0.0 < deg < 1.6:
+                    logging.warning(
+                        f"amr_sim_config: <max_steering_angle>{deg}</max_steering_angle> "
+                        f"is read as DEGREES ({deg} deg). A value this small looks like "
+                        f"radians left over from the old convention — {deg} rad would be "
+                        f"{math.degrees(deg):.1f} deg. Rewrite it in degrees if so."
+                    )
+                cfg['max_steering_angle'] = math.radians(deg)
         # drive_axle_x: optional; keep None if absent (means "skip convention check")
         ax_elem = sim_cfg.find('drive_axle_x')
         if ax_elem is not None and (ax_elem.text or '').strip():
@@ -71,23 +95,48 @@ def parse_sim_config(urdf_path: str) -> dict:
 def parse_base_link_box(urdf_path: str):
     """Parse the base_link visual <box size="L W H"/> from URDF.
 
-    Returns (length_x, width_y) or None if base_link has no box visual —
-    the caller falls back to the circle footprint in that case. Reuses the
-    same box the dashboard already parses to draw the robot, so collision
-    geometry matches what's rendered.
+    Returns (length_x, width_y, offset_x, offset_y) or None if base_link has no
+    box visual — the caller falls back to the circle footprint in that case.
+
+    offset_x/offset_y are the box centre in the base_link frame, taken from the
+    visual's <origin xyz="..."/>. They are frequently NOT zero and must not be
+    dropped: an Ackermann robot whose base_link sits at the rear axle (the
+    standard bicycle-model convention) carries its body well forward of the
+    origin, so ignoring the origin silently shifts the entire collision
+    footprint rearward by that offset — the footprint over-covers behind the
+    robot and under-covers in front, which is exactly the direction that lets a
+    front corner clip an obstacle the simulator reports as clear.
+
+    Reuses the same box the dashboard already parses to draw the robot, so
+    collision geometry matches what's rendered.
     """
     try:
         root = ET.parse(urdf_path).getroot()
         for link in root.findall('link'):
             if link.get('name') != 'base_link':
                 continue
-            box = link.find('./visual/geometry/box')
+            visual = link.find('visual')
+            if visual is None:
+                return None
+            box = visual.find('./geometry/box')
             if box is None or not box.get('size'):
                 return None
             size = box.get('size').split()
             if len(size) < 2:
                 return None
-            return float(size[0]), float(size[1])
+            offset_x = offset_y = 0.0
+            origin = visual.find('origin')
+            if origin is not None and origin.get('xyz'):
+                xyz = origin.get('xyz').split()
+                if len(xyz) >= 2:
+                    try:
+                        offset_x, offset_y = float(xyz[0]), float(xyz[1])
+                    except ValueError:
+                        logging.warning(
+                            f"parse_base_link_box: cannot parse base_link visual "
+                            f"origin xyz='{origin.get('xyz')}', assuming 0 0"
+                        )
+            return float(size[0]), float(size[1]), offset_x, offset_y
     except Exception as e:
         logging.warning(f"parse_base_link_box: failed to read '{urdf_path}': {e}")
     return None
@@ -187,10 +236,13 @@ class AmrSimulator(Node):
             self.geometry_type   = cfg['geometry_type']
             self.robot_length    = None
             self.robot_width     = None
+            self.footprint_offset_x = 0.0
+            self.footprint_offset_y = 0.0
             if self.geometry_type == 'rectangle':
                 box = parse_base_link_box(urdf_file_path)
                 if box is not None:
-                    self.robot_length, self.robot_width = box
+                    (self.robot_length, self.robot_width,
+                     self.footprint_offset_x, self.footprint_offset_y) = box
                 else:
                     self.get_logger().warning(
                         "geometry_type=rectangle but base_link has no <box size=.../> "
@@ -201,7 +253,9 @@ class AmrSimulator(Node):
                 f"Loaded config from URDF: model={self.kinematic_model} "
                 f"wheel_base={self.wheel_base} max_steer={math.degrees(self.max_steering_angle):.1f}° "
                 f"geometry={self.geometry_type}"
-                + (f" ({self.robot_length}x{self.robot_width})" if self.geometry_type == 'rectangle' else '')
+                + (f" ({self.robot_length}x{self.robot_width}"
+                   f" @ offset {self.footprint_offset_x:+.3f},{self.footprint_offset_y:+.3f})"
+                   if self.geometry_type == 'rectangle' else '')
             )
             # laser joint offset + drive-axle convention check
             try:
@@ -241,6 +295,8 @@ class AmrSimulator(Node):
             self.geometry_type   = _DEFAULTS['geometry_type']
             self.robot_length    = None
             self.robot_width     = None
+            self.footprint_offset_x = 0.0
+            self.footprint_offset_y = 0.0
 
         _ip = self.get_parameter('initial_pose').value
         self._initial_pose = (float(_ip[0]), float(_ip[1]), float(_ip[2]))
@@ -294,6 +350,9 @@ class AmrSimulator(Node):
         if self.geometry_type == 'rectangle':
             self._half_length = self.robot_length / 2.0
             self._half_width = self.robot_width / 2.0
+            # Box centre in the base_link frame (see parse_base_link_box).
+            self._foot_ox = self.footprint_offset_x
+            self._foot_oy = self.footprint_offset_y
 
         if self._is_collision(*self._initial_pose):
             self.get_logger().error(
@@ -682,8 +741,11 @@ class AmrSimulator(Node):
         Transforms every wall segment into the robot's local frame (rotate
         by -theta, translate by -x,-y) and runs a vectorized slab
         (Liang-Barsky) segment-vs-AABB test against
-        [-half_length, half_length] x [-half_width, half_width]. Returns
-        True if any wall segment intersects the box.
+        [ox - half_length, ox + half_length] x [oy - half_width, oy + half_width],
+        where (ox, oy) is the footprint box's centre in the base_link frame.
+        The offset is applied by shifting the local wall coordinates, which
+        keeps the box axis-aligned and the slab test untouched. Returns True
+        if any wall segment intersects the box.
         """
         c = math.cos(-theta)
         s = math.sin(-theta)
@@ -691,10 +753,10 @@ class AmrSimulator(Node):
         y3 = self.wall_y3 - y
         x4 = self.wall_x4 - x
         y4 = self.wall_y4 - y
-        lx3 = x3 * c - y3 * s
-        ly3 = x3 * s + y3 * c
-        lx4 = x4 * c - y4 * s
-        ly4 = x4 * s + y4 * c
+        lx3 = x3 * c - y3 * s - self._foot_ox
+        ly3 = x3 * s + y3 * c - self._foot_oy
+        lx4 = x4 * c - y4 * s - self._foot_ox
+        ly4 = x4 * s + y4 * c - self._foot_oy
 
         dx = lx4 - lx3
         dy = ly4 - ly3

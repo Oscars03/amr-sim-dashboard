@@ -31,13 +31,22 @@ def set_single_wall(node, p1, p2):
     node._wall_len_sq = node._wall_dx ** 2 + node._wall_dy ** 2
 
 
-def configure_rectangle(node, length=0.860, width=0.660, robot_radius=0.542):
-    """Mirrors rhino_01.urdf's dimensions (0.860 x 0.660 body, 0.542 circumscribing radius)."""
+def configure_rectangle(node, length=0.860, width=0.660, robot_radius=0.542,
+                        offset_x=0.0, offset_y=0.0):
+    """Mirrors rhino_01.urdf's dimensions (0.860 x 0.660 body, 0.542 circumscribing radius).
+
+    offset_x/offset_y place the footprint box's centre in the base_link frame,
+    as parsed from the base_link visual's <origin>. Zero keeps the historical
+    centred behaviour."""
     node.geometry_type = 'rectangle'
     node.robot_length = length
     node.robot_width = width
     node._half_length = length / 2.0
     node._half_width = width / 2.0
+    node.footprint_offset_x = offset_x
+    node.footprint_offset_y = offset_y
+    node._foot_ox = offset_x
+    node._foot_oy = offset_y
     node.robot_radius = robot_radius
     node._robot_radius_sq = robot_radius ** 2
     return node
@@ -103,3 +112,59 @@ def test_publish_collision_publishes_bool(node):
 
     node.publish_collision(False)
     assert captured['data'] is False
+
+
+# ── Offset footprint (base_link not at the body centre) ──────────────────────
+# Rhino's geometry: base_link at the rear axle, 0.600 x 0.440 body centred
+# 0.205 m forward, so the footprint spans x = [-0.095, +0.505] in base_link.
+RHINO = dict(length=0.600, width=0.440, robot_radius=0.551, offset_x=0.205)
+
+
+def test_offset_footprint_catches_front_corner_the_centred_box_missed(node):
+    """The failure the offset fixes: front overhang clipping a wall that a
+    box centred on base_link reports as clear."""
+    set_single_wall(node, WALL_P1, WALL_P2)          # vertical wall at x = 1.0
+
+    configure_rectangle(node, **RHINO)
+    # front edge at 0.6 + 0.505 = 1.105 -> past the wall
+    assert node.check_collision_rect(0.6, 0.0, 0.0) is True
+
+    configure_rectangle(node, **{**RHINO, 'offset_x': 0.0})
+    # old behaviour: front edge at 0.6 + 0.300 = 0.900 -> "clear", wrongly
+    assert node.check_collision_rect(0.6, 0.0, 0.0) is False
+
+
+def test_offset_footprint_does_not_invent_a_rear_collision(node):
+    """The mirror error: the centred box over-covers behind the robot and
+    reports a phantom collision when reversing away from a wall."""
+    set_single_wall(node, WALL_P1, WALL_P2)
+
+    configure_rectangle(node, **RHINO)
+    # rear edge at 1.25 - 0.095 = 1.155 -> comfortably clear of x = 1.0
+    assert node.check_collision_rect(1.25, 0.0, 0.0) is False
+
+    configure_rectangle(node, **{**RHINO, 'offset_x': 0.0})
+    # old behaviour: rear edge at 1.25 - 0.300 = 0.950 -> phantom collision
+    assert node.check_collision_rect(1.25, 0.0, 0.0) is True
+
+
+def test_offset_rotates_with_the_robot(node):
+    """The offset lives in the robot frame, so turning around swaps which end
+    of the robot the overhang is on."""
+    set_single_wall(node, WALL_P1, WALL_P2)
+    configure_rectangle(node, **RHINO)
+
+    assert node.check_collision_rect(0.6, 0.0, 0.0) is True       # nose toward wall
+    # facing away: body now spans [0.095, 0.695] in world x -> clear
+    assert node.check_collision_rect(0.6, 0.0, math.pi) is False
+
+
+def test_lateral_offset_shifts_the_box_sideways(node):
+    """A y-offset is honoured too — same code path, and asymmetric bodies exist."""
+    set_single_wall(node, (-5.0, 1.0), (5.0, 1.0))   # horizontal wall at y = 1.0
+    configure_rectangle(node, **{**RHINO, 'offset_x': 0.0, 'offset_y': 0.30})
+    # top edge at 0.6 + 0.30 + 0.22 = 1.12 -> hits
+    assert node.check_collision_rect(0.0, 0.6, 0.0) is True
+    configure_rectangle(node, **{**RHINO, 'offset_x': 0.0, 'offset_y': 0.0})
+    # top edge at 0.6 + 0.22 = 0.82 -> clear
+    assert node.check_collision_rect(0.0, 0.6, 0.0) is False
