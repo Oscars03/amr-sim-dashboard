@@ -14,7 +14,7 @@ const useAppStore = create((set) => ({
   // Simulation Config
   activeWorld: 'room.json',
   setActiveWorld: (world) => set({ activeWorld: world }),
-  activeRobot: 'tango.urdf',
+  activeRobot: 'amr_flaregun.urdf',
   setActiveRobot: (robot) => set({ activeRobot: robot }),
   urdf: null,
   setUrdf: (urdf) => set({ urdf: urdf }),
@@ -42,6 +42,10 @@ const useAppStore = create((set) => ({
   setAppVersion: (ver) => set({ appVersion: ver }),
   isSpinningUpdate: false,
   setIsSpinningUpdate: (val) => set({ isSpinningUpdate: val }),
+
+  // FPS Limit (20=low-power, 60, 0=unlimited)
+  fpsLimit: 20,
+  setFpsLimit: (val) => set({ fpsLimit: val }),
 }));
 
 export default useAppStore;

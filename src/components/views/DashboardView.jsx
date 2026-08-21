@@ -157,7 +157,7 @@ function parseURDF(xmlString) {
       const wheelWidth = parseFloat(simConfig.querySelector("wheel_width")?.textContent ?? "0.05");
       const maxSteeringAngle = parseFloat(simConfig.querySelector("max_steering_angle")?.textContent ?? "30");
       const wheelColor = "#222222"; // Dark gray
-      
+
       extractedConfig = { kinematicModel, wheelBase, axleTrack, wheelRadius, wheelWidth, maxSteeringAngle };
 
       const addWheel = (ox, oy, linkName = "virtual_wheel") => {
@@ -195,10 +195,12 @@ function parseURDF(xmlString) {
       else maxR = Math.max(maxR, Math.abs(s.ox) + s.radius, Math.abs(s.oy) + s.radius);
     });
 
-    return { shapes, maxR, config: extractedConfig };
+    const robotName = xml.querySelector("robot")?.getAttribute("name") || "";
+
+    return { shapes, maxR, config: extractedConfig, name: robotName };
   } catch (err) {
     console.error("URDF parse error:", err);
-    return { shapes: [], maxR: 0.2, config: null };
+    return { shapes: [], maxR: 0.2, config: null, name: "" };
   }
 }
 
@@ -271,7 +273,12 @@ function drawRobot(
   isDark,
   view,
   vx = 0,
-  w = 0
+  w = 0,
+  effectActive = false,
+  effectStartTime = 0,
+  effectEndTime = 0,
+  collisionActive = false,
+  steeringAngle = null
 ) {
   const { shapes, maxR, config } = urdf ?? { shapes: [], maxR: 0.2, config: null };
   const labelR = Math.max(10, maxR * scale);
@@ -318,13 +325,21 @@ function drawRobot(
       const sy = -s.oy * scale;
       ctx.save();
       ctx.translate(sx, sy);
-      
+
       let finalYaw = s.yaw || 0;
       if (s.link === "virtual_wheel_fl" || s.link === "virtual_wheel_fr") {
-        if (config?.kinematicModel === "ackermann" && Math.abs(vx) > 1e-4) {
-          const maxSteer = (config?.maxSteeringAngle ?? 30) * (Math.PI / 180);
-          const rawSteer = Math.atan((w * (config?.wheelBase ?? 0.5)) / vx);
-          finalYaw = Math.max(-maxSteer, Math.min(maxSteer, rawSteer));
+        if (config?.kinematicModel === "ackermann") {
+          if (steeringAngle !== null) {
+            // Real angle from /joint_states -- tracks the steering input at
+            // any speed, including standing still (unlike the old vx-gated
+            // atan(w*L/vx) estimate below, which could only show anything
+            // once the robot was already moving).
+            finalYaw = steeringAngle;
+          } else if (Math.abs(vx) > 1e-4) {
+            const maxSteer = (config?.maxSteeringAngle ?? 30) * (Math.PI / 180);
+            const rawSteer = Math.atan((w * (config?.wheelBase ?? 0.5)) / vx);
+            finalYaw = Math.max(-maxSteer, Math.min(maxSteer, rawSteer));
+          }
         }
       }
       if (finalYaw) ctx.rotate(-finalYaw);
@@ -493,6 +508,9 @@ function drawRobot(
         ctx.lineTo(triBaseX, triHalfW);
         ctx.closePath();
         ctx.fill();
+
+
+
       } else if (s.type === "cylinder" || s.type === "sphere") {
         const pr = Math.max(1.5, (s.radius || 0.05) * scale);
         ctx.beginPath();
@@ -508,6 +526,16 @@ function drawRobot(
 
   ctx.shadowBlur = 0;
   const robotRadiusPx = Math.max(10, maxR * scale);
+
+  if (collisionActive) {
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 120);
+    ctx.beginPath();
+    ctx.arc(0, 0, robotRadiusPx + 5, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(239, 68, 68, ${0.5 + 0.4 * pulse})`;
+    ctx.lineWidth = 3 + 2 * pulse;
+    ctx.stroke();
+  }
+
   const gapPx = 8;
   const arrowLenPx = 16;
   const arrowStart = robotRadiusPx + gapPx;
@@ -528,9 +556,116 @@ function drawRobot(
   ctx.lineTo(arrowEnd - 5, 3.5);
   ctx.closePath();
   ctx.fill();
+
+  const now = Date.now();
+  const gunLength = 16;
+  const gunWidth = 4;
+  const hw = Math.max(10, maxR * scale);
+
+  if (effectActive) {
+    const elapsed = effectStartTime ? now - effectStartTime : 0;
+
+    // --- Phase 0: Gun slides out (0-300ms) ---
+    let gunOffset = 0;
+    if (elapsed < 300) {
+      gunOffset = -gunLength + (elapsed / 300) * gunLength;
+    }
+
+    // Draw TANK-LIKE BARREL sliding out
+    ctx.fillStyle = "#37474f";
+    ctx.fillRect(hw - 2 + gunOffset, -gunWidth / 2, gunLength, gunWidth);
+    ctx.strokeStyle = "#263238";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(hw - 2 + gunOffset, -gunWidth / 2, gunLength, gunWidth);
+
+    // Muzzle
+    ctx.fillStyle = "#263238";
+    ctx.fillRect(hw + gunLength - 4 + gunOffset, -gunWidth / 2 - 1, 4, gunWidth + 2);
+
+    // Flare shooting mechanics (starts after 300ms, loops every 1350ms)
+    if (elapsed >= 300) {
+      const loopElapsed = elapsed - 300;
+      const tFlare = (loopElapsed % 1350) / 1350;
+      const startX = hw + gunLength + gunOffset;
+
+      if (tFlare < 0.6) {
+        // Phase 1: Shoot "up"
+        const progress = tFlare / 0.6;
+        const flareX = startX + progress * 40;
+        const flareSize = 4 + Math.pow(progress, 2) * 50;
+
+        ctx.beginPath();
+        ctx.moveTo(startX, 0);
+        ctx.lineTo(flareX, 0);
+        ctx.strokeStyle = "rgba(255, 100, 0, 0.4)";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(flareX, 0, flareSize, 0, Math.PI * 2);
+        ctx.fillStyle = "#ff5722";
+        ctx.fill();
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = "#ff5722";
+
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(flareX, 0, flareSize * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      } else {
+        // Phase 2: Explode
+        const progress = (tFlare - 0.6) / 0.4;
+        const explodeX = startX + 40;
+
+        const numParticles = 24;
+        const maxDist = 120;
+
+        for (let i = 0; i < numParticles; i++) {
+          const angle = (i / numParticles) * Math.PI * 2;
+          const dist = progress * maxDist;
+          const px = explodeX + Math.cos(angle) * dist;
+          const py = Math.sin(angle) * dist;
+
+          ctx.beginPath();
+          ctx.arc(px, py, 6 * (1 - progress), 0, Math.PI * 2);
+          ctx.fillStyle = i % 2 === 0 ? "#ff5722" : "#ffeb3b";
+          ctx.fill();
+        }
+
+        ctx.beginPath();
+        ctx.arc(explodeX, 0, progress * maxDist * 1.2, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 87, 34, ${1 - progress})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Text label
+        ctx.rotate(Math.PI / 2 + thetaRad);
+        const blinkAlpha = (Math.floor(Date.now() / 80) % 2 === 0) ? (1 - progress) : 0;
+        ctx.fillStyle = `rgba(255, 87, 34, ${blinkAlpha})`;
+        ctx.font = "bold 16px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Mission Complete!!", 0, -Math.max(20, maxR * scale) - 30 - (progress * 20));
+        ctx.rotate(-Math.PI / 2 - thetaRad);
+      }
+    }
+  } else if (effectEndTime > 0 && now - effectEndTime < 300) {
+    // --- Phase 3: Gun slides in (0-300ms after effect ends) ---
+    const elapsedSinceEnd = now - effectEndTime;
+    const gunOffset = - (elapsedSinceEnd / 300) * gunLength;
+
+    // Draw TANK-LIKE BARREL sliding back in
+    ctx.fillStyle = "#37474f";
+    ctx.fillRect(hw - 2 + gunOffset, -gunWidth / 2, gunLength, gunWidth);
+    ctx.strokeStyle = "#263238";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(hw - 2 + gunOffset, -gunWidth / 2, gunLength, gunWidth);
+
+    ctx.fillStyle = "#263238";
+    ctx.fillRect(hw + gunLength - 4 + gunOffset, -gunWidth / 2 - 1, 4, gunWidth + 2);
+  }
+
   ctx.restore();
-
-
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -653,18 +788,25 @@ function MapEditor({ onExit, isDark }) {
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 600 });
 
   useEffect(() => {
-    const updateSize = () => {
-      if (wrapRef.current) {
-        setCanvasSize({
-          w: wrapRef.current.clientWidth,
-          h: wrapRef.current.clientHeight,
-        });
+    let timeoutId;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        // Simple debounce to avoid ResizeObserver loop limit exceeded error & excessive renders
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          setCanvasSize({
+            w: entry.contentRect.width,
+            h: entry.contentRect.height,
+          });
+        }, 16); // ~60fps
       }
+    });
+    if (wrapRef.current) observer.observe(wrapRef.current);
+    return () => {
+      clearTimeout(timeoutId);
+      observer.disconnect();
     };
-    updateSize();
-    setTimeout(updateSize, 100);
-    window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
   }, []);
 
   const [isDrawing, setIsDrawing] = useState(false);
@@ -1064,16 +1206,55 @@ function MapEditor({ onExit, isDark }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component
 // ─────────────────────────────────────────────────────────────────────────────
-function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
+function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive, steeringAngle }) {
   const canvasRef = useRef(null);
+  const drawRef = useRef(null);
+  const { fpsLimit } = useAppStore();
+
+  const needsRedrawRef = useRef(true);
+  const effectActiveRef = useRef(effectActive);
+  const collisionActiveRef = useRef(collisionActive);
+
+  useEffect(() => {
+    if (fpsLimit === 0) {
+      // Unlimited: pure rAF
+      let frame;
+      const loop = () => {
+        frame = requestAnimationFrame(loop);
+        needsRedrawRef.current = false;
+        if (drawRef.current) drawRef.current();
+      };
+      frame = requestAnimationFrame(loop);
+      return () => cancelAnimationFrame(frame);
+    } else {
+      // Capped FPS: setInterval fires exactly N times/s, no wasted rAF callbacks
+      // ponytail: setInterval drifts ~1ms/tick vs rAF's vsync precision; fine for 20/60fps canvas
+      const timer = setInterval(() => {
+        const lowPowerMode = fpsLimit === 20;
+        if (lowPowerMode && !needsRedrawRef.current && !effectActiveRef.current && !collisionActiveRef.current) return;
+        needsRedrawRef.current = false;
+        if (drawRef.current) drawRef.current();
+      }, 1000 / fpsLimit);
+      return () => clearInterval(timer);
+    }
+  }, [fpsLimit]);
 
   const [debugStats, setDebugStats] = useState({ fps: 0, rtf: "1.00" });
   const frameDeltasRef = useRef([]);
   const lastFrameTimeRef = useRef(performance.now());
+  const lastDrawTimeRef = useRef(0);
   const lastUiUpdateRef = useRef(0);
   const odomSamplesRef = useRef([]);
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
+
+  // Mark dirty whenever visual inputs change
+  useEffect(() => {
+    needsRedrawRef.current = true;
+    effectActiveRef.current = effectActive;
+    collisionActiveRef.current = collisionActive;
+  }, [pose, effectActive, collisionActive, steeringAngle, mapData, urdf, isDark, view]);
+
   const dragRef = useRef({
     isMiddle: false,
     isLeft: false,
@@ -1170,7 +1351,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     const nowWall = performance.now() / 1000;
     const stampSec = pose.stampSec ?? null;
     const samples = odomSamplesRef.current;
-    
+
     samples.push({
       sim: stampSec !== null && stampSec > 0 ? stampSec : (samples.length > 0 ? samples[samples.length - 1].sim + 0.05 : nowWall),
       wall: nowWall,
@@ -1178,7 +1359,9 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     if (samples.length > 40) samples.shift();
   }, [pose]);
 
-  useEffect(() => {
+  drawRef.current = () => {
+    const renderStart = performance.now();
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -1207,8 +1390,20 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     );
     const { origin_x, origin_y, width: mw, height: mh } = mapData.map_info;
 
+    let effPanX = view.panX;
+    let effPanY = view.panY;
+
+    if (followRobot && pose && pose.x !== "-") {
+      const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
+      const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
+      const rx = width - offsetX - (worldY - origin_y) * scale;
+      const ry = height - offsetY - (worldX - origin_x) * scale;
+      effPanX = (width / 2 - rx) * view.zoom;
+      effPanY = (height / 2 - ry) * view.zoom;
+    }
+
     ctx.save();
-    ctx.translate(width / 2 + view.panX, height / 2 + view.panY);
+    ctx.translate(width / 2 + effPanX, height / 2 + effPanY);
     ctx.scale(view.zoom, view.zoom);
     ctx.rotate(view.rotation);
     ctx.translate(-width / 2, -height / 2);
@@ -1341,7 +1536,12 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
         isDark,
         view,
         pose.vx,
-        pose.w
+        pose.w,
+        effectActive,
+        effectStartTime,
+        effectEndTime,
+        collisionActive,
+        steeringAngle ?? null
       );
     }
 
@@ -1382,8 +1582,6 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
     ctx.translate(-42, 0);
     ctx.rotate(-view.rotation);
     ctx.fillText("Y", 0, 0);
-    ctx.restore();
-
     ctx.restore();
 
     const scaleColor = isDark ? "#000000" : "#ffffff";
@@ -1442,7 +1640,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
         rtf: calculatedRtf.toFixed(2),
       });
     }
-  }, [mapData, pose, urdf, width, height, isDark, view]);
+  };
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -1501,14 +1699,14 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark }) {
           background: followRobot
             ? "#2563eb"
             : isDark
-            ? "rgba(15, 23, 42, 0.88)"
-            : "rgba(255, 255, 255, 0.95)",
+              ? "rgba(15, 23, 42, 0.88)"
+              : "rgba(255, 255, 255, 0.95)",
           color: followRobot ? "#ffffff" : isDark ? "#f8fafc" : "#0f172a",
           border: followRobot
             ? "1.5px solid #60a5fa"
             : isDark
-            ? "1.5px solid rgba(255, 255, 255, 0.25)"
-            : "1.5px solid rgba(15, 23, 42, 0.2)",
+              ? "1.5px solid rgba(255, 255, 255, 0.25)"
+              : "1.5px solid rgba(15, 23, 42, 0.2)",
           borderRadius: "10px",
           padding: "8px 14px",
           fontSize: "13px",
@@ -1680,7 +1878,7 @@ const CircleSvg = () => (
 // ─────────────────────────────────────────────────────────────────────────────
 // KeyboardController
 // ─────────────────────────────────────────────────────────────────────────────
-function KeyboardController({ ros, isDark }) {
+function KeyboardController({ ros, isDark, isNarrow, isShort }) {
   const cmdPubRef = useRef(null);
   const [keys, setKeys] = useState({});
   const [speed, setSpeed] = useState(0.5);
@@ -1853,7 +2051,7 @@ function KeyboardController({ ros, isDark }) {
       background: isDark ? "#121212" : "#ffffff",
       border: `1px solid ${isDark ? "#333333" : "#e0e0e0"}`,
       borderRadius: "16px",
-      padding: "16px",
+      padding: isShort ? "8px" : "16px",
       opacity: webControl ? 1 : 0.6,
       transition: "opacity 0.3s",
       display: "flex",
@@ -1868,10 +2066,10 @@ function KeyboardController({ ros, isDark }) {
       justifyContent: "space-between",
       flexWrap: "wrap",
       gap: "8px",
-      marginBottom: "20px",
+      marginBottom: isShort ? "8px" : "20px",
     },
     title: {
-      fontSize: "18px",
+      fontSize: isShort || isNarrow ? "15px" : "18px",
       fontWeight: 600,
       color: isDark ? "#90caf9" : "#1976d2",
     },
@@ -1904,14 +2102,14 @@ function KeyboardController({ ros, isDark }) {
       flexDirection: "row",
       flexWrap: "wrap",
       alignItems: "center",
-      gap: "20px",
+      gap: isShort ? "12px" : "20px",
       justifyContent: "center",
     },
     dpad: {
       display: "grid",
-      gridTemplateColumns: "repeat(3, 44px)",
-      gridTemplateRows: "repeat(3, 44px)",
-      gap: "6px",
+      gridTemplateColumns: isShort ? "repeat(3, 36px)" : "repeat(3, 44px)",
+      gridTemplateRows: isShort ? "repeat(3, 36px)" : "repeat(3, 44px)",
+      gap: isShort ? "4px" : "6px",
       pointerEvents: webControl ? "auto" : "none",
     },
     key: (active) => ({
@@ -2087,6 +2285,16 @@ function KeyboardController({ ros, isDark }) {
     );
   };
 
+  const triggerActuator = () => {
+    if (!ros) return;
+    const svc = new ROSLIB.Service({
+      ros,
+      name: '/actuate_effect',
+      serviceType: 'std_srvs/srv/Trigger',
+    });
+    svc.callService({}, () => { });
+  };
+
   return (
     <div style={S.wrap}>
       <style>{`
@@ -2128,7 +2336,7 @@ function KeyboardController({ ros, isDark }) {
 
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px',
-        background: isDark ? '#1e1e2d' : '#f5f5f5', padding: '6px 12px', borderRadius: '12px', marginBottom: '16px',
+        background: isDark ? '#1e1e2d' : '#f5f5f5', padding: '6px 12px', borderRadius: '12px', marginBottom: isShort ? '8px' : '16px',
         border: `1px solid ${isDark ? '#333' : '#e0e0e0'}`
       }}>
         {/* Watchdog toggle */}
@@ -2171,7 +2379,7 @@ function KeyboardController({ ros, isDark }) {
       </div>
 
       <div style={S.controlBody}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isShort ? '8px' : '16px' }}>
           {/* Holonomic Toggle */}
           <div
             onClick={() => {
@@ -2214,10 +2422,10 @@ function KeyboardController({ ros, isDark }) {
 
         {/* Movement Scale Sub-panel */}
         <div style={{
-          display: 'flex', flexDirection: 'column', gap: '12px',
+          display: 'flex', flexDirection: 'column', gap: isShort ? '8px' : '12px',
           background: isDark ? '#ffffff05' : '#f8f9fa',
           border: `1px solid ${isDark ? '#ffffff15' : '#e0e0e0'}`,
-          borderRadius: '12px', padding: '16px',
+          borderRadius: '12px', padding: isShort ? '10px' : '16px',
           flex: 1
         }}>
           <div style={{ fontSize: '12px', fontWeight: 600, color: isDark ? '#aaa' : '#666', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
@@ -2273,9 +2481,9 @@ function KeyboardController({ ros, isDark }) {
       </div>
 
       <div style={{
-        display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '16px',
+        display: 'flex', justifyContent: 'center', gap: '24px', marginTop: isShort ? '8px' : '16px',
         background: isDark ? '#00000033' : '#e0e0e055',
-        padding: '12px 24px', borderRadius: '8px',
+        padding: isShort ? '8px 16px' : '12px 24px', borderRadius: '8px',
         fontFamily: 'monospace', fontSize: '14px', fontWeight: 600,
         border: `1px solid ${isDark ? '#333' : '#ccc'}`
       }}>
@@ -2290,6 +2498,31 @@ function KeyboardController({ ros, isDark }) {
           </span>
         </span>
       </div>
+
+      <button
+        title="Trigger Mission Actuator"
+        onClick={triggerActuator}
+        style={{
+          width: '100%',
+          marginTop: isShort ? '8px' : '12px',
+          padding: isShort ? '8px' : '12px',
+          background: isDark ? '#2e7d32' : '#4caf50',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '8px',
+          fontWeight: 700,
+          cursor: 'pointer',
+          letterSpacing: '1px',
+          boxShadow: isDark ? '0 0 10px #4caf5033' : '0 4px 6px rgba(0,0,0,0.1)',
+          transition: 'all 0.2s'
+        }}
+        onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.15)'}
+        onMouseOut={(e) => e.currentTarget.style.filter = 'brightness(1)'}
+        onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+        onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+      >
+        🚀 ACTUATE EFFECT
+      </button>
     </div>
   );
 }
@@ -2653,8 +2886,8 @@ const SimSelector = forwardRef(function SimSelector(
         const worlds = worldData.worlds ?? [];
         setRobotList(robots);
         setWorldList(worlds);
-        const defaultRobot = statusData.robot ?? robots[0]?.name ?? "";
-        const defaultWorld = statusData.world ?? worlds[0]?.name ?? "";
+        const defaultRobot = statusData.robot || robots.find(r => r.name === 'amr_flaregun.urdf')?.name || robots[0]?.name || "";
+        const defaultWorld = statusData.world || worlds[0]?.name || "";
         setSelRobot(defaultRobot);
         setSelWorld(defaultWorld);
         if (
@@ -3297,6 +3530,20 @@ export default function DashboardView() {
   const toastTimerRef = useRef(null);
 
   const [notification, setNotification] = useState(null);
+  const [effectActive, setEffectActive] = useState(false);
+  const effectActiveRef = useRef(false);
+  const [effectStartTime, setEffectStartTime] = useState(0);
+  const [effectEndTime, setEffectEndTime] = useState(0);
+
+  const [collisionActive, setCollisionActive] = useState(false);
+  const collisionActiveRef = useRef(false);
+  const [showCollisionToast, setShowCollisionToast] = useState(false);
+  const collisionToastTimerRef = useRef(null);
+
+  // Real front-wheel steering angle (radians) from /joint_states -- tracks
+  // the actual commanded angle at any speed, including standing still.
+  const [steeringAngle, setSteeringAngle] = useState(null);
+
   const showNotification = (title, message, type = "info", onConfirm = null) => {
     setNotification({ title, message, type, onConfirm });
   };
@@ -3344,18 +3591,24 @@ export default function DashboardView() {
   const [canvasSize, setCanvasSize] = useState({ w: 400, h: 300 });
 
   useEffect(() => {
-    const updateSize = () => {
-      if (mapWrapRef.current) {
-        setCanvasSize({
-          w: mapWrapRef.current.clientWidth,
-          h: mapWrapRef.current.clientHeight,
-        });
+    let timeoutId;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          setCanvasSize({
+            w: entry.contentRect.width,
+            h: entry.contentRect.height,
+          });
+        }, 16);
       }
+    });
+    if (mapWrapRef.current) observer.observe(mapWrapRef.current);
+    return () => {
+      clearTimeout(timeoutId);
+      observer.disconnect();
     };
-    updateSize();
-    setTimeout(updateSize, 100);
-    window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
   }, []);
 
   const rosRef = useRef(null);
@@ -3401,9 +3654,57 @@ export default function DashboardView() {
       }
     });
     odomRef.current = odom;
+
+    const effectTopic = new ROSLIB.Topic({
+      ros: rosObj,
+      name: "/effect_active",
+      messageType: "std_msgs/msg/Bool",
+    });
+    effectTopic.subscribe((msg) => {
+      const currentActive = effectActiveRef.current;
+      if (msg.data && !currentActive) {
+        setEffectStartTime(Date.now());
+      } else if (!msg.data && currentActive) {
+        setEffectEndTime(Date.now());
+      }
+      effectActiveRef.current = msg.data;
+      setEffectActive(msg.data);
+    });
+
+    const collisionTopic = new ROSLIB.Topic({
+      ros: rosObj,
+      name: "/collision",
+      messageType: "std_msgs/msg/Bool",
+    });
+    collisionTopic.subscribe((msg) => {
+      const wasActive = collisionActiveRef.current;
+      if (msg.data && !wasActive) {
+        // Rising edge only -- avoid spamming a toast every tick while the
+        // robot stays pinned against a wall.
+        setShowCollisionToast(true);
+        if (collisionToastTimerRef.current) clearTimeout(collisionToastTimerRef.current);
+        collisionToastTimerRef.current = setTimeout(() => setShowCollisionToast(false), 2500);
+      }
+      collisionActiveRef.current = msg.data;
+      setCollisionActive(msg.data);
+    });
+
+    const jointStatesTopic = new ROSLIB.Topic({
+      ros: rosObj,
+      name: "/joint_states",
+      messageType: "sensor_msgs/msg/JointState",
+    });
+    jointStatesTopic.subscribe((msg) => {
+      const i = msg.name?.indexOf("virtual_wheel_fl") ?? -1;
+      if (i >= 0) setSteeringAngle(msg.position[i]);
+    });
+
     return () => {
       odom.unsubscribe();
       odomRef.current = null;
+      effectTopic.unsubscribe();
+      collisionTopic.unsubscribe();
+      jointStatesTopic.unsubscribe();
     };
   }, [rosObj]);
 
@@ -3463,10 +3764,18 @@ export default function DashboardView() {
   });
 
   useEffect(() => {
-    const onResize = () =>
-      setWinSize({ w: window.innerWidth, h: window.innerHeight });
+    let timeoutId;
+    const onResize = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        setWinSize({ w: window.innerWidth, h: window.innerHeight });
+      }, 16);
+    };
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener("resize", onResize);
+    };
   }, []);
 
   const isNarrow = winSize.w < 900; // stack vertically
@@ -3643,7 +3952,7 @@ export default function DashboardView() {
     rightPanel: {
       display: "flex",
       flexDirection: "column",
-      gap: "12px",
+      gap: "8px",
       height: "100%",
       minHeight: 0,
       minWidth: 0,
@@ -3659,7 +3968,7 @@ export default function DashboardView() {
       background: isDark ? "#121212" : "#ffffff",
       border: `1px solid ${isDark ? "#333333" : "#e0e0e0"}`,
       borderRadius: "16px",
-      padding: isNarrow ? "10px" : isShort ? "12px" : "20px", // ← tighter padding
+      padding: isNarrow ? "8px" : isShort ? "8px" : "12px", // tighter padding
       display: "flex",
       flexDirection: "column",
       flexShrink: 0,
@@ -3785,13 +4094,13 @@ export default function DashboardView() {
                         ? "#ccc"
                         : "#666",
               border: `1px solid ${updateInfo.status === "available" ||
-                  updateInfo.status === "downloaded"
-                  ? "#4caf50"
-                  : updateInfo.status === "downloading"
-                    ? "#2196f3"
-                    : isDark
-                      ? "#444"
-                      : "#ddd"
+                updateInfo.status === "downloaded"
+                ? "#4caf50"
+                : updateInfo.status === "downloading"
+                  ? "#2196f3"
+                  : isDark
+                    ? "#444"
+                    : "#ddd"
                 }`,
               padding: "8px 18px",
               borderRadius: "24px",
@@ -3815,6 +4124,54 @@ export default function DashboardView() {
             </span>
             <button
               onClick={() => setShowStatusToast(false)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "inherit",
+                cursor: "pointer",
+                padding: 0,
+                marginLeft: "8px",
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {showCollisionToast && (
+          <div
+            style={{
+              position: "fixed",
+              top: "60px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              background: isDark ? "#b71c1c" : "#ffebee",
+              color: isDark ? "#ffcdd2" : "#c62828",
+              border: `1px solid ${isDark ? "#ef5350" : "#ef9a9a"}`,
+              padding: "8px 18px",
+              borderRadius: "24px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+              fontSize: "13px",
+              fontWeight: 600,
+            }}
+          >
+            <span>⚠️ Collision detected</span>
+            <button
+              onClick={() => setShowCollisionToast(false)}
               style={{
                 background: "transparent",
                 border: "none",
@@ -3873,6 +4230,48 @@ export default function DashboardView() {
                     {mapName || "Loading..."}
                   </span>
                 </div>
+                <button
+                  onClick={() => {
+                    console.log('[ResetPose] rosObj:', rosObj);
+                    if (!rosObj) { console.warn('[ResetPose] no rosObj'); return; }
+                    const svc = new ROSLIB.Service({
+                      ros: rosObj,
+                      name: '/reset_pose',
+                      serviceType: 'std_srvs/srv/Trigger',
+                    });
+                    svc.callService(
+                      {},
+                      (res) => console.log('[ResetPose] OK:', res),
+                      (err) => console.error('[ResetPose] Failed:', err)
+                    );
+                  }}
+                  title="Reset robot to origin (0, 0)"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "7px 14px",
+                    background: "linear-gradient(135deg, #ef4444, #b91c1c)",
+                    color: "#fff",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    letterSpacing: "0.5px",
+                    boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
+                    transition: "all 0.15s ease",
+                    whiteSpace: "nowrap",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.transform = "scale(1.05)"}
+                  onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
+                  </svg>
+                  Reset Pose
+                </button>
               </div>
 
               <div style={S.mapCanvasWrap} ref={mapWrapRef}>
@@ -3883,6 +4282,11 @@ export default function DashboardView() {
                   width={canvasSize.w}
                   height={canvasSize.h}
                   isDark={isDark}
+                  effectActive={effectActive}
+                  effectStartTime={effectStartTime}
+                  effectEndTime={effectEndTime}
+                  collisionActive={collisionActive}
+                  steeringAngle={steeringAngle}
                 />
               </div>
             </div>
@@ -3899,6 +4303,23 @@ export default function DashboardView() {
                   }}
                 >
                   Odometry
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    letterSpacing: "0.5px",
+                    marginBottom: isNarrow ? "8px" : "16px",
+                    color: collisionActive
+                      ? (isDark ? "#ef5350" : "#c62828")
+                      : (isDark ? "#66bb6a" : "#2e7d32"),
+                  }}
+                >
+                  {collisionActive ? "⚠️ Collision: DETECTED" : "✅ Collision: OK"}
                 </div>
                 <div style={S.poseGrid}>
                   {[
@@ -3938,7 +4359,7 @@ export default function DashboardView() {
                 isWaitingOdom={isWaitingOdom}
               />
 
-              <KeyboardController ros={rosObj} isDark={isDark} />
+              <KeyboardController ros={rosObj} isDark={isDark} isNarrow={isNarrow} isShort={isShort} />
             </div>
           </div>
         </div>

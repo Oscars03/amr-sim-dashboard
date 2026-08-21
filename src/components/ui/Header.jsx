@@ -13,6 +13,7 @@ export default function Header() {
     isDark, setIsDark,
     rosStatus,
     showMonitor, setShowMonitor,
+    fpsLimit, setFpsLimit,
   } = useAppStore();
 
   const [appVersion, setAppVersion] = useState('0.0.0');
@@ -103,6 +104,25 @@ export default function Header() {
             </svg>
           )}
           <span className="btn-label">{isDark ? 'Dark Mode' : 'Light Mode'}</span>
+        </button>
+
+        {/* FPS Limit toggle */}
+        <button 
+          className="header-btn tier2-btn fps-toggle" 
+          onClick={() => {
+            if (fpsLimit === 20) setFpsLimit(60);
+            else if (fpsLimit === 60) setFpsLimit(0);
+            else setFpsLimit(20);
+          }} 
+          title="Toggle FPS Limit"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          <span className="btn-label">
+            {fpsLimit === 0 ? 'FPS: Unlocked' : `FPS: ${fpsLimit}`}
+          </span>
         </button>
 
         {/* Monitor */}
