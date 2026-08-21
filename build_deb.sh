@@ -88,18 +88,19 @@ cp -r release/linux-unpacked/* $DEB_DIR/opt/$APP_NAME/dashboard/
 # 6. Copy ROS 2 Workspace Source
 echo "🤖 Copying ROS 2 Workspace..."
 # Resolve the simamr_ws workspace without assuming a specific user/home path:
-# 1. AMR_WS_SRC env override, 2. a sibling simamr_ws next to this repo, 3. ~/simamr_ws
+# 1. AMR_WS_SRC env override, 2. the bundled simamr_ws/src next to this script, 3. ~/simamr_ws
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -n "$AMR_WS_SRC" ]; then
     ROS_WS_SRC="$AMR_WS_SRC"
-elif [ -d "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/simamr_ws/src" ]; then
-    ROS_WS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/simamr_ws/src"
+elif [ -d "$SCRIPT_DIR/simamr_ws/src" ]; then
+    ROS_WS_SRC="$SCRIPT_DIR/simamr_ws/src"
 else
     ROS_WS_SRC="$HOME/simamr_ws/src"
 fi
 
 if [ ! -d "$ROS_WS_SRC" ]; then
-    echo "❌ ERROR: Could not find simamr_ws source at: $ROS_WS_SRC"
-    echo "   Set AMR_WS_SRC=/path/to/simamr_ws/src and re-run."
+    echo "❌ ERROR: Could not find the ROS 2 workspace source at: $ROS_WS_SRC"
+    echo "   Set AMR_WS_SRC=/path/to/workspace/src and re-run."
     exit 1
 fi
 echo "   Using ROS 2 workspace source: $ROS_WS_SRC"
