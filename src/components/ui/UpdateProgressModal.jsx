@@ -2,36 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import './UpdateProgressModal.css';
 import iconCircleTransparent from '/icon_circle_transparent.png?url';
 
-const samplePointsFromImage = (img, size) => {
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = size;
-  tempCanvas.height = size;
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.drawImage(img, 0, 0, size, size);
-  const imgData = tempCtx.getImageData(0, 0, size, size);
-  const data = imgData.data;
-  const pts = [];
-  const step = 3; // 3px sampling grid
-  const half = size / 2;
-  for (let y = 0; y < size; y += step) {
-    for (let x = 0; x < size; x += step) {
-      const idx = (y * size + x) * 4;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-      const a = data[idx + 3];
-      // Sample non-transparent pattern pixels (dark/blue lines of the logo)
-      if (a > 50 && (r < 220 || g < 220 || b < 220)) {
-        pts.push({
-          x: x - half,
-          y: y - half,
-          brightness: 0
-        });
-      }
-    }
-  }
-  return pts;
-};
+import precomputedPoints from '../../assets/logoPoints.json';
 
 function LidarMap({ percent }) {
   const canvasRef = useRef(null);
@@ -47,8 +18,8 @@ function LidarMap({ percent }) {
     img.src = iconCircleTransparent;
     img.onload = () => {
       logoImgRef.current = img;
-      imagePointsRef.current = samplePointsFromImage(img, 270);
     };
+    imagePointsRef.current = precomputedPoints.map(pt => ({ x: pt[0], y: pt[1], brightness: 0 }));
   }, []);
 
   const targetPercentRef = useRef(percent);
