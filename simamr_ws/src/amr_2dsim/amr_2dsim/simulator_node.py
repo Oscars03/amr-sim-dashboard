@@ -245,6 +245,7 @@ class AmrSimulator(Node):
             self.creep_on_turn_mps = cfg['creep_on_turn_mps']
             self.presteer_ms     = cfg['presteer_ms']
             self.no_creep_mode   = cfg['no_creep_mode']
+            self.declare_parameter('creep_on_turn_mps', self.creep_on_turn_mps)
             self.robot_length    = None
             self.robot_width     = None
             self.footprint_offset_x = 0.0
@@ -430,6 +431,11 @@ class AmrSimulator(Node):
                 self._watchdog_enabled = bool(p.value)
             elif p.name == 'watchdog_timeout':
                 self._watchdog_timeout = float(p.value)
+            elif p.name == 'creep_on_turn_mps':
+                self.creep_on_turn_mps = float(p.value)
+                # Auto-toggle no_creep_mode based on creep value so joystick L3 button works perfectly
+                self.no_creep_mode = (self.creep_on_turn_mps < 0.01)
+                self.get_logger().info(f"Updated creep_on_turn_mps to {self.creep_on_turn_mps} (no_creep_mode: {self.no_creep_mode})")
         return SetParametersResult(successful=True)
 
     def actuate_callback(self, request, response):
