@@ -32,6 +32,9 @@ if (process.env.AMR_WS_SETUP) {
 } else {
     // Try candidate paths in order of priority
     const candidates = [
+        path.join(__dirname, '..', 'simamr_ws', 'install', 'setup.bash'),
+        path.join(__dirname, 'simamr_ws', 'install', 'setup.bash'),
+        path.join(process.resourcesPath || '', 'simamr_ws', 'install', 'setup.bash'),
         path.join(os.homedir(), 'simamr_ws', 'install', 'setup.bash'),
         path.join(os.homedir(), 'simamr_ws', 'setup.bash'),
         '/opt/irish-amr-sim/simamr_ws/setup.bash',
@@ -77,8 +80,9 @@ let rosProcess = null;
 function getShareDir() {
   try {
     return execSync(
-      'ros2 pkg prefix amr_2dsim --share',
+      `source ${WS_SETUP_BASH} && ros2 pkg prefix amr_2dsim --share`,
       {
+        shell: '/bin/bash',
         encoding: 'utf8',
         env: {
           ...process.env,

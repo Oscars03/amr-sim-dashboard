@@ -63,6 +63,9 @@
     <!-- DEGREES (simulator_node.py converts). 20 deg = servo_max_steer_deg = 20.0f -->
     <max_steering_angle>20.0</max_steering_angle>
     <drive_axle_x>0.0</drive_axle_x>
+    <creep_on_turn_mps>0.3</creep_on_turn_mps>
+    <presteer_ms>200</presteer_ms>
+    <no_creep_mode>false</no_creep_mode>
   </amr_sim_config>
 
   <material name="chassis_grey">

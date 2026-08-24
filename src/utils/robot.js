@@ -132,9 +132,11 @@ export function parseURDF(xmlString) {
       const wheelRadius = parseFloat(simConfig.querySelector("wheel_radius")?.textContent ?? "0.1");
       const wheelWidth = parseFloat(simConfig.querySelector("wheel_width")?.textContent ?? "0.05");
       const maxSteeringAngle = parseFloat(simConfig.querySelector("max_steering_angle")?.textContent ?? "30");
+      const driveAxleNode = simConfig.querySelector("drive_axle_x");
+      const driveAxleX = driveAxleNode ? parseFloat(driveAxleNode.textContent) : null;
       const wheelColor = "#222222"; // Dark gray
 
-      extractedConfig = { kinematicModel, wheelBase, axleTrack, wheelRadius, wheelWidth, maxSteeringAngle };
+      extractedConfig = { kinematicModel, wheelBase, axleTrack, wheelRadius, wheelWidth, maxSteeringAngle, driveAxleX };
 
       const addWheel = (ox, oy, linkName = "virtual_wheel") => {
         shapes.push({
@@ -144,19 +146,23 @@ export function parseURDF(xmlString) {
       };
 
       if (kinematicModel === "diff_drive") {
-        addWheel(0, axleTrack / 2, "virtual_wheel_rl");
-        addWheel(0, -axleTrack / 2, "virtual_wheel_rr");
+        const ax = driveAxleX !== null ? driveAxleX : 0;
+        addWheel(ax, axleTrack / 2, "virtual_wheel_rl");
+        addWheel(ax, -axleTrack / 2, "virtual_wheel_rr");
       } else if (kinematicModel === "ackermann") {
-        // Center the wheelbase around the origin for visualization
-        addWheel(-wheelBase / 2, axleTrack / 2, "virtual_wheel_rl");
-        addWheel(-wheelBase / 2, -axleTrack / 2, "virtual_wheel_rr");
-        addWheel(wheelBase / 2, axleTrack / 2, "virtual_wheel_fl");
-        addWheel(wheelBase / 2, -axleTrack / 2, "virtual_wheel_fr");
+        const rearX = driveAxleX !== null ? driveAxleX : -wheelBase / 2;
+        const frontX = rearX + wheelBase;
+        addWheel(rearX, axleTrack / 2, "virtual_wheel_rl");
+        addWheel(rearX, -axleTrack / 2, "virtual_wheel_rr");
+        addWheel(frontX, axleTrack / 2, "virtual_wheel_fl");
+        addWheel(frontX, -axleTrack / 2, "virtual_wheel_fr");
       } else if (kinematicModel === "mecanum") {
-        addWheel(wheelBase / 2, axleTrack / 2, "virtual_wheel_fl");
-        addWheel(wheelBase / 2, -axleTrack / 2, "virtual_wheel_fr");
-        addWheel(-wheelBase / 2, axleTrack / 2, "virtual_wheel_rl");
-        addWheel(-wheelBase / 2, -axleTrack / 2, "virtual_wheel_rr");
+        const rearX = driveAxleX !== null ? driveAxleX : -wheelBase / 2;
+        const frontX = rearX + wheelBase;
+        addWheel(frontX, axleTrack / 2, "virtual_wheel_fl");
+        addWheel(frontX, -axleTrack / 2, "virtual_wheel_fr");
+        addWheel(rearX, axleTrack / 2, "virtual_wheel_rl");
+        addWheel(rearX, -axleTrack / 2, "virtual_wheel_rr");
       } else if (kinematicModel === "omni") {
         const radius = parseFloat(simConfig.querySelector("robot_radius")?.textContent ?? "0.3");
         addWheel(0, radius, "virtual_wheel_fl");
@@ -218,17 +224,9 @@ export function drawRobot(
   ctx.rotate(-Math.PI / 2 - thetaRad);
 
   if (shapes.length === 0) {
-    ctx.shadowColor = "#00e5ffaa";
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = "#00e5ff";
-    ctx.strokeStyle = "#ffffffcc";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, labelR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  } else {
+    ctx.restore();
+    return;
+  }
     // 5. DROP SHADOW: Cached radial gradient black fading to transparent underneath
     const shadowR = Math.max(15, maxR * scale * 1.3);
     const shadowCacheKey = `${shadowR.toFixed(1)}`;
@@ -446,7 +444,7 @@ export function drawRobot(
 
       ctx.restore();
     });
-  }
+
 
   ctx.shadowBlur = 0;
   const robotRadiusPx = Math.max(10, maxR * scale);
