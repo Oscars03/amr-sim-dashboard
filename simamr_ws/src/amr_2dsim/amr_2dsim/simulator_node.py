@@ -382,6 +382,13 @@ class AmrSimulator(Node):
             )
 
         self.cmd_vel = {'vx': 0.0, 'vy': 0.0, 'w': 0.0}
+        # What /odom (and anything downstream of it, e.g. an EKF) should report:
+        # the velocity actually used to integrate this tick's pose, AFTER the
+        # ackermann steering clamp and creep/pre-steer logic -- not the raw
+        # /cmd_vel command, which nothing here guarantees is achievable.
+        self.achieved_vx = 0.0
+        self.achieved_vy = 0.0
+        self.achieved_w = 0.0
         self.last_cmd_time = time.time()
         self.last_time = time.time()
         self.prev_dir = 0
@@ -459,6 +466,9 @@ class AmrSimulator(Node):
 
         self.pose = {'x': target_x, 'y': target_y, 'theta': target_theta, 'vx': 0.0, 'vy': 0.0, 'w': 0.0}
         self.cmd_vel = {'vx': 0.0, 'vy': 0.0, 'w': 0.0}
+        self.achieved_vx = 0.0
+        self.achieved_vy = 0.0
+        self.achieved_w = 0.0
         self.total_pulse_left = 0.0
         self.total_pulse_right = 0.0
         self.current_steering_angle = 0.0
@@ -587,7 +597,13 @@ class AmrSimulator(Node):
                 self.current_steering_angle = delta
                 # Derive achievable w
                 w = vx * math.tan(delta) / self.wheel_base
-        
+
+        # This is what actually gets integrated below (and is exactly what
+        # /odom must report -- see achieved_vx/vy/w assignment there).
+        self.achieved_vx = vx
+        self.achieved_vy = vy
+        self.achieved_w = w
+
         # Integrate Position (Global Frame) ด้วยสมการ Midpoint 
         mid_theta = self.pose['theta'] + (w * dt / 2.0)
         new_theta = self.pose['theta'] + (w * dt)
@@ -791,9 +807,13 @@ class AmrSimulator(Node):
         pose_cov[35] = 0.01  # Yaw
         odom.pose.covariance = pose_cov
         
-        odom.twist.twist.linear.x = self.cmd_vel['vx']
-        odom.twist.twist.linear.y = 0.0 if self.kinematic_model == 'diff_drive' else self.cmd_vel['vy']
-        odom.twist.twist.angular.z = self.cmd_vel['w']
+        # Report what the robot actually did this tick, not the raw /cmd_vel
+        # command -- the ackermann branch above clamps steering angle (and can
+        # override vx via creep/pre-steer), so self.cmd_vel can disagree with
+        # the pose that was actually integrated. See F-02 in the DOE audit.
+        odom.twist.twist.linear.x = self.achieved_vx
+        odom.twist.twist.linear.y = 0.0 if self.kinematic_model == 'diff_drive' else self.achieved_vy
+        odom.twist.twist.angular.z = self.achieved_w
         
         # 2. Twist Covariance (Local 'base_link' frame)
         # ความเร็วในมุมมองหุ่น (Local) แบบ Diff-Drive ไม่ไถลข้าง แกน Y จึงเป็น 1e-5 ได้
