@@ -71,9 +71,11 @@ amr_2dsim/     Python node package
     - drive-axle alignment validator
 
 urdf/
-  tango.urdf
-    - <amr_sim_config>: wheel_base = 0.325m
-    - base_link origin: X offset shifted -0.100m (drive axle alignment)
+  rhino.urdf
+    - <amr_sim_config>: wheel_base = 0.385m, max_steering_angle = 18° (0.314 rad)
+    - base_link origin: Ackermann configuration aligned with physical Rhino robot
+  amr.urdf
+  tango_2.urdf
 
 launch/    rviz/    worlds/    maps/    server/    resource/
 ```

@@ -78,9 +78,14 @@ let rosProcess = null;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function getShareDir() {
+  const installPrefix = path.dirname(WS_SETUP_BASH);
+  const directShare = path.join(installPrefix, 'share', 'amr_2dsim');
+  if (fs.existsSync(directShare)) {
+    return directShare;
+  }
   try {
     return execSync(
-      `source ${WS_SETUP_BASH} && ros2 pkg prefix amr_2dsim --share`,
+      `export AMENT_PREFIX_PATH="${installPrefix}:\${AMENT_PREFIX_PATH:-}" && source "${WS_SETUP_BASH}" && ros2 pkg prefix amr_2dsim --share`,
       {
         shell: '/bin/bash',
         encoding: 'utf8',
@@ -96,12 +101,20 @@ function getShareDir() {
   }
 }
 
+function getSrcDirs(subDir) {
+  const candidates = [
+    path.join(__dirname, 'simamr_ws', 'src', 'amr_2dsim', subDir),
+    path.join(__dirname, '..', 'simamr_ws', 'src', 'amr_2dsim', subDir),
+    path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', subDir),
+  ];
+  return candidates.filter(d => fs.existsSync(d));
+}
+
 function getWorldFiles(shareDir) {
-  const dirs = [path.join(shareDir, 'worlds')];
-  const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
-  if (fs.existsSync(srcWorldsDir)) dirs.push(srcWorldsDir);
+  const dirs = shareDir ? [path.join(shareDir, 'worlds')] : [];
+  getSrcDirs('worlds').forEach(d => { if (!dirs.includes(d)) dirs.push(d); });
   const fallbackWorldsDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'worlds');
-  if (fs.existsSync(fallbackWorldsDir)) dirs.push(fallbackWorldsDir);
+  if (fs.existsSync(fallbackWorldsDir) && !dirs.includes(fallbackWorldsDir)) dirs.push(fallbackWorldsDir);
 
   const seen = new Set();
   const results = [];
@@ -135,11 +148,10 @@ function getWorldFiles(shareDir) {
 }
 
 function getRobotFiles(shareDir) {
-  const dirs = [path.join(shareDir, 'urdf')];
-  const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
-  if (fs.existsSync(srcUrdfDir)) dirs.push(srcUrdfDir);
+  const dirs = shareDir ? [path.join(shareDir, 'urdf')] : [];
+  getSrcDirs('urdf').forEach(d => { if (!dirs.includes(d)) dirs.push(d); });
   const fallbackUrdfDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'urdf');
-  if (fs.existsSync(fallbackUrdfDir)) dirs.push(fallbackUrdfDir);
+  if (fs.existsSync(fallbackUrdfDir) && !dirs.includes(fallbackUrdfDir)) dirs.push(fallbackUrdfDir);
 
   const seen = new Set();
   const results = [];
@@ -255,7 +267,19 @@ function launchRos(shareDir, urdfPath, worldPath) {
     return;
   }
 
+  const installPrefix = path.dirname(WS_SETUP_BASH);
+  let pySitePackages = '';
+  const libDir = path.join(installPrefix, 'lib');
+  if (fs.existsSync(libDir)) {
+    const pyVer = fs.readdirSync(libDir).find(d => d.startsWith('python'));
+    if (pyVer) {
+      pySitePackages = path.join(libDir, pyVer, 'site-packages');
+    }
+  }
+  const pyExport = pySitePackages ? `export PYTHONPATH="${pySitePackages}:\${PYTHONPATH:-}" && ` : '';
   const shellCmd =
+    `export AMENT_PREFIX_PATH="${installPrefix}:\${AMENT_PREFIX_PATH:-}" && ` +
+    pyExport +
     `source ${ROS_SETUP_BASH} && ` +
     `source ${WS_SETUP_BASH} && ` +
     `ros2 launch amr_2dsim sim_bringup.launch.py ` +
@@ -266,14 +290,14 @@ function launchRos(shareDir, urdfPath, worldPath) {
   console.log(`  ${shellCmd}`);
   console.log('');
 
-
-
   rosProcess = spawn('bash', ['-c', shellCmd], {
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       PATH: `${process.env.PATH}:${ROS_BIN_PATH}`,
+      AMENT_PREFIX_PATH: `${installPrefix}:${process.env.AMENT_PREFIX_PATH || ''}`,
+      PYTHONPATH: pySitePackages ? `${pySitePackages}:${process.env.PYTHONPATH || ''}` : process.env.PYTHONPATH,
       AMR_MAP_FILE: worldPath,
       AMR_URDF_FILE: urdfPath,
     },
@@ -550,9 +574,9 @@ app.post('/api/robots', (req, res) => {
       console.warn(`[create_robot] Could not save to shareDir: ${e.message}`);
     }
 
-    const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
-    if (fs.existsSync(srcUrdfDir)) {
-      const srcUrdfPath = path.join(srcUrdfDir, fileName);
+    const srcUrdfDirs = getSrcDirs('urdf');
+    if (srcUrdfDirs.length > 0) {
+      const srcUrdfPath = path.join(srcUrdfDirs[0], fileName);
       fs.writeFileSync(srcUrdfPath, urdfContent);
       console.log(`[create_robot] Saved to source: ${srcUrdfPath}`);
       savedAnywhere = true;
@@ -595,8 +619,8 @@ app.delete('/api/robots/:fileName', (req, res) => {
   }
 
   // 2. พยายามลบจาก Source Workspace (กรณีนักพัฒนา)
-  const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
-  if (fs.existsSync(srcUrdfDir)) {
+  const srcUrdfDirs = getSrcDirs('urdf');
+  for (const srcUrdfDir of srcUrdfDirs) {
     const srcPath = path.join(srcUrdfDir, fileName);
     if (fs.existsSync(srcPath)) {
       try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
@@ -673,8 +697,8 @@ app.delete('/api/worlds/:fileName', (req, res) => {
   }
 
   // 2. พยายามลบจาก Source Workspace (กรณีนักพัฒนา)
-  const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
-  if (fs.existsSync(srcWorldsDir)) {
+  const srcWorldsDirs = getSrcDirs('worlds');
+  for (const srcWorldsDir of srcWorldsDirs) {
     const srcPath = path.join(srcWorldsDir, fileName);
     if (fs.existsSync(srcPath)) {
       try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
@@ -813,9 +837,9 @@ app.post('/save_map', (req, res) => {
       console.warn(`[save_map] Could not save to shareDir: ${e.message}`);
     }
 
-    const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
-    if (fs.existsSync(srcWorldsDir)) {
-      const srcSavePath = path.join(srcWorldsDir, safeName);
+    const srcWorldsDirs = getSrcDirs('worlds');
+    if (srcWorldsDirs.length > 0) {
+      const srcSavePath = path.join(srcWorldsDirs[0], safeName);
       fs.writeFileSync(srcSavePath, JSON.stringify(data, null, 2), 'utf8');
       console.log(`[save_map] Saved to source: ${srcSavePath}`);
       savedAnywhere = true;
