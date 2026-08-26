@@ -1,8 +1,8 @@
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist, TransformStamped
+from geometry_msgs.msg import Twist, TransformStamped, PoseWithCovarianceStamped
 from sensor_msgs.msg import LaserScan, Imu, JointState
-from std_msgs.msg import String, Bool, Float64
+from std_msgs.msg import String, Bool, Float64, Empty
 from std_srvs.srv import Trigger
 from rcl_interfaces.msg import SetParametersResult
 from tf2_ros import TransformBroadcaster
@@ -413,7 +413,7 @@ class AmrSimulator(Node):
         self._steering_cmd_timeout = 0.5
         
         self.wheel_vel_pub = self.create_publisher(Twist, '/wheel/vel', 10)
-        self.imu_pub = self.create_publisher(Imu, '/imu/data', 10)
+        self.imu_pub = self.create_publisher(Imu, '/imu', 10)
         self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
         self.current_steering_angle = 0.0
 
@@ -421,6 +421,8 @@ class AmrSimulator(Node):
         self.collision_pub = self.create_publisher(Bool, '/collision', 10)
         self.actuate_srv = self.create_service(Trigger, '/actuate_effect', self.actuate_callback)
         self.reset_pose_srv = self.create_service(Trigger, '/reset_pose', self.reset_pose_callback)
+        self.reset_pose_sub = self.create_subscription(Empty, '/reset_pose', self.reset_pose_topic_callback, 10)
+        self.initial_pose_sub = self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.initial_pose_topic_callback, 10)
         self.effect_timer = None
 
         self.timer = self.create_timer(0.05, self.timer_callback)
@@ -450,10 +452,12 @@ class AmrSimulator(Node):
         response.message = "Effect triggered"
         return response
 
-    def reset_pose_callback(self, request, response):
-        # Thorough reset of the robot state (like a fresh launch)
-        self.pose = {'x': self._initial_pose[0], 'y': self._initial_pose[1],
-                     'theta': self._initial_pose[2], 'vx': 0.0, 'vy': 0.0, 'w': 0.0}
+    def _reset_robot_state(self, x=None, y=None, theta=None):
+        target_x = self._initial_pose[0] if x is None else float(x)
+        target_y = self._initial_pose[1] if y is None else float(y)
+        target_theta = self._initial_pose[2] if theta is None else float(theta)
+
+        self.pose = {'x': target_x, 'y': target_y, 'theta': target_theta, 'vx': 0.0, 'vy': 0.0, 'w': 0.0}
         self.cmd_vel = {'vx': 0.0, 'vy': 0.0, 'w': 0.0}
         self.total_pulse_left = 0.0
         self.total_pulse_right = 0.0
@@ -465,13 +469,27 @@ class AmrSimulator(Node):
 
         # Publish empty/initial states to clear old data
         msg = String()
-        msg.data = f"0.0,0.0"
+        msg.data = "0.0,0.0"
         self.encoder_pub.publish(msg)
 
-        self.get_logger().info("Robot state completely reset to initial pose.")
+        self.get_logger().info(f"Robot state completely reset to pose: ({target_x:.3f}, {target_y:.3f}, {target_theta:.3f}).")
+
+    def reset_pose_callback(self, request, response):
+        self._reset_robot_state()
         response.success = True
         response.message = "Simulation state reset successfully"
         return response
+
+    def reset_pose_topic_callback(self, msg):
+        self._reset_robot_state()
+
+    def initial_pose_topic_callback(self, msg):
+        px = msg.pose.pose.position.x
+        py = msg.pose.pose.position.y
+        qz = msg.pose.pose.orientation.z
+        qw = msg.pose.pose.orientation.w
+        yaw = 2.0 * math.atan2(qz, qw)
+        self._reset_robot_state(x=px, y=py, theta=yaw)
 
     def effect_timer_callback(self):
         msg = Bool()
