@@ -1,0 +1,631 @@
+/* ── Import ROS Map Modal Styles ─────────────────────────────────────────── */
+
+.irm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.irm-card {
+  background: var(--irm-bg, #1a202c);
+  color: var(--irm-fg, #e2e8f0);
+  border: 1px solid var(--irm-border, #2d3748);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Step 1: Upload Modal Size */
+.irm-step-upload {
+  width: min(740px, 94vw);
+  max-height: 90vh;
+}
+
+/* Step 2: Preview Expanded Modal Size */
+.irm-step-preview {
+  width: min(1200px, 96vw);
+  height: min(860px, 92vh);
+}
+
+/* Theme variables */
+.irm-dark {
+  --irm-bg: #151a23;
+  --irm-card-bg: #1c2331;
+  --irm-card-hover: #222c3e;
+  --irm-input-bg: #11151d;
+  --irm-fg: #f1f5f9;
+  --irm-sub: #94a3b8;
+  --irm-border: #2c3647;
+  --irm-border-active: #3b82f6;
+  --irm-canvas-bg: #0b0f17;
+  --irm-pill-bg: #1c2432;
+  --irm-pill-active: #2563eb;
+  --irm-pill-active-text: #ffffff;
+}
+
+.irm-light {
+  --irm-bg: #ffffff;
+  --irm-card-bg: #f8fafc;
+  --irm-card-hover: #f1f5f9;
+  --irm-input-bg: #f1f5f9;
+  --irm-fg: #0f172a;
+  --irm-sub: #64748b;
+  --irm-border: #e2e8f0;
+  --irm-border-active: #2563eb;
+  --irm-canvas-bg: #f8fafc;
+  --irm-pill-bg: #f1f5f9;
+  --irm-pill-active: #2563eb;
+  --irm-pill-active-text: #ffffff;
+}
+
+/* Header */
+.irm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px 12px;
+  border-bottom: 1px solid var(--irm-border);
+  flex-shrink: 0;
+}
+
+.irm-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.irm-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.irm-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--irm-sub);
+}
+
+.irm-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--irm-sub);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.irm-close-btn:hover {
+  background: var(--irm-card-hover);
+  color: var(--irm-fg);
+}
+
+/* Stepper Bar */
+.irm-stepper-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 22px;
+  background: var(--irm-bg);
+  border-bottom: 1px solid var(--irm-border);
+  flex-shrink: 0;
+}
+
+.irm-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--irm-pill-bg);
+  padding: 4px 6px;
+  border-radius: 9999px;
+  border: 1px solid var(--irm-border);
+}
+
+.irm-step-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--irm-sub);
+  background: transparent;
+  border: none;
+  cursor: default;
+  transition: all 0.2s ease;
+}
+
+.irm-step-pill.clickable {
+  cursor: pointer;
+}
+
+.irm-step-pill.clickable:hover {
+  color: var(--irm-fg);
+}
+
+.irm-step-pill.active {
+  background: var(--irm-pill-active);
+  color: var(--irm-pill-active-text);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+}
+
+.irm-step-pill.completed {
+  color: #10b981;
+}
+
+.irm-step-badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.irm-step-pill.active .irm-step-badge {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.irm-step-pill.completed .irm-step-badge {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.irm-step-arrow {
+  color: var(--irm-sub);
+  opacity: 0.5;
+  font-size: 12px;
+}
+
+/* Modal Content Area */
+.irm-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Step 1: Upload Zones ─────────────────────────────────────────────────── */
+.irm-upload-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: auto 0;
+}
+
+.irm-upload-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .irm-upload-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.irm-dropzone {
+  position: relative;
+  background: var(--irm-card-bg);
+  border: 2px dashed var(--irm-border);
+  border-radius: 10px;
+  padding: 24px 18px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  box-sizing: border-box;
+}
+
+.irm-dropzone:hover,
+.irm-dropzone.drag-over {
+  border-color: var(--irm-border-active);
+  background: var(--irm-card-hover);
+  transform: translateY(-1px);
+}
+
+.irm-dropzone.has-file {
+  border-style: solid;
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.irm-drop-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.irm-dropzone.has-file .irm-drop-icon {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.irm-drop-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.irm-drop-desc {
+  font-size: 11.5px;
+  color: var(--irm-sub);
+  margin-bottom: 10px;
+  max-width: 220px;
+  line-height: 1.4;
+}
+
+.irm-file-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.irm-filename {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #10b981;
+  word-break: break-all;
+  max-width: 90%;
+}
+
+.irm-filesize {
+  font-size: 11px;
+  color: var(--irm-sub);
+}
+
+.irm-change-file-btn {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--irm-sub);
+  background: transparent;
+  border: 1px solid var(--irm-border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.irm-change-file-btn:hover {
+  border-color: var(--irm-fg);
+  color: var(--irm-fg);
+}
+
+.irm-upload-hint-banner {
+  background: var(--irm-card-bg);
+  border: 1px solid var(--irm-border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--irm-sub);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.irm-upload-hint-banner.ready {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+  font-weight: 500;
+}
+
+.irm-error-banner {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* ── Step 2: Preview Layout ──────────────────────────────────────────────── */
+.irm-preview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  gap: 18px;
+  height: 100%;
+  min-height: 0;
+}
+
+.irm-canvas-container {
+  position: relative;
+  height: 100%;
+  min-height: 380px;
+  border: 1px solid var(--irm-border);
+  border-radius: 8px;
+  background: var(--irm-canvas-bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.irm-preview-canvas {
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+
+.irm-preview-canvas:active {
+  cursor: grabbing;
+}
+
+/* Floating Toolbar */
+.irm-canvas-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 4px 8px;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  z-index: 10;
+}
+
+.irm-toolbar-btn {
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+
+.irm-toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.irm-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 2px;
+}
+
+.irm-toolbar-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 0 4px;
+  user-select: none;
+}
+
+/* Scale Indicator */
+.irm-scale-indicator {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.irm-scale-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.irm-scale-bar {
+  border-bottom: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-right: 2px solid #ffffff;
+  height: 5px;
+}
+
+/* Sidebar Settings Panel */
+.irm-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.irm-setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.irm-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--irm-fg);
+}
+
+.irm-label-val {
+  font-size: 11.5px;
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+.irm-hint {
+  font-size: 11px;
+  color: var(--irm-sub);
+  line-height: 1.3;
+}
+
+.irm-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--irm-fg);
+  cursor: pointer;
+  user-select: none;
+}
+
+.irm-stats-card {
+  background: var(--irm-card-bg);
+  border: 1px solid var(--irm-border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.irm-stats-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--irm-sub);
+  margin-bottom: 2px;
+}
+
+.irm-stats-row {
+  display: flex;
+  justify-content: space-between;
+  color: var(--irm-sub);
+}
+
+.irm-stats-val {
+  color: var(--irm-fg);
+  font-weight: 600;
+}
+
+.irm-warn-box {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #d97706;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+/* ── Modal Footer ────────────────────────────────────────────────────────── */
+.irm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-top: 1px solid var(--irm-border);
+  flex-shrink: 0;
+  background: var(--irm-bg);
+}
+
+.irm-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.irm-btn {
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.irm-btn-secondary {
+  background: transparent;
+  color: var(--irm-fg);
+  border-color: var(--irm-border);
+}
+
+.irm-btn-secondary:hover {
+  background: var(--irm-card-hover);
+}
+
+.irm-btn-primary {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.irm-btn-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+.irm-btn-primary:disabled {
+  background: var(--irm-border);
+  color: var(--irm-sub);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.irm-btn-success {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.irm-btn-success:hover:not(:disabled) {
+  background: #059669;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+.irm-btn-success:disabled {
+  background: var(--irm-border);
+  color: var(--irm-sub);
+  cursor: not-allowed;
+  opacity: 0.7;
+}

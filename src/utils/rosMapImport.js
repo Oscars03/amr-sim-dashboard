@@ -465,6 +465,49 @@ export function convertRosMapToWorld(pgmBuffer, yamlText, options = {}) {
   };
 }
 
+export function rotateRosMap(data, rotationDeg) {
+  if (!data || !data.walls || !rotationDeg) return data;
+  // Positive rotationDeg rotates Clockwise (CW) to match the ↻ button
+  const rad = (-rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  const { origin_x, origin_y, width, height } = data.mapInfo;
+  const cx = origin_x + width / 2;
+  const cy = origin_y + height / 2;
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  const rotatedWalls = data.walls.map(([[x1, y1], [x2, y2]]) => {
+    const rx1 = cx + (x1 - cx) * cos - (y1 - cy) * sin;
+    const ry1 = cy + (x1 - cx) * sin + (y1 - cy) * cos;
+    const rx2 = cx + (x2 - cx) * cos - (y2 - cy) * sin;
+    const ry2 = cy + (x2 - cx) * sin + (y2 - cy) * cos;
+
+    minX = Math.min(minX, rx1, rx2);
+    maxX = Math.max(maxX, rx1, rx2);
+    minY = Math.min(minY, ry1, ry2);
+    maxY = Math.max(maxY, ry1, ry2);
+
+    return [[round3(rx1), round3(ry1)], [round3(rx2), round3(ry2)]];
+  });
+
+  const rotOrigX = cx + (0 - cx) * cos - (0 - cy) * sin;
+  const rotOrigY = cy + (0 - cx) * sin + (0 - cy) * cos;
+
+  return {
+    ...data,
+    walls: rotatedWalls,
+    origin: [round3(rotOrigX), round3(rotOrigY)],
+    mapInfo: {
+      origin_x: round3(minX),
+      origin_y: round3(minY),
+      width: round3(maxX - minX),
+      height: round3(maxY - minY),
+    },
+  };
+}
+
 function round3(v) {
   return Math.round(v * 1000) / 1000;
 }
+

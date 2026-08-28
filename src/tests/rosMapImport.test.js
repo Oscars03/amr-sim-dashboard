@@ -8,6 +8,7 @@ import {
   simplifyRdp,
   gridVertexToWorld,
   convertRosMapToWorld,
+  rotateRosMap,
 } from '../utils/rosMapImport.js';
 
 /** Build a binary P5 PGM from a 2D array of greyscale values. */
@@ -278,3 +279,50 @@ describe('convertRosMapToWorld', () => {
     }
   });
 });
+
+describe('rotateRosMap', () => {
+  const sampleMap = {
+    walls: [
+      [[0, 0], [10, 0]],
+      [[10, 0], [10, 5]],
+      [[10, 5], [0, 5]],
+      [[0, 5], [0, 0]],
+    ],
+    mapInfo: {
+      origin_x: 0,
+      origin_y: 0,
+      width: 10,
+      height: 5,
+    },
+  };
+
+  it('returns data unchanged when rotation is 0', () => {
+    const res = rotateRosMap(sampleMap, 0);
+    expect(res).toBe(sampleMap);
+  });
+
+  it('swaps width and height and preserves bounding box area on 90 deg rotation', () => {
+    const res = rotateRosMap(sampleMap, 90);
+    expect(res.mapInfo.width).toBeCloseTo(5, 2);
+    expect(res.mapInfo.height).toBeCloseTo(10, 2);
+    expect(res.walls).toHaveLength(4);
+  });
+
+  it('preserves geometry and returns to identical bounds on 360 deg rotation', () => {
+    const res = rotateRosMap(sampleMap, 360);
+    expect(res.mapInfo.width).toBeCloseTo(10, 2);
+    expect(res.mapInfo.height).toBeCloseTo(5, 2);
+    expect(res.mapInfo.origin_x).toBeCloseTo(0, 2);
+    expect(res.mapInfo.origin_y).toBeCloseTo(0, 2);
+    expect(res.origin[0]).toBeCloseTo(0, 2);
+    expect(res.origin[1]).toBeCloseTo(0, 2);
+  });
+
+  it('rotates origin point around map center on 90 deg rotation', () => {
+    const res = rotateRosMap(sampleMap, 90);
+    expect(res.origin).toBeDefined();
+    expect(Number.isFinite(res.origin[0])).toBe(true);
+    expect(Number.isFinite(res.origin[1])).toBe(true);
+  });
+});
+
