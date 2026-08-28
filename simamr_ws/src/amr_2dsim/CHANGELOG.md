@@ -2,6 +2,11 @@
 
 All notable changes to the `amr_2dsim` ROS 2 package will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Actuator Dynamics**: Optional `<amr_sim_config>` limits — `max_linear_accel` (m/s²), `max_angular_accel` (rad/s², diff-drive/omni), and `max_steering_rate` (deg/s, Ackermann steering servo). The simulator now slews velocity and steering toward the command instead of applying it instantly, so `/odom` and controller behaviour match real hardware. Each limit defaults to `0` (instant response — unchanged behaviour for existing robots).
+
 ## [0.2.8] - 2026-07-31
 
 ### Added
