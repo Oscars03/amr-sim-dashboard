@@ -450,6 +450,8 @@ app.post('/api/robots', (req, res) => {
     // Lidar
     lidar_x = 0.0, lidar_y = 0.0, lidar_height = 0.1,
     lidar_radius = 0.05, lidar_range_max = 12.0,
+    lidar_noise_stddev = 0,   // m, Gaussian range noise; 0 = ideal scan
+
     // Sim
     ticks_per_meter = 2000,
     // Degrees. CreateRobotView's slider is labelled '°' and capped at 45, and
@@ -525,6 +527,7 @@ app.post('/api/robots', (req, res) => {
     <wheel_radius>${parseFloat(wheel_radius).toFixed(4)}</wheel_radius>
     <wheel_width>${parseFloat(wheel_width).toFixed(4)}</wheel_width>
     <laser_range_max>${parseFloat(lidar_range_max).toFixed(1)}</laser_range_max>
+    ${parseFloat(lidar_noise_stddev) > 0 ? `<laser_noise_stddev>${parseFloat(lidar_noise_stddev).toFixed(3)}</laser_noise_stddev>` : ''}
     <laser_x>${parseFloat(lidar_x).toFixed(3)}</laser_x>
     <laser_y>${parseFloat(lidar_y).toFixed(3)}</laser_y>
     <laser_height>${parseFloat(lidar_height).toFixed(3)}</laser_height>

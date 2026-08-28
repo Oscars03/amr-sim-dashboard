@@ -32,6 +32,8 @@ _DEFAULTS = {
     'max_linear_accel': 0.0,    # m/s^2  (matches Nav2 acc_lim_x)
     'max_angular_accel': 0.0,   # rad/s^2, diff-drive/omni yaw (matches Nav2 acc_lim_theta)
     'max_steering_rate': 0.0,   # rad/s, ackermann steering servo (URDF authors in deg/s)
+    # Gaussian range noise (metres) added to each /scan hit. <= 0 = ideal scan.
+    'laser_noise_stddev': 0.0,
 }
 
 def _get_float(elem, tag, default, warn_cb=None):
@@ -64,7 +66,8 @@ def parse_sim_config(urdf_path: str) -> dict:
             cfg['geometry_type'] = gt.text.strip()
         # numeric fields — each isolated so one bad value doesn't block others
         for field in ('wheel_base', 'robot_radius', 'laser_range_max', 'ticks_per_meter',
-                      'creep_on_turn_mps', 'presteer_ms', 'max_linear_accel', 'max_angular_accel'):
+                      'creep_on_turn_mps', 'presteer_ms', 'max_linear_accel', 'max_angular_accel',
+                      'laser_noise_stddev'):
             cfg[field] = _get_float(sim_cfg, field, cfg[field])
         
         no_creep = sim_cfg.find('no_creep_mode')
@@ -254,6 +257,7 @@ class AmrSimulator(Node):
             self.wheel_base      = cfg['wheel_base']
             self.robot_radius    = cfg['robot_radius']
             self.laser_range_max = cfg['laser_range_max']
+            self.laser_noise_stddev = cfg['laser_noise_stddev']
             self.ticks_per_meter = cfg['ticks_per_meter']
             self.max_steering_angle = cfg['max_steering_angle']
             self.geometry_type   = cfg['geometry_type']
@@ -325,6 +329,7 @@ class AmrSimulator(Node):
             self.wheel_base      = _DEFAULTS['wheel_base']
             self.robot_radius    = _DEFAULTS['robot_radius']
             self.laser_range_max = _DEFAULTS['laser_range_max']
+            self.laser_noise_stddev = _DEFAULTS['laser_noise_stddev']
             self.ticks_per_meter = _DEFAULTS['ticks_per_meter']
             self.max_steering_angle = _DEFAULTS['max_steering_angle']
             self.geometry_type   = _DEFAULTS['geometry_type']
@@ -819,6 +824,15 @@ class AmrSimulator(Node):
 
         t_min = np.min(t_all, axis=1)  # (360,)
         distances = np.where(np.isinf(t_min), scan.range_max, t_min * scan.range_max)
+
+        # Sensor noise: a real 2D lidar's range readings carry Gaussian error.
+        # Only perturb actual hits -- a max-range "no return" is the absence of
+        # a measurement, not a noisy one. laser_noise_stddev <= 0 keeps the
+        # scan ideal (unchanged behaviour).
+        if self.laser_noise_stddev > 0.0:
+            noisy = distances + np.random.normal(0.0, self.laser_noise_stddev, distances.shape)
+            np.clip(noisy, scan.range_min, scan.range_max, out=noisy)
+            distances = np.where(np.isinf(t_min), distances, noisy)
 
         scan.ranges = distances.tolist()
         scan.intensities = self._scan_intensities
