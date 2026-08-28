@@ -78,6 +78,7 @@ export default function CreateRobotView({ onCreated }) {
     body_length_x: 0.70, body_width_y: 0.50, body_size: 0.70, body_radius: 0.35, body_height: 0.20,
     wheel_base: 0.50, wheel_radius: 0.05, wheel_width: 0.03, axle_track: 0.40, max_steering_angle: 30,
     lidar_x: 0.0, lidar_y: 0.0, lidar_height: 0.10, lidar_radius: 0.05, lidar_range_max: 12.0,
+    lidar_noise_stddev: 0,
     ticks_per_meter: 2000, omni_wheel_count: 3,
     // Actuator dynamics — 0 = no limit (instant response)
     max_linear_accel: 0, max_angular_accel: 0, max_steering_rate: 0,
@@ -527,6 +528,7 @@ export default function CreateRobotView({ onCreated }) {
             {openSections.sensors && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
                 <ParamRow label="Range Max" unit="m" value={form.lidar_range_max} min={1.0} max={50.0} step={0.5} onChange={v => set('lidar_range_max', v)} {...shared} />
+                <ParamRow label="Range Noise σ · 0 = ideal" unit="m" value={form.lidar_noise_stddev} min={0} max={0.1} step={0.005} onChange={v => set('lidar_noise_stddev', v)} {...shared} />
                 {(() => {
                   const maxLidarX = form.geometry_type === 'circle' ? form.body_radius : form.geometry_type === 'square' ? form.body_size / 2 : form.body_length_x / 2;
                   const maxLidarY = form.geometry_type === 'circle' ? form.body_radius : form.geometry_type === 'square' ? form.body_size / 2 : form.body_width_y / 2;
