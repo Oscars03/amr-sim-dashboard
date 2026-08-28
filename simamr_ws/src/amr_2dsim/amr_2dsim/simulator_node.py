@@ -26,6 +26,12 @@ _DEFAULTS = {
     'creep_on_turn_mps': 0.3,
     'presteer_ms': 200,
     'no_creep_mode': False,
+    # Actuator dynamics. A chassis can't change speed or steering angle
+    # instantly; these bound how fast it approaches the commanded value.
+    # <= 0 disables the limit (instant response — the historical behaviour).
+    'max_linear_accel': 0.0,    # m/s^2  (matches Nav2 acc_lim_x)
+    'max_angular_accel': 0.0,   # rad/s^2, diff-drive/omni yaw (matches Nav2 acc_lim_theta)
+    'max_steering_rate': 0.0,   # rad/s, ackermann steering servo (URDF authors in deg/s)
 }
 
 def _get_float(elem, tag, default, warn_cb=None):
@@ -57,7 +63,8 @@ def parse_sim_config(urdf_path: str) -> dict:
         if gt is not None and (gt.text or '').strip():
             cfg['geometry_type'] = gt.text.strip()
         # numeric fields — each isolated so one bad value doesn't block others
-        for field in ('wheel_base', 'robot_radius', 'laser_range_max', 'ticks_per_meter', 'creep_on_turn_mps', 'presteer_ms'):
+        for field in ('wheel_base', 'robot_radius', 'laser_range_max', 'ticks_per_meter',
+                      'creep_on_turn_mps', 'presteer_ms', 'max_linear_accel', 'max_angular_accel'):
             cfg[field] = _get_float(sim_cfg, field, cfg[field])
         
         no_creep = sim_cfg.find('no_creep_mode')
@@ -87,6 +94,14 @@ def parse_sim_config(urdf_path: str) -> dict:
                         f"{math.degrees(deg):.1f} deg. Rewrite it in degrees if so."
                     )
                 cfg['max_steering_angle'] = math.radians(deg)
+        # max_steering_rate is authored in DEGREES/second, matching
+        # max_steering_angle's unit; stored internally in rad/s.
+        msr = sim_cfg.find('max_steering_rate')
+        if msr is not None and (msr.text or '').strip():
+            try:
+                cfg['max_steering_rate'] = math.radians(float(msr.text.strip()))
+            except ValueError as e:
+                logging.warning(f"amr_sim_config: cannot parse <max_steering_rate>: {e}, ignoring")
         # drive_axle_x: optional; keep None if absent (means "skip convention check")
         ax_elem = sim_cfg.find('drive_axle_x')
         if ax_elem is not None and (ax_elem.text or '').strip():
@@ -245,6 +260,9 @@ class AmrSimulator(Node):
             self.creep_on_turn_mps = cfg['creep_on_turn_mps']
             self.presteer_ms     = cfg['presteer_ms']
             self.no_creep_mode   = cfg['no_creep_mode']
+            self.max_linear_accel  = cfg['max_linear_accel']
+            self.max_angular_accel = cfg['max_angular_accel']
+            self.max_steering_rate = cfg['max_steering_rate']
             self.declare_parameter('creep_on_turn_mps', self.creep_on_turn_mps)
             self.robot_length    = None
             self.robot_width     = None
@@ -313,6 +331,9 @@ class AmrSimulator(Node):
             self.creep_on_turn_mps = _DEFAULTS['creep_on_turn_mps']
             self.presteer_ms     = _DEFAULTS['presteer_ms']
             self.no_creep_mode   = _DEFAULTS['no_creep_mode']
+            self.max_linear_accel  = _DEFAULTS['max_linear_accel']
+            self.max_angular_accel = _DEFAULTS['max_angular_accel']
+            self.max_steering_rate = _DEFAULTS['max_steering_rate']
             self.robot_length    = None
             self.robot_width     = None
             self.footprint_offset_x = 0.0
@@ -571,19 +592,17 @@ class AmrSimulator(Node):
                 self._explicit_steer_fraction is not None
                 and (current_time - self._last_steering_cmd_time) < self._steering_cmd_timeout
             )
+            # Each branch resolves a *target* steering angle `delta`; the
+            # servo slew and the achieved yaw rate are applied once, below.
             if has_explicit_steer:
                 # Steering wheel/stick position drives the angle directly,
                 # like a real car -- turning it while parked still moves the
                 # front wheels, it just doesn't rotate the chassis until vx != 0.
                 delta = self._explicit_steer_fraction * self.max_steering_angle
                 delta = max(-self.max_steering_angle, min(self.max_steering_angle, delta))
-                self.current_steering_angle = delta
-                w = 0.0 if abs(vx) < 1e-4 else vx * math.tan(delta) / self.wheel_base
             elif abs(vx) < 1e-4:
                 # Real base_controller fallback at low speeds: full lock
                 delta = self.max_steering_angle if w > 0.0 else (-self.max_steering_angle if w < 0.0 else 0.0)
-                self.current_steering_angle = delta
-                w = 0.0  # Ackermann cannot turn in place
             else:
                 # Treat raw w command as intent, calculate required steering angle
                 if self.no_creep_mode:
@@ -594,9 +613,30 @@ class AmrSimulator(Node):
                     delta = math.atan((w * self.wheel_base) / vx)
                 # Clamp to physical limits
                 delta = max(-self.max_steering_angle, min(self.max_steering_angle, delta))
+
+        # --- ACTUATOR DYNAMICS ---
+        # Above resolved the velocity / steering the chassis was *commanded*.
+        # A physical chassis only approaches that over time -- slew the
+        # integrated quantities toward it at the configured limits. A limit
+        # <= 0 keeps the historical instant response.
+        if self.max_linear_accel > 0.0:
+            dv = self.max_linear_accel * dt
+            vx = self.achieved_vx + max(-dv, min(dv, vx - self.achieved_vx))
+            vy = self.achieved_vy + max(-dv, min(dv, vy - self.achieved_vy))
+
+        if self.kinematic_model == 'ackermann':
+            # Steering servo slews toward the demanded angle; the achieved yaw
+            # rate then follows the ACTUAL wheel angle and the (rate-limited)
+            # forward speed -- never the raw demand.
+            if self.max_steering_rate > 0.0:
+                dd = self.max_steering_rate * dt
+                self.current_steering_angle += max(-dd, min(dd, delta - self.current_steering_angle))
+            else:
                 self.current_steering_angle = delta
-                # Derive achievable w
-                w = vx * math.tan(delta) / self.wheel_base
+            w = 0.0 if abs(vx) < 1e-4 else vx * math.tan(self.current_steering_angle) / self.wheel_base
+        elif self.max_angular_accel > 0.0:
+            dw = self.max_angular_accel * dt
+            w = self.achieved_w + max(-dw, min(dw, w - self.achieved_w))
 
         # This is what actually gets integrated below (and is exactly what
         # /odom must report -- see achieved_vx/vy/w assignment there).
