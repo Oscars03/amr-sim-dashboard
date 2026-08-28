@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import * as ROSLIB from 'roslib';
 import useAppStore from './store/useAppStore';
@@ -44,8 +44,25 @@ export default function App() {
     let currentRos = null;
     let isUnmounted = false;
 
-    const connect = () => {
+    // Tear the previous connection down completely before making a new one.
+    // ROSLIB.Ros keeps its listeners and underlying WebSocket alive after a
+    // failed connect; without this, a sim that stays down (or any flapping
+    // rosbridge) leaks one Ros + socket per second.
+    const teardown = (ros) => {
+      if (!ros) return;
+      try { ros.removeAllListeners(); } catch { /* not an emitter yet */ }
+      try { ros.close(); } catch { /* already closed */ }
+    };
+
+    const scheduleReconnect = () => {
       if (isUnmounted) return;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(connect, 1000);
+    };
+
+    function connect() {
+      if (isUnmounted) return;
+      teardown(currentRos);
       const ros = new ROSLIB.Ros({ url: ROSBRIDGE_URL });
       currentRos = ros;
 
@@ -58,24 +75,22 @@ export default function App() {
         if (isUnmounted) return;
         setRosStatus("Connecting...");
         setRosObj(null);
-        if (retryTimer) clearTimeout(retryTimer);
-        retryTimer = setTimeout(connect, 1000);
+        scheduleReconnect();
       });
       ros.on("close", () => {
         if (isUnmounted) return;
         setRosStatus("Disconnected");
         setRosObj(null);
-        if (retryTimer) clearTimeout(retryTimer);
-        retryTimer = setTimeout(connect, 1000);
+        scheduleReconnect();
       });
-    };
+    }
 
     connect();
 
     return () => {
       isUnmounted = true;
       if (retryTimer) clearTimeout(retryTimer);
-      currentRos?.close();
+      teardown(currentRos);
     };
   }, [setRosObj, setRosStatus]);
 
