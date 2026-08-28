@@ -14,6 +14,7 @@ export default function Header() {
     rosStatus,
     showMonitor, setShowMonitor,
     fpsLimit, setFpsLimit,
+    envData, setShowEnvModal,
   } = useAppStore();
 
   const [appVersion, setAppVersion] = useState('0.0.0');
@@ -76,8 +77,26 @@ export default function Header() {
           </button>
         )}
 
-        {/* Divider before status (only if onDashboard since Update is there, but wait, maybe we always want it if there's space? The prompt says "between the Update button and the ROS 2 status pill". So we can attach it to onDashboard.) */}
-        {onDashboard && <div className="header-divider" />}
+        {/* Environment check badge */}
+        <button
+          className={`header-btn tier3-btn env-badge ${envData?.allReady ? 'ready' : envData ? 'warning' : ''}`}
+          onClick={() => setShowEnvModal(true)}
+          title="Check ROS 2 simulation environment status"
+        >
+          <svg
+            width="18" height="18" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" strokeWidth="2.2"
+            strokeLinecap="round" strokeLinejoin="round"
+          >
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+          </svg>
+          <span className="btn-label">
+            {envData?.allReady ? 'Env: Ready' : envData ? 'Env: Setup' : 'Env'}
+          </span>
+        </button>
+
+        {/* Divider before status */}
+        <div className="header-divider" />
 
         {/* Connection status */}
         <div className={`header-status ${rosConnected ? 'connected' : 'disconnected'}`}>

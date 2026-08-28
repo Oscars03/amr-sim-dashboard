@@ -738,6 +738,87 @@ app.delete('/api/worlds/:fileName', (req, res) => {
 
 
 
+// GET /environment-check
+function checkEnvironment() {
+  const distro = rosDistro || 'jazzy';
+  const rosSetup = `/opt/ros/${distro}/setup.bash`;
+  const rosBin = `/opt/ros/${distro}/bin/ros2`;
+  const hasRos2 = fs.existsSync(rosSetup) && fs.existsSync(rosBin);
+
+  const rosbridgeShare = `/opt/ros/${distro}/share/rosbridge_server`;
+  const hasRosbridge = fs.existsSync(rosbridgeShare);
+
+  const rspShare = `/opt/ros/${distro}/share/robot_state_publisher`;
+  const hasRobotStatePublisher = fs.existsSync(rspShare);
+
+  const hasWsSetup = fs.existsSync(WS_SETUP_BASH);
+  const shareDir = getShareDir();
+  const hasWorkspace = hasWsSetup && !!shareDir;
+
+  const missingPackages = [];
+  if (!hasRosbridge) missingPackages.push(`ros-${distro}-rosbridge-suite`);
+  if (!hasRobotStatePublisher) missingPackages.push(`ros-${distro}-robot-state-publisher`);
+
+  let recommendedCommand = '';
+  if (!hasRos2) {
+    recommendedCommand = `sudo apt update && sudo apt install -y software-properties-common curl gnupg && sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null && sudo apt update && sudo apt install -y ros-${distro}-ros-base ros-${distro}-rosbridge-suite ros-${distro}-robot-state-publisher`;
+  } else if (missingPackages.length > 0) {
+    recommendedCommand = `sudo apt update && sudo apt install -y ${missingPackages.join(' ')}`;
+  } else if (!hasWorkspace) {
+    const wsDir = path.dirname(path.dirname(WS_SETUP_BASH));
+    recommendedCommand = `cd "${wsDir}" && source /opt/ros/${distro}/setup.bash && colcon build --merge-install`;
+  }
+
+  const allReady = hasRos2 && hasRosbridge && hasRobotStatePublisher && hasWorkspace;
+
+  return {
+    allReady,
+    distro,
+    checks: {
+      ros2: {
+        name: `ROS 2 (${distro.toUpperCase()})`,
+        path: rosSetup,
+        ready: hasRos2,
+        detail: hasRos2 ? `Installed at /opt/ros/${distro}` : `Not found at /opt/ros/${distro}/setup.bash`,
+      },
+      rosbridge: {
+        name: 'ROS Bridge Suite',
+        path: rosbridgeShare,
+        ready: hasRosbridge,
+        detail: hasRosbridge ? 'WebSocket bridge server ready (port 9090)' : `Package ros-${distro}-rosbridge-suite missing`,
+      },
+      robotStatePublisher: {
+        name: 'Robot State Publisher',
+        path: rspShare,
+        ready: hasRobotStatePublisher,
+        detail: hasRobotStatePublisher ? 'Robot state & TF publisher ready' : `Package ros-${distro}-robot-state-publisher missing`,
+      },
+      workspace: {
+        name: 'Simulation Workspace (amr_2dsim)',
+        path: WS_SETUP_BASH,
+        ready: hasWorkspace,
+        detail: hasWorkspace ? `Ready at ${WS_SETUP_BASH}` : 'Workspace setup.bash or amr_2dsim package not found',
+      },
+    },
+    missingPackages,
+    recommendedCommand,
+    system: {
+      platform: os.platform(),
+      release: os.release(),
+      arch: os.arch(),
+    },
+  };
+}
+
+app.get('/environment-check', (req, res) => {
+  try {
+    const result = checkEnvironment();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /status
 app.get('/status', (req, res) => {
   res.json({

@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import * as ROSLIB from 'roslib';
 import useAppStore from './store/useAppStore';
 import Header from './components/ui/Header';
+import EnvironmentCheckModal from './components/ui/EnvironmentCheckModal';
 import DashboardView from './components/views/DashboardView';
 import CreateWorldView from './components/views/CreateWorldView';
 import CreateRobotView from './components/views/CreateRobotView';
@@ -12,7 +13,31 @@ const HOST = window.location.hostname || "localhost";
 const ROSBRIDGE_URL = `ws://${HOST}:9090`;
 
 export default function App() {
-  const { isDark, setRosStatus, setRosObj } = useAppStore();
+  const {
+    isDark,
+    setRosStatus,
+    setRosObj,
+    envData,
+    setEnvData,
+    showEnvModal,
+    setShowEnvModal,
+  } = useAppStore();
+
+  const fetchEnv = useCallback(async () => {
+    try {
+      const res = await fetch(`http://${HOST}:3001/environment-check`);
+      if (res.ok) {
+        const data = await res.json();
+        setEnvData(data);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch environment status:', err);
+    }
+  }, [setEnvData]);
+
+  useEffect(() => {
+    fetchEnv();
+  }, [fetchEnv]);
 
   useEffect(() => {
     let retryTimer = null;
@@ -72,6 +97,13 @@ export default function App() {
       }}
     >
       <Header />
+      <EnvironmentCheckModal
+        isOpen={showEnvModal}
+        onClose={() => setShowEnvModal(false)}
+        isDark={isDark}
+        envData={envData}
+        onRecheck={fetchEnv}
+      />
       <div className="view-container">
         <Routes>
           <Route path="/" element={<DashboardView />} />

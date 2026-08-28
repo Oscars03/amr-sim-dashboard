@@ -1679,6 +1679,11 @@ const SimSelector = forwardRef(function SimSelector(
   const doSwitch = useCallback(
     async (robot, world) => {
       if (!robot || !world) return;
+      const { envData, setShowEnvModal } = useAppStore.getState();
+      if (envData && !envData.allReady) {
+        setShowEnvModal(true);
+        return;
+      }
       setSwitching(true);
       setSwitchMsg("");
       try {

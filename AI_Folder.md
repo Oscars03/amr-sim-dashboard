@@ -25,6 +25,8 @@ views/
   CreateRobotView.jsx
   CreateWorldView.jsx / .css
   DashboardView.jsx
+  ImportRosMapModal.jsx / .css
+  MapEditor.jsx
 
 common/
   SplitButton.jsx / .css
@@ -34,6 +36,7 @@ ui/
   Header.jsx              (navy blue header)
   Slider.jsx / .css
   UpdateProgressModal.jsx / .css   (firmware modal, radar sweep animation)
+  EnvironmentCheckModal.jsx / .css (ROS 2 environment health checker & install guide)
 ```
 > teleop keypad — ยังไม่ยืนยันไฟล์ ต้องดูเพิ่ม (ไม่อยู่ใน ui/ หรือ views/ ที่เห็น)
 

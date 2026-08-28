@@ -46,6 +46,12 @@ const useAppStore = create((set) => ({
   // FPS Limit (20=low-power, 60, 0=unlimited)
   fpsLimit: 20,
   setFpsLimit: (val) => set({ fpsLimit: val }),
+
+  // Environment Check
+  envData: null,
+  setEnvData: (data) => set({ envData: data }),
+  showEnvModal: false,
+  setShowEnvModal: (val) => set({ showEnvModal: val }),
 }));
 
 export default useAppStore;

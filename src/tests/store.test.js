@@ -47,4 +47,16 @@ describe('useAppStore', () => {
     useAppStore.getState().setRosStatus('Disconnected');
     expect(useAppStore.getState().rosStatus).toBe('Disconnected');
   });
+
+  it('manages envData and showEnvModal state', () => {
+    expect(useAppStore.getState().showEnvModal).toBe(false);
+    expect(useAppStore.getState().envData).toBe(null);
+
+    useAppStore.getState().setShowEnvModal(true);
+    expect(useAppStore.getState().showEnvModal).toBe(true);
+
+    const mockEnv = { allReady: true, distro: 'jazzy' };
+    useAppStore.getState().setEnvData(mockEnv);
+    expect(useAppStore.getState().envData).toEqual(mockEnv);
+  });
 });
