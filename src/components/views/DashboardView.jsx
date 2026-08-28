@@ -21,6 +21,13 @@ const SAVE_MAP_URL = `http://${HOST}:3001/save_map`;
 const ROSBRIDGE_URL = `ws://${HOST}:9090`;
 const FETCH_INTERVAL = 3000;
 const STATUS_INTERVAL = 1500;
+// Stop the sim if the robot hasn't moved for this long, then wait for the
+// user to Launch again. Guards against a dashboard left running overnight
+// pinning a CPU core on the 20 Hz /odom render loop.
+const IDLE_STOP_MS = 60 * 60 * 1000;
+const IDLE_CHECK_MS = 60 * 1000;
+const IDLE_MOVE_EPS_M = 0.02;   // metres
+const IDLE_MOVE_EPS_DEG = 1.0;  // degrees
 
 import { parseURDF, drawRobot, normaliseMap, buildTransform } from '../../utils/robot';
 import MapEditor from './MapEditor';
@@ -2383,6 +2390,58 @@ export default function DashboardView() {
   // the actual commanded angle at any speed, including standing still.
   const [steeringAngle, setSteeringAngle] = useState(null);
 
+  // Idle watchdog: stop the sim after IDLE_STOP_MS without robot movement.
+  const [idleStopped, setIdleStopped] = useState(false);
+  const lastMoveRef = useRef(0);
+  const lastPoseRef = useRef(null);
+  const idleStopFiredRef = useRef(false);
+
+  const markActive = useCallback(() => {
+    lastMoveRef.current = Date.now();
+    idleStopFiredRef.current = false;
+    setIdleStopped(false); // no-op re-render if already false
+  }, []);
+
+  useEffect(() => { markActive(); }, [markActive]); // seed the clock on mount
+
+  // Movement detector -- a stationary robot still streams /odom at 20 Hz, so
+  // compare successive poses rather than trusting message arrival.
+  useEffect(() => {
+    if (!pose || pose.x === "-") return;
+    const x = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
+    const y = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
+    const th = typeof pose.theta === "string" ? parseFloat(pose.theta) : pose.theta;
+    const prev = lastPoseRef.current;
+    const moved =
+      !prev ||
+      Math.hypot(x - prev.x, y - prev.y) > IDLE_MOVE_EPS_M ||
+      Math.abs(th - prev.th) > IDLE_MOVE_EPS_DEG;
+    if (moved) {
+      lastPoseRef.current = { x, y, th };
+      markActive();
+    }
+  }, [pose, markActive]);
+
+  // Watchdog tick. idleStopFiredRef makes this fire /stop at most once per
+  // idle stretch; markActive() re-arms it on the next launch or movement.
+  useEffect(() => {
+    const iv = setInterval(async () => {
+      if (idleStopFiredRef.current || !lastMoveRef.current) return;
+      if (Date.now() - lastMoveRef.current < IDLE_STOP_MS) return;
+      try {
+        const st = await fetch(STATUS_URL).then((r) => r.json());
+        if (st?.status !== "running") return;
+        idleStopFiredRef.current = true;
+        await fetch(STOP_URL, { method: "POST" });
+        setIdleStopped(true);
+        setIsWaitingOdom(false);
+      } catch {
+        /* map-server unreachable -- try again next tick */
+      }
+    }, IDLE_CHECK_MS);
+    return () => clearInterval(iv);
+  }, [setIsWaitingOdom]);
+
   const showNotification = (title, message, type = "info", onConfirm = null) => {
     setNotification({ title, message, type, onConfirm });
   };
@@ -2593,8 +2652,10 @@ export default function DashboardView() {
       setActiveWorld(world);
       fetchUrdf(robot);
       fetchMap(world);
+      lastPoseRef.current = null;
+      markActive();
     },
-    [fetchUrdf, fetchMap],
+    [fetchUrdf, fetchMap, markActive],
   );
 
   const [winSize, setWinSize] = useState({
@@ -3032,6 +3093,31 @@ export default function DashboardView() {
                 <line x1="6" y1="6" x2="18" y2="18"></line>
               </svg>
             </button>
+          </div>
+        )}
+
+        {idleStopped && (
+          <div
+            style={{
+              position: "fixed",
+              top: "60px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              background: isDark ? "#3a2c05" : "#fff8e1",
+              color: isDark ? "#ffe082" : "#8d6e00",
+              border: `1px solid ${isDark ? "#ffb300" : "#ffe082"}`,
+              padding: "8px 18px",
+              borderRadius: "24px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+              fontSize: "13px",
+              fontWeight: 600,
+            }}
+          >
+            <span>⏸️ Simulation stopped — robot idle for 1 h. Press Launch to resume.</span>
           </div>
         )}
 
