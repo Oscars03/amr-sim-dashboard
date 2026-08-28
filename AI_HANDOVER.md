@@ -12,11 +12,11 @@ The IRiSH AMR Simulator is composed of two main workspaces:
    - **Role**: The ROS 2 simulation backend (`amr_2dsim` package).
 
 ## Important Files & Current Focus
-The user has recently been working on the following files:
-- `amr-sim-dashboard/src/components/ui/UpdateProgressModal.css` & `.jsx`: UI for update progress modal.
-- `amr-sim-dashboard/src/components/common/SplitButton.css`: UI component styling.
-- `amr-sim-dashboard/electron/main.js`: Electron main process setup.
-- `simamr_ws/src/amr_2dsim/urdf/tango.urdf`: URDF (Unified Robot Description Format) file for a robot named Tango.
+Current state is focused on the `release/v0.2.9` milestone and cross-repo DOE audit fixes:
+- `simamr_ws/src/amr_2dsim/amr_2dsim/simulator_node.py`: Kinematics simulator node with Ackermann steering, achieved velocity reporting in `/odom` (F-02), and `/reset_pose` / `/initialpose` handling.
+- `simamr_ws/src/amr_2dsim/urdf/rhino.urdf`: URDF for Rhino Ackermann robot (wheelbase 0.385m, max steer 18° / 0.314 rad, F-03).
+- `amr-sim-dashboard/electron/main.js`: Electron main process setup and ROS node management.
+- `amr-sim-dashboard/src/components/views/DashboardView.jsx`: AMR monitor and control view.
 
 ## Build Workflows
 ### Frontend (amr-sim-dashboard)
@@ -35,4 +35,5 @@ A unified script `/home/phutanate/simamr_ws/build_packages.sh` packages both fro
 - **Concise Thai Communication**: Communicate in concise Thai with the user. Keep responses extremely compact.
 
 ## Next Steps for AI
-To continue from this point, review the modified files (especially `UpdateProgressModal` and `tango.urdf`), and verify with the user what the immediate goal is (e.g., debugging a visual UI issue in the React dashboard, or updating the URDF properties of the tango robot in ROS 2).
+- Check open PR #16 (`Release v0.2.9`) and ensure builds succeed using `/home/phutanate/simamr_ws/build_packages.sh`.
+- Validate kinematic compatibility with `master-ackerman-thesis` and `nav2-param-visualizer`.

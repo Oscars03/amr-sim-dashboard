@@ -24,6 +24,25 @@ const STATUS_INTERVAL = 1500;
 
 import { parseURDF, drawRobot, normaliseMap, buildTransform } from '../../utils/robot';
 import MapEditor from './MapEditor';
+
+function getFollowPan(pose, mapData, width, height, view) {
+  if (!pose || pose.x === "-" || !mapData?.map_info) return { panX: view.panX, panY: view.panY };
+  const { scale, offsetX, offsetY } = buildTransform(mapData.map_info, width, height);
+  const { origin_x, origin_y } = mapData.map_info;
+  const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
+  const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
+  const rx = width - offsetX - (worldY - origin_y) * scale;
+  const ry = height - offsetY - (worldX - origin_x) * scale;
+  const dx = rx - width / 2;
+  const dy = ry - height / 2;
+  const cos = Math.cos(view.rotation);
+  const sin = Math.sin(view.rotation);
+  return {
+    panX: -view.zoom * (dx * cos - dy * sin),
+    panY: -view.zoom * (dx * sin + dy * cos),
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,7 +133,11 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
       dragRef.current.lastX = e.clientX;
       dragRef.current.lastY = e.clientY;
     } else if (dragRef.current.isMiddle) {
-      setFollowRobot(false);
+      if (followRobot) {
+        setFollowRobot(false);
+        const { panX, panY } = getFollowPan(pose, mapData, width, height, view);
+        setView((v) => ({ ...v, panX, panY }));
+      }
       const dx = e.clientX - dragRef.current.lastX;
       const dy = e.clientY - dragRef.current.lastY;
       setView((v) => ({ ...v, panX: v.panX + dx, panY: v.panY + dy }));
@@ -148,24 +171,6 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
     return () => canvas.removeEventListener("wheel", handleWheel);
   }, []);
 
-  useEffect(() => {
-    if (!followRobot || !pose || pose.x === "-" || !mapData?.map_info) return;
-    const { scale, offsetX, offsetY } = buildTransform(mapData.map_info, width, height);
-    const { origin_x, origin_y } = mapData.map_info;
-    const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
-    const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
-    const rx = width - offsetX - (worldY - origin_y) * scale;
-    const ry = height - offsetY - (worldX - origin_x) * scale;
-
-    setView((v) => {
-      const desiredPanX = (width / 2 - rx) * v.zoom;
-      const desiredPanY = (height / 2 - ry) * v.zoom;
-      if (Math.abs(v.panX - desiredPanX) > 0.1 || Math.abs(v.panY - desiredPanY) > 0.1) {
-        return { ...v, panX: desiredPanX, panY: desiredPanY };
-      }
-      return v;
-    });
-  }, [followRobot, pose, mapData, width, height]);
 
   useEffect(() => {
     if (!pose || pose.x === "-") return;
@@ -211,23 +216,23 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
     );
     const { origin_x, origin_y, width: mw, height: mh } = mapData.map_info;
 
-    let effPanX = view.panX;
-    let effPanY = view.panY;
-
+    ctx.save();
     if (followRobot && pose && pose.x !== "-") {
       const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
       const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
       const rx = width - offsetX - (worldY - origin_y) * scale;
       const ry = height - offsetY - (worldX - origin_x) * scale;
-      effPanX = (width / 2 - rx) * view.zoom;
-      effPanY = (height / 2 - ry) * view.zoom;
-    }
 
-    ctx.save();
-    ctx.translate(width / 2 + effPanX, height / 2 + effPanY);
-    ctx.scale(view.zoom, view.zoom);
-    ctx.rotate(view.rotation);
-    ctx.translate(-width / 2, -height / 2);
+      ctx.translate(width / 2, height / 2);
+      ctx.scale(view.zoom, view.zoom);
+      ctx.rotate(view.rotation);
+      ctx.translate(-rx, -ry);
+    } else {
+      ctx.translate(width / 2 + view.panX, height / 2 + view.panY);
+      ctx.scale(view.zoom, view.zoom);
+      ctx.rotate(view.rotation);
+      ctx.translate(-width / 2, -height / 2);
+    }
 
     ctx.strokeStyle = gridLine;
     ctx.lineWidth = 1;
@@ -512,7 +517,15 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
       />
       <button
         type="button"
-        onClick={() => setFollowRobot((prev) => !prev)}
+        onClick={() => {
+          setFollowRobot((prev) => {
+            if (prev) {
+              const { panX, panY } = getFollowPan(pose, mapData, width, height, view);
+              setView((v) => ({ ...v, panX, panY }));
+            }
+            return !prev;
+          });
+        }}
         style={{
           position: "absolute",
           top: "16px",
@@ -1666,6 +1679,11 @@ const SimSelector = forwardRef(function SimSelector(
   const doSwitch = useCallback(
     async (robot, world) => {
       if (!robot || !world) return;
+      const { envData, setShowEnvModal } = useAppStore.getState();
+      if (envData && !envData.allReady) {
+        setShowEnvModal(true);
+        return;
+      }
       setSwitching(true);
       setSwitchMsg("");
       try {

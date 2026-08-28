@@ -1,0 +1,328 @@
+/* EnvironmentCheckModal.css */
+.ecm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+  animation: ecmFadeIn 0.18s ease-out;
+}
+
+@keyframes ecmFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ecm-modal {
+  width: min(620px, 94vw);
+  background: #1e293b;
+  color: #f1f5f9;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: ecmSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ecm-modal.light {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: #cbd5e1;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+}
+
+@keyframes ecmSlideUp {
+  from { transform: translateY(12px) scale(0.98); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* Header */
+.ecm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #334155;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.ecm-modal.light .ecm-header {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.ecm-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ecm-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.ecm-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.ecm-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+}
+
+.ecm-modal.light .ecm-close-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+/* Body */
+.ecm-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+/* Checklist items */
+.ecm-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ecm-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
+.ecm-modal.light .ecm-item {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.ecm-item.ready {
+  border-left: 4px solid #10b981;
+}
+
+.ecm-item.missing {
+  border-left: 4px solid #ef4444;
+}
+
+.ecm-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ecm-item-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ecm-item-detail {
+  font-size: 11.5px;
+  color: #94a3b8;
+  word-break: break-all;
+}
+
+.ecm-modal.light .ecm-item-detail {
+  color: #64748b;
+}
+
+.ecm-item-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.ecm-item-badge.ready {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.ecm-item-badge.missing {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Command action block */
+.ecm-command-box {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ecm-modal.light .ecm-command-box {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.ecm-command-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ecm-command-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f59e0b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ecm-code-block {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: #38bdf8;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ecm-modal.light .ecm-code-block {
+  background: #ffffff;
+  color: #0284c7;
+  border-color: #e2e8f0;
+}
+
+/* Success status banner */
+.ecm-success-banner {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ecm-modal.light .ecm-success-banner {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #059669;
+}
+
+/* Footer */
+.ecm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-top: 1px solid #334155;
+  background: rgba(15, 23, 42, 0.4);
+}
+
+.ecm-modal.light .ecm-footer {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.ecm-btn {
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+}
+
+.ecm-btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  border-color: #475569;
+}
+
+.ecm-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.ecm-modal.light .ecm-btn-secondary {
+  background: #ffffff;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+.ecm-modal.light .ecm-btn-secondary:hover {
+  background: #f1f5f9;
+}
+
+.ecm-btn-primary {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.ecm-btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.ecm-btn-success {
+  background: #059669;
+  color: #ffffff;
+}
+
+.ecm-btn-success:hover {
+  background: #047857;
+}
+
+.ecm-btn-copy {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.ecm-btn-copy:hover {
+  background: rgba(56, 189, 248, 0.25);
+}
+
+.ecm-btn-copy.copied {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.4);
+}

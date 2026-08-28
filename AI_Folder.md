@@ -25,6 +25,8 @@ views/
   CreateRobotView.jsx
   CreateWorldView.jsx / .css
   DashboardView.jsx
+  ImportRosMapModal.jsx / .css
+  MapEditor.jsx
 
 common/
   SplitButton.jsx / .css
@@ -34,6 +36,7 @@ ui/
   Header.jsx              (navy blue header)
   Slider.jsx / .css
   UpdateProgressModal.jsx / .css   (firmware modal, radar sweep animation)
+  EnvironmentCheckModal.jsx / .css (ROS 2 environment health checker & install guide)
 ```
 > teleop keypad — ยังไม่ยืนยันไฟล์ ต้องดูเพิ่ม (ไม่อยู่ใน ui/ หรือ views/ ที่เห็น)
 
@@ -71,9 +74,11 @@ amr_2dsim/     Python node package
     - drive-axle alignment validator
 
 urdf/
-  tango.urdf
-    - <amr_sim_config>: wheel_base = 0.325m
-    - base_link origin: X offset shifted -0.100m (drive axle alignment)
+  rhino.urdf
+    - <amr_sim_config>: wheel_base = 0.385m, max_steering_angle = 18° (0.314 rad)
+    - base_link origin: Ackermann configuration aligned with physical Rhino robot
+  amr.urdf
+  tango_2.urdf
 
 launch/    rviz/    worlds/    maps/    server/    resource/
 ```

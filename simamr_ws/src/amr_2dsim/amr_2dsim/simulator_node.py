@@ -1,8 +1,8 @@
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist, TransformStamped
+from geometry_msgs.msg import Twist, TransformStamped, PoseWithCovarianceStamped
 from sensor_msgs.msg import LaserScan, Imu, JointState
-from std_msgs.msg import String, Bool, Float64
+from std_msgs.msg import String, Bool, Float64, Empty
 from std_srvs.srv import Trigger
 from rcl_interfaces.msg import SetParametersResult
 from tf2_ros import TransformBroadcaster
@@ -23,6 +23,9 @@ _DEFAULTS = {
     'drive_axle_x': None,  # None = not declared in URDF (skip check)
     'max_steering_angle': math.radians(30.0),
     'geometry_type': 'circle',
+    'creep_on_turn_mps': 0.3,
+    'presteer_ms': 200,
+    'no_creep_mode': False,
 }
 
 def _get_float(elem, tag, default, warn_cb=None):
@@ -54,8 +57,12 @@ def parse_sim_config(urdf_path: str) -> dict:
         if gt is not None and (gt.text or '').strip():
             cfg['geometry_type'] = gt.text.strip()
         # numeric fields — each isolated so one bad value doesn't block others
-        for field in ('wheel_base', 'robot_radius', 'laser_range_max', 'ticks_per_meter'):
+        for field in ('wheel_base', 'robot_radius', 'laser_range_max', 'ticks_per_meter', 'creep_on_turn_mps', 'presteer_ms'):
             cfg[field] = _get_float(sim_cfg, field, cfg[field])
+        
+        no_creep = sim_cfg.find('no_creep_mode')
+        if no_creep is not None and (no_creep.text or '').strip().lower() in ('true', '1', 'yes'):
+            cfg['no_creep_mode'] = True
         # max_steering_angle is authored in DEGREES. Every other place that
         # touches this field already assumes degrees — the CreateRobotView
         # slider is labelled '°' and capped at 45, and DashboardView renders
@@ -223,6 +230,7 @@ class AmrSimulator(Node):
         # Load kinematic config from URDF (or defaults if tag absent)
         self.laser_offset_x = 0.0
         self.laser_offset_y = 0.0
+        self.laser_offset_yaw = 0.0
         self.laser_frame_id = 'laser_link'
 
         if urdf_file_path:
@@ -234,6 +242,10 @@ class AmrSimulator(Node):
             self.ticks_per_meter = cfg['ticks_per_meter']
             self.max_steering_angle = cfg['max_steering_angle']
             self.geometry_type   = cfg['geometry_type']
+            self.creep_on_turn_mps = cfg['creep_on_turn_mps']
+            self.presteer_ms     = cfg['presteer_ms']
+            self.no_creep_mode   = cfg['no_creep_mode']
+            self.declare_parameter('creep_on_turn_mps', self.creep_on_turn_mps)
             self.robot_length    = None
             self.robot_width     = None
             self.footprint_offset_x = 0.0
@@ -267,14 +279,19 @@ class AmrSimulator(Node):
                         if 'laser' in link_name or 'lidar' in link_name:
                             self.laser_frame_id = link_name
                             origin = joint.find('origin')
-                            if origin is not None and origin.get('xyz'):
-                                xyz = origin.get('xyz').split()
-                                if len(xyz) >= 2:
-                                    self.laser_offset_x = float(xyz[0])
-                                    self.laser_offset_y = float(xyz[1])
+                            if origin is not None:
+                                if origin.get('xyz'):
+                                    xyz = origin.get('xyz').split()
+                                    if len(xyz) >= 2:
+                                        self.laser_offset_x = float(xyz[0])
+                                        self.laser_offset_y = float(xyz[1])
+                                if origin.get('rpy'):
+                                    rpy = origin.get('rpy').split()
+                                    if len(rpy) >= 3:
+                                        self.laser_offset_yaw = float(rpy[2])
                             self.get_logger().info(
                                 f"Loaded laser config: frame={self.laser_frame_id}, "
-                                f"offset=({self.laser_offset_x}, {self.laser_offset_y})"
+                                f"offset=({self.laser_offset_x}, {self.laser_offset_y}, yaw={self.laser_offset_yaw})"
                             )
                             break
                 _check_drive_axle_convention(
@@ -293,6 +310,9 @@ class AmrSimulator(Node):
             self.ticks_per_meter = _DEFAULTS['ticks_per_meter']
             self.max_steering_angle = _DEFAULTS['max_steering_angle']
             self.geometry_type   = _DEFAULTS['geometry_type']
+            self.creep_on_turn_mps = _DEFAULTS['creep_on_turn_mps']
+            self.presteer_ms     = _DEFAULTS['presteer_ms']
+            self.no_creep_mode   = _DEFAULTS['no_creep_mode']
             self.robot_length    = None
             self.robot_width     = None
             self.footprint_offset_x = 0.0
@@ -362,8 +382,18 @@ class AmrSimulator(Node):
             )
 
         self.cmd_vel = {'vx': 0.0, 'vy': 0.0, 'w': 0.0}
+        # What /odom (and anything downstream of it, e.g. an EKF) should report:
+        # the velocity actually used to integrate this tick's pose, AFTER the
+        # ackermann steering clamp and creep/pre-steer logic -- not the raw
+        # /cmd_vel command, which nothing here guarantees is achievable.
+        self.achieved_vx = 0.0
+        self.achieved_vy = 0.0
+        self.achieved_w = 0.0
         self.last_cmd_time = time.time()
         self.last_time = time.time()
+        self.prev_dir = 0
+        self.last_nonzero_dir = 0
+        self.presteer_until = 0.0
 
         # ----------------------------------------------------
         # 1. เพิ่มตัวแปรสำหรับเก็บค่า Encoder สะสม (Cumulative Pulses)
@@ -390,7 +420,7 @@ class AmrSimulator(Node):
         self._steering_cmd_timeout = 0.5
         
         self.wheel_vel_pub = self.create_publisher(Twist, '/wheel/vel', 10)
-        self.imu_pub = self.create_publisher(Imu, '/imu/data', 10)
+        self.imu_pub = self.create_publisher(Imu, '/imu', 10)
         self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
         self.current_steering_angle = 0.0
 
@@ -398,6 +428,8 @@ class AmrSimulator(Node):
         self.collision_pub = self.create_publisher(Bool, '/collision', 10)
         self.actuate_srv = self.create_service(Trigger, '/actuate_effect', self.actuate_callback)
         self.reset_pose_srv = self.create_service(Trigger, '/reset_pose', self.reset_pose_callback)
+        self.reset_pose_sub = self.create_subscription(Empty, '/reset_pose', self.reset_pose_topic_callback, 10)
+        self.initial_pose_sub = self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.initial_pose_topic_callback, 10)
         self.effect_timer = None
 
         self.timer = self.create_timer(0.05, self.timer_callback)
@@ -408,6 +440,11 @@ class AmrSimulator(Node):
                 self._watchdog_enabled = bool(p.value)
             elif p.name == 'watchdog_timeout':
                 self._watchdog_timeout = float(p.value)
+            elif p.name == 'creep_on_turn_mps':
+                self.creep_on_turn_mps = float(p.value)
+                # Auto-toggle no_creep_mode based on creep value so joystick L3 button works perfectly
+                self.no_creep_mode = (self.creep_on_turn_mps < 0.01)
+                self.get_logger().info(f"Updated creep_on_turn_mps to {self.creep_on_turn_mps} (no_creep_mode: {self.no_creep_mode})")
         return SetParametersResult(successful=True)
 
     def actuate_callback(self, request, response):
@@ -422,25 +459,47 @@ class AmrSimulator(Node):
         response.message = "Effect triggered"
         return response
 
-    def reset_pose_callback(self, request, response):
-        # Thorough reset of the robot state (like a fresh launch)
-        self.pose = {'x': self._initial_pose[0], 'y': self._initial_pose[1],
-                     'theta': self._initial_pose[2], 'vx': 0.0, 'vy': 0.0, 'w': 0.0}
+    def _reset_robot_state(self, x=None, y=None, theta=None):
+        target_x = self._initial_pose[0] if x is None else float(x)
+        target_y = self._initial_pose[1] if y is None else float(y)
+        target_theta = self._initial_pose[2] if theta is None else float(theta)
+
+        self.pose = {'x': target_x, 'y': target_y, 'theta': target_theta, 'vx': 0.0, 'vy': 0.0, 'w': 0.0}
         self.cmd_vel = {'vx': 0.0, 'vy': 0.0, 'w': 0.0}
+        self.achieved_vx = 0.0
+        self.achieved_vy = 0.0
+        self.achieved_w = 0.0
         self.total_pulse_left = 0.0
         self.total_pulse_right = 0.0
         self.current_steering_angle = 0.0
         self.last_time = time.time()
+        self.prev_dir = 0
+        self.last_nonzero_dir = 0
+        self.presteer_until = 0.0
 
         # Publish empty/initial states to clear old data
         msg = String()
-        msg.data = f"0.0,0.0"
+        msg.data = "0.0,0.0"
         self.encoder_pub.publish(msg)
 
-        self.get_logger().info("Robot state completely reset to initial pose.")
+        self.get_logger().info(f"Robot state completely reset to pose: ({target_x:.3f}, {target_y:.3f}, {target_theta:.3f}).")
+
+    def reset_pose_callback(self, request, response):
+        self._reset_robot_state()
         response.success = True
         response.message = "Simulation state reset successfully"
         return response
+
+    def reset_pose_topic_callback(self, msg):
+        self._reset_robot_state()
+
+    def initial_pose_topic_callback(self, msg):
+        px = msg.pose.pose.position.x
+        py = msg.pose.pose.position.y
+        qz = msg.pose.pose.orientation.z
+        qw = msg.pose.pose.orientation.w
+        yaw = 2.0 * math.atan2(qz, qw)
+        self._reset_robot_state(x=px, y=py, theta=yaw)
 
     def effect_timer_callback(self):
         msg = Bool()
@@ -481,6 +540,33 @@ class AmrSimulator(Node):
             vy = 0.0 # Diff drive cannot move sideways
         elif self.kinematic_model == 'ackermann':
             vy = 0.0 # Car cannot move sideways
+
+            # --- PRE-STEER AND CREEP LOGIC ---
+            v_dir = 0
+            if vx > 0.01:
+                v_dir = 1
+            elif vx <= -0.01:
+                v_dir = -1
+                
+            if v_dir != 0:
+                self.last_nonzero_dir = v_dir
+                
+            dir_flipped = (self.prev_dir == 1 and v_dir == -1) or (self.prev_dir == -1 and v_dir == 1)
+            if dir_flipped:
+                self.presteer_until = current_time + (self.presteer_ms / 1000.0)
+            self.prev_dir = v_dir
+            
+            out_v = vx
+            if current_time < self.presteer_until:
+                out_v = 0.0
+                
+            if abs(w) > 0.01 and abs(out_v) < 0.01 and not self.no_creep_mode:
+                creep = self.creep_on_turn_mps
+                out_v = -creep if self.last_nonzero_dir == -1 else creep
+                
+            vx = out_v
+            # ---------------------------------
+
             has_explicit_steer = (
                 self._explicit_steer_fraction is not None
                 and (current_time - self._last_steering_cmd_time) < self._steering_cmd_timeout
@@ -494,17 +580,30 @@ class AmrSimulator(Node):
                 self.current_steering_angle = delta
                 w = 0.0 if abs(vx) < 1e-4 else vx * math.tan(delta) / self.wheel_base
             elif abs(vx) < 1e-4:
+                # Real base_controller fallback at low speeds: full lock
+                delta = self.max_steering_angle if w > 0.0 else (-self.max_steering_angle if w < 0.0 else 0.0)
+                self.current_steering_angle = delta
                 w = 0.0  # Ackermann cannot turn in place
-                self.current_steering_angle = 0.0
             else:
                 # Treat raw w command as intent, calculate required steering angle
-                delta = math.atan((w * self.wheel_base) / vx)
+                if self.no_creep_mode:
+                    # Teleop/Real car mode: use abs(vx) so reverse motion doesn't invert steering wheel direction
+                    delta = math.atan((w * self.wheel_base) / abs(vx))
+                else:
+                    # Nav2 compatible mode: use vx so steering swaps, preserving the commanded chassis yaw rate (w)
+                    delta = math.atan((w * self.wheel_base) / vx)
                 # Clamp to physical limits
                 delta = max(-self.max_steering_angle, min(self.max_steering_angle, delta))
                 self.current_steering_angle = delta
                 # Derive achievable w
                 w = vx * math.tan(delta) / self.wheel_base
-        
+
+        # This is what actually gets integrated below (and is exactly what
+        # /odom must report -- see achieved_vx/vy/w assignment there).
+        self.achieved_vx = vx
+        self.achieved_vy = vy
+        self.achieved_w = w
+
         # Integrate Position (Global Frame) ด้วยสมการ Midpoint 
         mid_theta = self.pose['theta'] + (w * dt / 2.0)
         new_theta = self.pose['theta'] + (w * dt)
@@ -540,10 +639,15 @@ class AmrSimulator(Node):
         self.pose['theta'] = new_theta
 
         # ----------------------------------------------------
-        # Simulate Fake Encoder (approximated for all models to a differential equivalent for visualization)
+        # Simulate Fake Encoder
         # ----------------------------------------------------
-        v_right = vx + (w * self.wheel_base / 2.0)
-        v_left = vx - (w * self.wheel_base / 2.0)
+        if self.kinematic_model == 'ackermann':
+            # Real Rhino firmware uses a solid rear axle (setRPML = setRPMR)
+            v_right = vx
+            v_left = vx
+        else:
+            v_right = vx + (w * self.wheel_base / 2.0)
+            v_left = vx - (w * self.wheel_base / 2.0)
         
         # Calculate pulse increments
         delta_pulse_right = v_right * dt * self.ticks_per_meter
@@ -647,7 +751,7 @@ class AmrSimulator(Node):
 
         # Fully vectorized: batch all 360 rays × all walls in one numpy op
         # angles shape: (360,)  walls shape: (N,)  result: (360, N)
-        angles = self.pose['theta'] + np.arange(360, dtype=np.float64) * scan.angle_increment
+        angles = self.pose['theta'] + self.laser_offset_yaw + np.arange(360, dtype=np.float64) * scan.angle_increment
         dx = scan.range_max * np.cos(angles)  # (360,)
         dy = scan.range_max * np.sin(angles)  # (360,)
 
@@ -703,9 +807,13 @@ class AmrSimulator(Node):
         pose_cov[35] = 0.01  # Yaw
         odom.pose.covariance = pose_cov
         
-        odom.twist.twist.linear.x = self.cmd_vel['vx']
-        odom.twist.twist.linear.y = 0.0 if self.kinematic_model == 'diff_drive' else self.cmd_vel['vy']
-        odom.twist.twist.angular.z = self.cmd_vel['w']
+        # Report what the robot actually did this tick, not the raw /cmd_vel
+        # command -- the ackermann branch above clamps steering angle (and can
+        # override vx via creep/pre-steer), so self.cmd_vel can disagree with
+        # the pose that was actually integrated. See F-02 in the DOE audit.
+        odom.twist.twist.linear.x = self.achieved_vx
+        odom.twist.twist.linear.y = 0.0 if self.kinematic_model == 'diff_drive' else self.achieved_vy
+        odom.twist.twist.angular.z = self.achieved_w
         
         # 2. Twist Covariance (Local 'base_link' frame)
         # ความเร็วในมุมมองหุ่น (Local) แบบ Diff-Drive ไม่ไถลข้าง แกน Y จึงเป็น 1e-5 ได้

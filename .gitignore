@@ -50,4 +50,5 @@ log/
 __pycache__/
 .pytest_cache/
 *.egg-info/
-
+*.deb
+scratch_*.py

@@ -103,7 +103,8 @@
       "dist-electron/**/*",
       "map-server.cjs",
       "public/**/*",
-      "package.json"
+      "package.json",
+      "simamr_ws/install/**/*"
     ]
   }
 }

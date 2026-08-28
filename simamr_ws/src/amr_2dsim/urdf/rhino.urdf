@@ -24,12 +24,24 @@
 
   amr_sim_config VALUES
     [measured]   wheel_base 0.385 · axle_track 0.345 · wheel_radius 0.0889
-    [source]     max_steering_angle 20 deg (servo_max_steer_deg = 20.0f)
+    [measured]   max_steering_angle 18 deg — NOT servo_max_steer_deg (that's 20.0f,
+                 the SERVO COMMAND range). The steering linkage is physically
+                 asymmetric: a full 20 deg command reaches only 18 deg at the
+                 left front wheel but overshoots to 25 deg at the right
+                 (CLAUDE_rhino.md, measured 2026-08-23). This field feeds the
+                 kinematic clamp on ACHIEVED wheel angle (delta in
+                 simulator_node.py's w = v*tan(delta)/L), so it must be the
+                 wheel-angle limit, not the command range — and must match
+                 the single worst-case value Nav2's planner already assumes
+                 (nav2_params.yaml minimum_turning_radius: 1.20, derived from
+                 this same 18 deg). Modelling the full 18/25 asymmetry would
+                 let the sim out-corner what the planner thinks is safe.
                  ticks_per_meter from PPR = 800 (PRSH dump 2026-08-13)
                  laser_range_max 30.0 m (RPLIDAR S2E)
     [derived]    robot_radius 0.551 = sqrt(0.505^2 + 0.220^2), circumscribed from base_link
                  ticks_per_meter 1432.2 = 800 / (2*pi*0.0889)
-                 R_min = 0.385 / tan(20 deg) = 1.058 m  ✓ CLAUDE_rhino.md §3
+                 R_min = 0.385 / tan(18 deg) = 1.185 m  ✓ CLAUDE_rhino.md §3, matches
+                 nav2_params.yaml minimum_turning_radius: 1.20 (padded worst-case)
     [PLACEHOLDER] wheel_width 0.050 — never measured; drawing only, no physics effect
 
   NO <inertial> HERE, BY DESIGN. M and CoM are NOT MEASURED. amr_2dsim is purely
@@ -60,9 +72,14 @@
     <laser_y>0.000</laser_y>
     <laser_height>0.03885</laser_height>
     <ticks_per_meter>1432.2</ticks_per_meter>
-    <!-- DEGREES (simulator_node.py converts). 20 deg = servo_max_steer_deg = 20.0f -->
-    <max_steering_angle>20.0</max_steering_angle>
+    <!-- DEGREES (simulator_node.py converts). Wheel-angle limit, NOT the servo's
+         20 deg command range — see amr_sim_config VALUES above. 18 deg matches
+         Nav2's minimum_turning_radius: 1.20 in nav2_params.yaml. -->
+    <max_steering_angle>18.0</max_steering_angle>
     <drive_axle_x>0.0</drive_axle_x>
+    <creep_on_turn_mps>0.3</creep_on_turn_mps>
+    <presteer_ms>200</presteer_ms>
+    <no_creep_mode>false</no_creep_mode>
   </amr_sim_config>
 
   <material name="chassis_grey">

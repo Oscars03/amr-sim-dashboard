@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore';
 import SplitButton from '../common/SplitButton';
 import useIsCompact from '../../hooks/useIsCompact';
+import ImportRosMapModal from './ImportRosMapModal';
 import './CreateWorldView.css';
 
 const HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
@@ -46,6 +47,8 @@ export default function CreateWorldView() {
   const [history, setHistory] = useState([{ walls: [], obstacles: [] }]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
+  const [showImport, setShowImport] = useState(false);
+
   const currentMapState = history[historyIndex];
   const walls = currentMapState.walls;
   const obstacles = currentMapState.obstacles;
@@ -54,13 +57,17 @@ export default function CreateWorldView() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
-  const gridSize = 10;
-  const mapInfo = useMemo(() => ({
-    origin_x: -gridSize,
-    origin_y: -gridSize,
-    width: gridSize * 2,
-    height: gridSize * 2,
-  }), [gridSize]);
+  // State rather than a constant: importing a ROS map replaces this with the
+  // real extent from its YAML. Those maps are neither square nor centred on the
+  // origin (F4_2F is 32.8 x 64.2 m at origin -8.747, -38.086), so a fixed
+  // +/-10 m box would both crop the view and write a map_info to the saved
+  // world that disagreed with the walls in it.
+  const [mapInfo, setMapInfo] = useState({
+    origin_x: -10,
+    origin_y: -10,
+    width: 20,
+    height: 20,
+  });
 
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
@@ -108,6 +115,31 @@ export default function CreateWorldView() {
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
   }, [history, historyIndex]);
+
+  /**
+   * Replace the drawing with walls traced from a ROS map.
+   *
+   * This goes through pushHistory rather than overwriting state directly, so a
+   * mistaken import is one Ctrl+Z away -- the conversion is approximate and the
+   * operator may well want to compare a couple of tolerance settings.
+   * Obstacles are preserved: they are hand-placed and have no counterpart in an
+   * occupancy grid, so an import has nothing to say about them.
+   */
+  const handleImportRosMap = useCallback((converted, sourceName) => {
+    const importedWalls = converted.walls.map(([start, end]) => ({
+      start,
+      end,
+      thickness: wallThickness,
+    }));
+    pushHistory(importedWalls, obstacles);
+    setMapInfo(converted.mapInfo);
+    if (sourceName) {
+      setMapName(sourceName.replace(/\.pgm$/i, '') || 'imported_map');
+    }
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setShowImport(false);
+  }, [pushHistory, obstacles, wallThickness]);
 
   const handleUndo = useCallback(() => {
     if (historyIndex > 0) setHistoryIndex(historyIndex - 1);
@@ -600,6 +632,13 @@ export default function CreateWorldView() {
           onOptionSelect={(val) => { setEraserMode(val); setTool("eraser"); }}
         />
 
+        <button onClick={() => setShowImport(true)} className="btn" title="Import a ROS map (.pgm + .yaml)">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span className="btn-label">Import ROS Map</span>
+        </button>
+
         <button onClick={() => pushHistory([], [])} className="btn btn-danger" title="Clear All">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
@@ -673,6 +712,14 @@ export default function CreateWorldView() {
           <div style={{ width: `${transform.scale}px`, borderBottom: '2px solid #fff', borderLeft: '2px solid #fff', borderRight: '2px solid #fff', height: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.5)' }} />
         </div>
       </div>
+
+      {showImport && (
+        <ImportRosMapModal
+          isDark={isDark}
+          onCancel={() => setShowImport(false)}
+          onApply={handleImportRosMap}
+        />
+      )}
     </div>
   );
 }

@@ -110,13 +110,41 @@ def test_zero_yaw_command_drives_straight(node, monkeypatch):
 
 
 def test_cannot_turn_in_place(node, monkeypatch):
+    """Chassis-level bicycle-model constraint, isolated from the
+    creep_on_turn_mps convenience feature (2781a8b): with creep off, vx=0 +
+    w!=0 must produce zero translation/rotation of the chassis, since
+    theta_dot = vx*tan(delta)/L is necessarily 0 at vx=0.
+
+    current_steering_angle itself is a separate story as of 2ae2b5f: a
+    stationary turn command now drives the steering angle to full lock
+    ("real base_controller fallback at low speeds"), mirroring a real
+    parked car's steering servo pre-positioning -- it just doesn't move the
+    chassis. See test_creep_lets_stationary_turn_command_move for the
+    creep-enabled case, where the chassis does move.
+    """
     configure_ackermann(node)
+    node.no_creep_mode = True
     xs, ys, thetas = drive(node, monkeypatch, vx=0.0, w_cmd=1.0, dt=0.05, steps=5)
 
-    assert node.current_steering_angle == 0.0
+    assert node.current_steering_angle == pytest.approx(node.max_steering_angle)
     assert thetas[-1] == 0.0
     assert xs[-1] == 0.0
     assert ys[-1] == 0.0
+
+
+def test_creep_lets_stationary_turn_command_move(node, monkeypatch):
+    """With creep on (the default), a turn commanded at vx=0 is no longer a
+    true pivot: the sim eases in creep_on_turn_mps of forward speed so an
+    Ackermann chassis can actually execute the turn (joystick compatibility,
+    2781a8b) -- this is what test_cannot_turn_in_place deliberately excludes
+    via no_creep_mode."""
+    configure_ackermann(node)
+    assert node.no_creep_mode is False  # sanity: this is the default
+    xs, ys, thetas = drive(node, monkeypatch, vx=0.0, w_cmd=1.0, dt=0.05, steps=5)
+
+    assert node.current_steering_angle == pytest.approx(node.max_steering_angle)
+    assert thetas[-1] != 0.0
+    assert xs[-1] != 0.0 or ys[-1] != 0.0
 
 
 def test_turning_radius_matches_bicycle_model(node, monkeypatch):

@@ -32,6 +32,9 @@ if (process.env.AMR_WS_SETUP) {
 } else {
     // Try candidate paths in order of priority
     const candidates = [
+        path.join(__dirname, '..', 'simamr_ws', 'install', 'setup.bash'),
+        path.join(__dirname, 'simamr_ws', 'install', 'setup.bash'),
+        path.join(process.resourcesPath || '', 'simamr_ws', 'install', 'setup.bash'),
         path.join(os.homedir(), 'simamr_ws', 'install', 'setup.bash'),
         path.join(os.homedir(), 'simamr_ws', 'setup.bash'),
         '/opt/irish-amr-sim/simamr_ws/setup.bash',
@@ -75,10 +78,16 @@ let rosProcess = null;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function getShareDir() {
+  const installPrefix = path.dirname(WS_SETUP_BASH);
+  const directShare = path.join(installPrefix, 'share', 'amr_2dsim');
+  if (fs.existsSync(directShare)) {
+    return directShare;
+  }
   try {
     return execSync(
-      'ros2 pkg prefix amr_2dsim --share',
+      `export AMENT_PREFIX_PATH="${installPrefix}:\${AMENT_PREFIX_PATH:-}" && source "${WS_SETUP_BASH}" && ros2 pkg prefix amr_2dsim --share`,
       {
+        shell: '/bin/bash',
         encoding: 'utf8',
         env: {
           ...process.env,
@@ -92,12 +101,20 @@ function getShareDir() {
   }
 }
 
+function getSrcDirs(subDir) {
+  const candidates = [
+    path.join(__dirname, 'simamr_ws', 'src', 'amr_2dsim', subDir),
+    path.join(__dirname, '..', 'simamr_ws', 'src', 'amr_2dsim', subDir),
+    path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', subDir),
+  ];
+  return candidates.filter(d => fs.existsSync(d));
+}
+
 function getWorldFiles(shareDir) {
-  const dirs = [path.join(shareDir, 'worlds')];
-  const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
-  if (fs.existsSync(srcWorldsDir)) dirs.push(srcWorldsDir);
+  const dirs = shareDir ? [path.join(shareDir, 'worlds')] : [];
+  getSrcDirs('worlds').forEach(d => { if (!dirs.includes(d)) dirs.push(d); });
   const fallbackWorldsDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'worlds');
-  if (fs.existsSync(fallbackWorldsDir)) dirs.push(fallbackWorldsDir);
+  if (fs.existsSync(fallbackWorldsDir) && !dirs.includes(fallbackWorldsDir)) dirs.push(fallbackWorldsDir);
 
   const seen = new Set();
   const results = [];
@@ -131,11 +148,10 @@ function getWorldFiles(shareDir) {
 }
 
 function getRobotFiles(shareDir) {
-  const dirs = [path.join(shareDir, 'urdf')];
-  const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
-  if (fs.existsSync(srcUrdfDir)) dirs.push(srcUrdfDir);
+  const dirs = shareDir ? [path.join(shareDir, 'urdf')] : [];
+  getSrcDirs('urdf').forEach(d => { if (!dirs.includes(d)) dirs.push(d); });
   const fallbackUrdfDir = path.join(os.homedir(), '.config', 'irish-amr-sim', 'urdf');
-  if (fs.existsSync(fallbackUrdfDir)) dirs.push(fallbackUrdfDir);
+  if (fs.existsSync(fallbackUrdfDir) && !dirs.includes(fallbackUrdfDir)) dirs.push(fallbackUrdfDir);
 
   const seen = new Set();
   const results = [];
@@ -251,7 +267,19 @@ function launchRos(shareDir, urdfPath, worldPath) {
     return;
   }
 
+  const installPrefix = path.dirname(WS_SETUP_BASH);
+  let pySitePackages = '';
+  const libDir = path.join(installPrefix, 'lib');
+  if (fs.existsSync(libDir)) {
+    const pyVer = fs.readdirSync(libDir).find(d => d.startsWith('python'));
+    if (pyVer) {
+      pySitePackages = path.join(libDir, pyVer, 'site-packages');
+    }
+  }
+  const pyExport = pySitePackages ? `export PYTHONPATH="${pySitePackages}:\${PYTHONPATH:-}" && ` : '';
   const shellCmd =
+    `export AMENT_PREFIX_PATH="${installPrefix}:\${AMENT_PREFIX_PATH:-}" && ` +
+    pyExport +
     `source ${ROS_SETUP_BASH} && ` +
     `source ${WS_SETUP_BASH} && ` +
     `ros2 launch amr_2dsim sim_bringup.launch.py ` +
@@ -262,14 +290,14 @@ function launchRos(shareDir, urdfPath, worldPath) {
   console.log(`  ${shellCmd}`);
   console.log('');
 
-
-
   rosProcess = spawn('bash', ['-c', shellCmd], {
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       PATH: `${process.env.PATH}:${ROS_BIN_PATH}`,
+      AMENT_PREFIX_PATH: `${installPrefix}:${process.env.AMENT_PREFIX_PATH || ''}`,
+      PYTHONPATH: pySitePackages ? `${pySitePackages}:${process.env.PYTHONPATH || ''}` : process.env.PYTHONPATH,
       AMR_MAP_FILE: worldPath,
       AMR_URDF_FILE: urdfPath,
     },
@@ -546,9 +574,9 @@ app.post('/api/robots', (req, res) => {
       console.warn(`[create_robot] Could not save to shareDir: ${e.message}`);
     }
 
-    const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
-    if (fs.existsSync(srcUrdfDir)) {
-      const srcUrdfPath = path.join(srcUrdfDir, fileName);
+    const srcUrdfDirs = getSrcDirs('urdf');
+    if (srcUrdfDirs.length > 0) {
+      const srcUrdfPath = path.join(srcUrdfDirs[0], fileName);
       fs.writeFileSync(srcUrdfPath, urdfContent);
       console.log(`[create_robot] Saved to source: ${srcUrdfPath}`);
       savedAnywhere = true;
@@ -591,8 +619,8 @@ app.delete('/api/robots/:fileName', (req, res) => {
   }
 
   // 2. พยายามลบจาก Source Workspace (กรณีนักพัฒนา)
-  const srcUrdfDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'urdf');
-  if (fs.existsSync(srcUrdfDir)) {
+  const srcUrdfDirs = getSrcDirs('urdf');
+  for (const srcUrdfDir of srcUrdfDirs) {
     const srcPath = path.join(srcUrdfDir, fileName);
     if (fs.existsSync(srcPath)) {
       try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
@@ -669,8 +697,8 @@ app.delete('/api/worlds/:fileName', (req, res) => {
   }
 
   // 2. พยายามลบจาก Source Workspace (กรณีนักพัฒนา)
-  const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
-  if (fs.existsSync(srcWorldsDir)) {
+  const srcWorldsDirs = getSrcDirs('worlds');
+  for (const srcWorldsDir of srcWorldsDirs) {
     const srcPath = path.join(srcWorldsDir, fileName);
     if (fs.existsSync(srcPath)) {
       try { fs.unlinkSync(srcPath); deletedAny = true; } catch (e) { console.error(e); }
@@ -709,6 +737,87 @@ app.delete('/api/worlds/:fileName', (req, res) => {
 
 
 
+
+// GET /environment-check
+function checkEnvironment() {
+  const distro = rosDistro || 'jazzy';
+  const rosSetup = `/opt/ros/${distro}/setup.bash`;
+  const rosBin = `/opt/ros/${distro}/bin/ros2`;
+  const hasRos2 = fs.existsSync(rosSetup) && fs.existsSync(rosBin);
+
+  const rosbridgeShare = `/opt/ros/${distro}/share/rosbridge_server`;
+  const hasRosbridge = fs.existsSync(rosbridgeShare);
+
+  const rspShare = `/opt/ros/${distro}/share/robot_state_publisher`;
+  const hasRobotStatePublisher = fs.existsSync(rspShare);
+
+  const hasWsSetup = fs.existsSync(WS_SETUP_BASH);
+  const shareDir = getShareDir();
+  const hasWorkspace = hasWsSetup && !!shareDir;
+
+  const missingPackages = [];
+  if (!hasRosbridge) missingPackages.push(`ros-${distro}-rosbridge-suite`);
+  if (!hasRobotStatePublisher) missingPackages.push(`ros-${distro}-robot-state-publisher`);
+
+  let recommendedCommand = '';
+  if (!hasRos2) {
+    recommendedCommand = `sudo apt update && sudo apt install -y software-properties-common curl gnupg && sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null && sudo apt update && sudo apt install -y ros-${distro}-ros-base ros-${distro}-rosbridge-suite ros-${distro}-robot-state-publisher`;
+  } else if (missingPackages.length > 0) {
+    recommendedCommand = `sudo apt update && sudo apt install -y ${missingPackages.join(' ')}`;
+  } else if (!hasWorkspace) {
+    const wsDir = path.dirname(path.dirname(WS_SETUP_BASH));
+    recommendedCommand = `cd "${wsDir}" && source /opt/ros/${distro}/setup.bash && colcon build --merge-install`;
+  }
+
+  const allReady = hasRos2 && hasRosbridge && hasRobotStatePublisher && hasWorkspace;
+
+  return {
+    allReady,
+    distro,
+    checks: {
+      ros2: {
+        name: `ROS 2 (${distro.toUpperCase()})`,
+        path: rosSetup,
+        ready: hasRos2,
+        detail: hasRos2 ? `Installed at /opt/ros/${distro}` : `Not found at /opt/ros/${distro}/setup.bash`,
+      },
+      rosbridge: {
+        name: 'ROS Bridge Suite',
+        path: rosbridgeShare,
+        ready: hasRosbridge,
+        detail: hasRosbridge ? 'WebSocket bridge server ready (port 9090)' : `Package ros-${distro}-rosbridge-suite missing`,
+      },
+      robotStatePublisher: {
+        name: 'Robot State Publisher',
+        path: rspShare,
+        ready: hasRobotStatePublisher,
+        detail: hasRobotStatePublisher ? 'Robot state & TF publisher ready' : `Package ros-${distro}-robot-state-publisher missing`,
+      },
+      workspace: {
+        name: 'Simulation Workspace (amr_2dsim)',
+        path: WS_SETUP_BASH,
+        ready: hasWorkspace,
+        detail: hasWorkspace ? `Ready at ${WS_SETUP_BASH}` : 'Workspace setup.bash or amr_2dsim package not found',
+      },
+    },
+    missingPackages,
+    recommendedCommand,
+    system: {
+      platform: os.platform(),
+      release: os.release(),
+      arch: os.arch(),
+    },
+  };
+}
+
+app.get('/environment-check', (req, res) => {
+  try {
+    const result = checkEnvironment();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /status
 app.get('/status', (req, res) => {
@@ -809,9 +918,9 @@ app.post('/save_map', (req, res) => {
       console.warn(`[save_map] Could not save to shareDir: ${e.message}`);
     }
 
-    const srcWorldsDir = path.join(os.homedir(), 'simamr_ws', 'src', 'amr_2dsim', 'worlds');
-    if (fs.existsSync(srcWorldsDir)) {
-      const srcSavePath = path.join(srcWorldsDir, safeName);
+    const srcWorldsDirs = getSrcDirs('worlds');
+    if (srcWorldsDirs.length > 0) {
+      const srcSavePath = path.join(srcWorldsDirs[0], safeName);
       fs.writeFileSync(srcSavePath, JSON.stringify(data, null, 2), 'utf8');
       console.log(`[save_map] Saved to source: ${srcSavePath}`);
       savedAnywhere = true;
