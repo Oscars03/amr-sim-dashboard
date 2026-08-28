@@ -228,7 +228,7 @@ export function drawRobot(
     return;
   }
     // 5. DROP SHADOW: Cached radial gradient black fading to transparent underneath
-    const shadowR = Math.max(15, maxR * scale * 1.3);
+    const shadowR = maxR * scale * 1.25;
     const shadowCacheKey = `${shadowR.toFixed(1)}`;
     if (urdf._shadowCacheKey !== shadowCacheKey) {
       urdf._shadowCacheKey = shadowCacheKey;
@@ -396,13 +396,14 @@ export function drawRobot(
           }
           s._cachedBodyPath = bp;
 
-          const barInset = 3;
-          const barWidth = Math.max(2, (hd - 6) * 2);
+          const barInset = Math.max(1, hw * 0.1);
+          const barThickness = Math.max(1, hw * 0.06);
+          const barWidth = Math.max(2, hd * 1.4);
           const hp = new Path2D();
           if (hp.roundRect) {
-            hp.roundRect(hw - barInset - 2, -barWidth / 2, 2, barWidth, 1);
+            hp.roundRect(hw - barInset - barThickness, -barWidth / 2, barThickness, barWidth, 1);
           } else {
-            hp.rect(hw - barInset - 2, -barWidth / 2, 2, barWidth);
+            hp.rect(hw - barInset - barThickness, -barWidth / 2, barThickness, barWidth);
           }
           s._cachedHighlightPath = hp;
         }
@@ -420,9 +421,10 @@ export function drawRobot(
         ctx.stroke(s._cachedBodyPath);
 
         // --- 4. DIRECTION INDICATOR ---
-        const triTipX = hw - 3;
-        const triBaseX = hw - 11;
-        const triHalfW = 4;
+        // Proportionate to chassis size so it never distorts on different map scales
+        const triTipX = hw * 0.85;
+        const triBaseX = hw * 0.35;
+        const triHalfW = Math.min(hd * 0.35, (triTipX - triBaseX) * 0.6);
         ctx.fillStyle = "rgba(230, 241, 251, 0.70)";
         ctx.beginPath();
         ctx.moveTo(triTipX, 0);
