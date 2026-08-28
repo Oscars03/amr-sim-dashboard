@@ -79,6 +79,8 @@ export default function CreateRobotView({ onCreated }) {
     wheel_base: 0.50, wheel_radius: 0.05, wheel_width: 0.03, axle_track: 0.40, max_steering_angle: 30,
     lidar_x: 0.0, lidar_y: 0.0, lidar_height: 0.10, lidar_radius: 0.05, lidar_range_max: 12.0,
     ticks_per_meter: 2000, omni_wheel_count: 3,
+    // Actuator dynamics — 0 = no limit (instant response)
+    max_linear_accel: 0, max_angular_accel: 0, max_steering_rate: 0,
   });
 
   const getAllowedGeometries = (model, omniCount) => {
@@ -509,6 +511,14 @@ export default function CreateRobotView({ onCreated }) {
                 )}
                 <ParamRow label="Wheel Radius" unit="m" value={form.wheel_radius} min={0.02} max={0.3} step={0.005} onChange={v => set('wheel_radius', v)} {...shared} />
                 <ParamRow label="Wheel Width" unit="m" value={form.wheel_width} min={0.01} max={0.2} step={0.005} onChange={v => set('wheel_width', v)} {...shared} />
+
+                <div style={{ background: isDark ? '#1a1a24' : '#f8f9fa', padding: '12px', borderRadius: '8px', marginTop: '8px', border: `1px solid ${border}` }}>
+                  <div style={{ fontSize: '11px', color: text, opacity: 0.6, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Actuator Dynamics · 0 = instant</div>
+                  <ParamRow label="Max Linear Accel" unit="m/s²" value={form.max_linear_accel} min={0} max={5} step={0.1} onChange={v => set('max_linear_accel', v)} {...shared} inputBg={bg} />
+                  {showSteeringAngle
+                    ? <ParamRow label="Max Steering Rate" unit="°/s" value={form.max_steering_rate} min={0} max={360} step={5} onChange={v => set('max_steering_rate', v)} {...shared} inputBg={bg} />
+                    : <ParamRow label="Max Angular Accel" unit="rad/s²" value={form.max_angular_accel} min={0} max={10} step={0.1} onChange={v => set('max_angular_accel', v)} {...shared} inputBg={bg} />}
+                </div>
               </div>
             )}
 

@@ -2,6 +2,11 @@
 
 All notable changes to the IRiSH AMR Simulator Dashboard project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Robot Creator — Actuator Dynamics**: Max Linear Accel, Max Angular Accel (diff-drive) / Max Steering Rate (Ackermann) sliders. Emitted into the generated URDF `<amr_sim_config>` only when non-zero; `0` keeps the simulator's instant response.
+
 ## [0.2.8] - 2026-07-31
 
 ### Added
