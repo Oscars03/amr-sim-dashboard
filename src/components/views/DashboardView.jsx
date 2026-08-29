@@ -100,14 +100,17 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
   const odomSamplesRef = useRef([]);
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
+  const [followRobot, setFollowRobot] = useState(false);
 
   // Mark dirty whenever a visual input that lives in React changes. Pose and
   // steering angle are refs now -- they signal redraw via markDirty().
+  // followRobot must be here: toggling it with a stationary robot changes
+  // nothing else, but the view still needs to recentre.
   useEffect(() => {
     needsRedrawRef.current = true;
     effectActiveRef.current = effectActive;
     collisionActiveRef.current = collisionActive;
-  }, [effectActive, collisionActive, mapData, urdf, isDark, view]);
+  }, [effectActive, collisionActive, mapData, urdf, isDark, view, followRobot, width, height]);
 
   const dragRef = useRef({
     isMiddle: false,
@@ -116,8 +119,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     lastY: 0,
   });
   const [cursor, setCursor] = useState("crosshair");
-
-  const [followRobot, setFollowRobot] = useState(false);
 
   const handleMouseDown = (e) => {
     if (e.button === 0) {
