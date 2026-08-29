@@ -24,14 +24,14 @@
   --c-border-2:  rgba(0, 0, 0, 0.12);
 
   /* Text */
-  --c-text-1:    #0F1117;
-  --c-text-2:    #4B5563;
-  --c-text-3:    #9CA3AF;
+  --c-text-1:    #0F172A;   /* deep slate — 16:1 contrast */
+  --c-text-2:    #334155;   /* clear dark slate — 9:1 contrast */
+  --c-text-3:    #64748B;   /* readable muted slate — 5:1 contrast */
 
   /* Accent — single cyan */
-  --c-accent:    #0EA5E9;
-  --c-accent-h:  #38BDF8;   /* hover */
-  --c-accent-bg: rgba(14, 165, 233, 0.10);
+  --c-accent:    #0284C7;   /* accessible sky blue in light mode */
+  --c-accent-h:  #0369A1;   /* hover */
+  --c-accent-bg: rgba(2, 132, 199, 0.10);
 
   /* Semantic */
   --c-success:   #22C55E;
@@ -107,14 +107,14 @@
   --c-border-2:  rgba(255, 255, 255, 0.10);
 
   /* Text */
-  --c-text-1:    #F1F5F9;
-  --c-text-2:    #94A3B8;
-  --c-text-3:    #475569;
+  --c-text-1:    #FFFFFF;   /* pure crisp white — 18:1 contrast */
+  --c-text-2:    #E2E8F0;   /* bright silver-white — 12:1 contrast */
+  --c-text-3:    #94A3B8;   /* clear readable slate — 6:1 contrast */
 
   /* Accent */
   --c-accent:    #22D3EE;
   --c-accent-h:  #67E8F9;
-  --c-accent-bg: rgba(34, 211, 238, 0.10);
+  --c-accent-bg: rgba(34, 211, 238, 0.12);
 
   /* Semantic */
   --c-success:   #34D399;

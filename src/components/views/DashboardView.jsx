@@ -944,17 +944,17 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
     },
     title: {
       fontSize: isShort || isNarrow ? "15px" : "18px",
-      fontWeight: 600,
-      color: isDark ? "#90caf9" : "#1976d2",
+      fontWeight: 700,
+      color: isDark ? "#ffffff" : "#0f172a",
     },
     toggleWrap: {
       display: "flex",
       alignItems: "center",
-      background: isDark ? "#00000044" : "#f0f0f0",
+      background: isDark ? "#161c25" : "#f1f5f9",
       borderRadius: "20px",
       padding: "4px",
       cursor: "pointer",
-      border: `1px solid ${isDark ? "#333333" : "#dddddd"}`,
+      border: `1px solid ${isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)"}`,
       userSelect: "none",
     },
     toggleOpt: (active, color) => ({
@@ -966,8 +966,8 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
       fontSize: "13px",
       fontWeight: 700,
       letterSpacing: "0.5px",
-      color: active ? color : isDark ? "#555555" : "#aaaaaa",
-      background: active ? `${color}15` : "transparent",
+      color: active ? color : isDark ? "#94a3b8" : "#475569",
+      background: active ? `${color}20` : "transparent",
       border: active ? `1px solid ${color}` : "1px solid transparent",
       transition: "all 0.2s ease-in-out",
     }),
@@ -992,26 +992,27 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
       justifyContent: "center",
       borderRadius: "10px",
       border: active
-        ? `2px solid ${isDark ? "#90caf9" : "#1976d2"}`
-        : `1px solid ${isDark ? "#ffffff25" : "#e0e0e0"}`,
+        ? `2px solid ${isDark ? "#22d3ee" : "#0284c7"}`
+        : `1.5px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)"}`,
       background: active
         ? isDark
-          ? "#3949ab"
-          : "#e3f2fd"
+          ? "rgba(34, 211, 238, 0.25)"
+          : "#e0f2fe"
         : isDark
-          ? "#ffffff0d"
-          : "#f8f9fa",
+          ? "#161c25"
+          : "#ffffff",
       color: active
         ? isDark
-          ? "#fff"
-          : "#1565c0"
+          ? "#ffffff"
+          : "#0284c7"
         : isDark
-          ? "#9e9ec0"
-          : "#666666",
+          ? "#ffffff"
+          : "#0f172a",
       fontSize: "18px",
-      fontWeight: 600,
+      fontWeight: 700,
       cursor: "pointer",
       userSelect: "none",
+      boxShadow: active ? "0 0 12px rgba(34,211,238,0.4)" : "none",
     }),
 
     // ─── Slider section (redesigned) ───────────────────────────
@@ -1033,7 +1034,7 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
       fontWeight: 700,
       letterSpacing: "0.8px",
       textTransform: "uppercase",
-      color: isDark ? "#7d8bab" : "#5a6478",
+      color: isDark ? "#ffffff" : "#0f172a",
     },
     sliderKeyBadge: (variant, color) => ({
       display: "inline-flex",
@@ -1412,11 +1413,11 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  const accent = isDark ? "#90caf9" : "#1976d2";
-  const border = isDark ? "#ffffff12" : "#e8eaed";
-  const inputBg = isDark ? "#1a1a2e" : "#f8f9fa";
-  const textSub = isDark ? "#6b7280" : "#9ca3af";
-  const textMain = isDark ? "#e2e8f0" : "#1a1a2a";
+  const accent = isDark ? "var(--c-accent)" : "var(--c-accent)";
+  const border = isDark ? "rgba(255, 255, 255, 0.16)" : "rgba(0, 0, 0, 0.15)";
+  const inputBg = isDark ? "#161c25" : "#f8fafc";
+  const textSub = isDark ? "#94a3b8" : "#334155";
+  const textMain = isDark ? "#ffffff" : "#0f172a";
 
   useEffect(() => {
     const handler = (e) => {
@@ -1433,7 +1434,7 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
       {/* Label */}
       <div
         style={{
-          fontSize: "10px",
+          fontSize: "11px",
           fontWeight: 700,
           color: textSub,
           textTransform: "uppercase",
@@ -1457,13 +1458,13 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
             alignItems: "center",
             justifyContent: "space-between",
             padding: "10px 12px",
-            background: open ? (isDark ? "#22223a" : "#f0f4ff") : inputBg,
+            background: open ? (isDark ? "#1e2633" : "#f0f9ff") : inputBg,
             border: `1.5px solid ${open ? accent : border}`,
-            boxShadow: open ? `0 0 0 3px ${accent}22` : "none",
+            boxShadow: open ? `0 0 0 3px ${accent}33` : "none",
             borderRadius: open ? "10px 10px 0 0" : "10px",
             color: textMain,
             fontSize: "14px",
-            fontWeight: 600,
+            fontWeight: 700,
             cursor: "pointer",
             userSelect: "none",
             transition: "all 0.15s",
@@ -1508,18 +1509,18 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
               top: "100%",
               left: 0,
               right: 0,
-              background: isDark ? "#1a1a2e" : "#ffffff",
+              background: isDark ? "#161c25" : "#ffffff",
               border: `1.5px solid ${accent}`,
               borderTop: "none",
               borderRadius: "0 0 10px 10px",
               boxShadow: isDark
-                ? "0 8px 24px rgba(0,0,0,0.6)"
-                : "0 8px 24px rgba(0,0,0,0.12)",
+                ? "0 12px 30px rgba(0,0,0,0.7)"
+                : "0 12px 30px rgba(0,0,0,0.15)",
               zIndex: 9999,
               maxHeight: "200px",
               overflowY: "auto",
               scrollbarWidth: "thin",
-              scrollbarColor: `${isDark ? "#333" : "#ccc"} transparent`,
+              scrollbarColor: `${isDark ? "#334155" : "#cbd5e1"} transparent`,
             }}
           >
             {options.length === 0 ? (
@@ -1548,12 +1549,12 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
                     style={{
                       padding: "10px 14px",
                       fontSize: "14px",
-                      fontWeight: isSelected ? 700 : 500,
+                      fontWeight: isSelected ? 700 : 600,
                       color: isSelected ? accent : textMain,
                       background: isSelected
                         ? isDark
-                          ? `${accent}18`
-                          : `${accent}12`
+                          ? "rgba(34, 211, 238, 0.15)"
+                          : "rgba(2, 132, 199, 0.12)"
                         : "transparent",
                       borderBottom: !isLast ? `1px solid ${border}` : "none",
                       borderRadius: isLast ? "0 0 8px 8px" : "0",
@@ -1567,16 +1568,11 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
                     onMouseEnter={(e) => {
                       if (!isSelected)
                         e.currentTarget.style.background = isDark
-                          ? "#ffffff0a"
-                          : "#f5f5f5";
+                          ? "#1e2633"
+                          : "#f1f5f9";
                     }}
                     onMouseLeave={(e) => {
-                      if (!isSelected)
-                        e.currentTarget.style.background = isSelected
-                          ? isDark
-                            ? `${accent}18`
-                            : `${accent}12`
-                          : "transparent";
+                      if (!isSelected) e.currentTarget.style.background = "transparent";
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden", flex: 1 }}>
@@ -1611,18 +1607,18 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
                         style={{
                           background: "none",
                           border: "none",
-                          color: isDark ? "#ef4444" : "#dc2626",
+                          color: isDark ? "#f87171" : "#dc2626",
                           cursor: "pointer",
                           padding: "2px 4px",
                           borderRadius: "4px",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          opacity: 0.7,
+                          opacity: 0.8,
                           transition: "opacity 0.2s",
                         }}
                         onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.8")}
                       >
                         <svg
                           width="14"
@@ -1957,9 +1953,9 @@ const SimSelector = forwardRef(function SimSelector(
         >
           <span
             style={{
-              fontSize: "10px",
-              fontWeight: 700,
-              color: isDark ? "#6b7280" : "#9ca3af",
+              fontSize: "11px",
+              fontWeight: 800,
+              color: isDark ? "#ffffff" : "#0f172a",
               textTransform: "uppercase",
               letterSpacing: "1.2px",
             }}
@@ -1973,9 +1969,9 @@ const SimSelector = forwardRef(function SimSelector(
             style={{
               background: "transparent",
               border: "none",
-              color: isDark ? "#90caf9" : "#1976d2",
+              color: "var(--c-accent)",
               fontSize: "11px",
-              fontWeight: 600,
+              fontWeight: 700,
               cursor: "pointer",
               padding: "2px 4px",
               borderRadius: "4px",
@@ -2000,18 +1996,18 @@ const SimSelector = forwardRef(function SimSelector(
             style={{
               display: "flex",
               alignItems: "center",
-              background: isDark ? "#1a1a2e" : "#f8f9fa",
-              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              background: isDark ? "#161c25" : "#f8fafc",
+              border: `1.5px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)"}`,
               borderRadius: "8px",
-              padding: "5px 8px",
+              padding: "6px 8px",
               gap: "4px",
             }}
           >
             <span
               style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                color: isDark ? "#90caf9" : "#1976d2",
+                fontSize: "12px",
+                fontWeight: 800,
+                color: "var(--c-accent)",
               }}
             >
               X:
@@ -2027,14 +2023,14 @@ const SimSelector = forwardRef(function SimSelector(
                 width: "100%",
                 background: "transparent",
                 border: "none",
-                color: isDark ? "#e2e8f0" : "#1a1a2a",
-                fontSize: "12.5px",
-                fontWeight: 600,
+                color: isDark ? "#ffffff" : "#0f172a",
+                fontSize: "13px",
+                fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0.0"
             />
-            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>m</span>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
           </div>
 
           {/* Y Input */}
@@ -2042,18 +2038,18 @@ const SimSelector = forwardRef(function SimSelector(
             style={{
               display: "flex",
               alignItems: "center",
-              background: isDark ? "#1a1a2e" : "#f8f9fa",
-              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              background: isDark ? "#161c25" : "#f8fafc",
+              border: `1.5px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)"}`,
               borderRadius: "8px",
-              padding: "5px 8px",
+              padding: "6px 8px",
               gap: "4px",
             }}
           >
             <span
               style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                color: isDark ? "#90caf9" : "#1976d2",
+                fontSize: "12px",
+                fontWeight: 800,
+                color: "var(--c-accent)",
               }}
             >
               Y:
@@ -2069,14 +2065,14 @@ const SimSelector = forwardRef(function SimSelector(
                 width: "100%",
                 background: "transparent",
                 border: "none",
-                color: isDark ? "#e2e8f0" : "#1a1a2a",
-                fontSize: "12.5px",
-                fontWeight: 600,
+                color: isDark ? "#ffffff" : "#0f172a",
+                fontSize: "13px",
+                fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0.0"
             />
-            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>m</span>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
           </div>
 
           {/* Yaw Input */}
@@ -2084,18 +2080,18 @@ const SimSelector = forwardRef(function SimSelector(
             style={{
               display: "flex",
               alignItems: "center",
-              background: isDark ? "#1a1a2e" : "#f8f9fa",
-              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              background: isDark ? "#161c25" : "#f8fafc",
+              border: `1.5px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)"}`,
               borderRadius: "8px",
-              padding: "5px 8px",
+              padding: "6px 8px",
               gap: "4px",
             }}
           >
             <span
               style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                color: isDark ? "#90caf9" : "#1976d2",
+                fontSize: "12px",
+                fontWeight: 800,
+                color: "var(--c-accent)",
               }}
             >
               Yaw:
@@ -2111,14 +2107,14 @@ const SimSelector = forwardRef(function SimSelector(
                 width: "100%",
                 background: "transparent",
                 border: "none",
-                color: isDark ? "#e2e8f0" : "#1a1a2a",
-                fontSize: "12.5px",
-                fontWeight: 600,
+                color: isDark ? "#ffffff" : "#0f172a",
+                fontSize: "13px",
+                fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0"
             />
-            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>°</span>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>°</span>
           </div>
         </div>
       </div>
@@ -2604,10 +2600,10 @@ const PoseSingle = React.memo(function PoseSingle({ poseRef, field, unit, isAngl
   const fmt = typeof raw === 'number' ? (isAngle ? raw.toFixed(1) : raw.toFixed(2)) : '-';
   const disp = typeof raw === 'number' && isAngle ? `${fmt}°` : fmt;
   if (compact) return (
-    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-accent)' }}>{field.toUpperCase()} <strong>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}</span>
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-accent)' }}>{field.toUpperCase()} <strong style={{ fontWeight: 800 }}>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}</span>
   );
   return (
-    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 22, fontWeight: 700, color: 'var(--c-accent)' }}>{disp}<span style={{ fontSize: 12, marginLeft: 4, color: 'var(--c-text-3)' }}>{isAngle ? '' : unit}</span></span>
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 24, fontWeight: 800, color: 'var(--c-accent)' }}>{disp}<span style={{ fontSize: 13, marginLeft: 4, color: 'var(--c-text-2)', fontWeight: 600 }}>{isAngle ? '' : unit}</span></span>
   );
 });
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3301,9 +3297,9 @@ export default function DashboardView() {
                 <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                   {/* Tab header */}
                   <div style={{
-                    padding: '12px 16px 8px', fontFamily: 'var(--font-ui)', fontSize: 11,
-                    fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase',
-                    color: 'var(--c-text-3)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
+                    padding: '12px 16px 8px', fontFamily: 'var(--font-ui)', fontSize: 12,
+                    fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase',
+                    color: 'var(--c-text-1)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   }}>
                     <span>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</span>
@@ -3323,21 +3319,21 @@ export default function DashboardView() {
                         ].map(({ label, key, unit, isAngle }) => (
                           <div key={label} style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '8px 12px', borderRadius: 'var(--r-md)',
-                            background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                            border: '1px solid var(--c-border)',
+                            padding: '10px 14px', borderRadius: 'var(--r-md)',
+                            background: isDark ? '#161c25' : '#f8fafc',
+                            border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
                           }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>{label}</span>
+                            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--c-text-1)' }}>{label}</span>
                             <PoseSingle poseRef={poseRef} field={key} unit={unit} isAngle={isAngle} />
                           </div>
                         ))}
 
                         {/* Collision status — only in telemetry */}
                         <div style={{
-                          display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
                           borderRadius: 'var(--r-md)', border: `1px solid ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
                           background: collisionActive ? 'var(--c-danger-bg)' : 'var(--c-success-bg)',
-                          fontSize: 12, fontWeight: 700,
+                          fontSize: 13, fontWeight: 800,
                           color: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
                         }}>
                           <div style={{
@@ -3366,10 +3362,10 @@ export default function DashboardView() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {/* Compact odom strip */}
                         <div style={{
-                          display: 'flex', gap: 6, padding: '6px 10px',
-                          background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-                          borderRadius: 'var(--r-md)', border: '1px solid var(--c-border)',
-                          fontSize: 11, fontFamily: 'var(--font-mono)',
+                          display: 'flex', gap: 8, padding: '8px 12px',
+                          background: isDark ? '#161c25' : '#f8fafc',
+                          borderRadius: 'var(--r-md)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
+                          fontSize: 12, fontFamily: 'var(--font-mono)',
                         }}>
                           <PoseSingle poseRef={poseRef} field="x" unit="m" compact />
                           <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
@@ -3403,7 +3399,7 @@ export default function DashboardView() {
                       style={{
                         width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
                         borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
-                        color: activeTab === tab ? 'var(--c-accent)' : 'var(--c-text-3)',
+                        color: activeTab === tab ? 'var(--c-accent)' : 'var(--c-text-2)',
                         background: activeTab === tab ? 'var(--c-accent-bg)' : 'transparent',
                         transition: 'all var(--dur-fast) var(--ease-out)',
                       }}
@@ -3419,7 +3415,7 @@ export default function DashboardView() {
                     style={{
                       width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
-                      color: 'var(--c-text-3)', background: 'transparent',
+                      color: 'var(--c-text-2)', background: 'transparent',
                       transition: 'all var(--dur-fast) var(--ease-out)',
                     }}
                   >
