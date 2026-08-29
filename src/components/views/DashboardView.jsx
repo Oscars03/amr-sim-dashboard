@@ -433,6 +433,11 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     ctx.fillText("Y", 0, 0);
     ctx.restore();
 
+    ctx.restore(); // close the axis-widget transform opened above
+
+    // Scale bar -- screen-aligned in the bottom-left corner. Must be drawn
+    // after the restore above, or it inherits the widget's rotation (and the
+    // unbalanced save() leaked one canvas state per frame).
     const scaleColor = isDark ? "#000000" : "#ffffff";
     const barPx = Math.round(scale * view.zoom);
     const bx = 16.5;
