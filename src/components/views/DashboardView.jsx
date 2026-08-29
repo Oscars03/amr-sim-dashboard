@@ -63,10 +63,34 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
   const effectActiveRef = useRef(effectActive);
   const collisionActiveRef = useRef(collisionActive);
 
+  const [debugStats, setDebugStats] = useState({ fps: 0, rtf: "1.00" });
+  const frameDeltasRef = useRef([]);
+  const lastFrameTimeRef = useRef(0); // seeded on the first frame
+  const lastUiUpdateRef = useRef(0);
+  const odomSamplesRef = useRef([]);
+
+  const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
+  const [followRobot, setFollowRobot] = useState(false);
+
   // /odom (20 Hz) and /joint_states write their refs and call this instead of
   // setting React state, so a moving robot never reconciles the view tree.
   useImperativeHandle(ref, () => ({
     markDirty: () => { needsRedrawRef.current = true; },
+    resetView: () => {
+      setFollowRobot(false);
+      setView({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
+    },
+    zoomIn: () => {
+      setFollowRobot(false);
+      setView((v) => ({ ...v, zoom: Math.min(v.zoom * 1.25, 10) }));
+    },
+    zoomOut: () => {
+      setFollowRobot(false);
+      setView((v) => ({ ...v, zoom: Math.max(v.zoom / 1.25, 0.1) }));
+    },
+    toggleFollow: () => {
+      setFollowRobot((f) => !f);
+    },
   }), []);
 
   useEffect(() => {
@@ -82,7 +106,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       return () => cancelAnimationFrame(frame);
     } else {
       // Capped FPS: setInterval fires exactly N times/s, no wasted rAF callbacks
-      // ponytail: setInterval drifts ~1ms/tick vs rAF's vsync precision; fine for 20/60fps canvas
       const timer = setInterval(() => {
         const lowPowerMode = fpsLimit === 20;
         if (lowPowerMode && !needsRedrawRef.current && !effectActiveRef.current && !collisionActiveRef.current) return;
@@ -92,15 +115,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       return () => clearInterval(timer);
     }
   }, [fpsLimit]);
-
-  const [debugStats, setDebugStats] = useState({ fps: 0, rtf: "1.00" });
-  const frameDeltasRef = useRef([]);
-  const lastFrameTimeRef = useRef(0); // seeded on the first frame
-  const lastUiUpdateRef = useRef(0);
-  const odomSamplesRef = useRef([]);
-
-  const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
-  const [followRobot, setFollowRobot] = useState(false);
 
   // Mark dirty whenever a visual input that lives in React changes. Pose and
   // steering angle are refs now -- they signal redraw via markDirty().
@@ -2633,6 +2647,7 @@ export default function DashboardView() {
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showStatusToast, setShowStatusToast] = useState(false);
+  const [isFollowingRobot, setIsFollowingRobot] = useState(false);
   const toastTimerRef = useRef(null);
 
   const [notification, setNotification] = useState(null);
@@ -3262,20 +3277,95 @@ export default function DashboardView() {
               </button>
             </div>
 
-            {/* HUD top-right: View controls + Follow toggle */}
-            <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 5 }}>
-              {/* View mode hint */}
+            {/* HUD top-right: Interactive View Tools */}
+            <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', alignItems: 'center', gap: 6, zIndex: 5 }}>
               <div style={{
-                background: isDark ? 'rgba(17,22,29,0.80)' : 'rgba(255,255,255,0.88)',
-                backdropFilter: 'blur(8px)', borderRadius: 'var(--r-pill)',
-                border: '1px solid var(--c-border)', padding: '5px 12px',
-                display: 'flex', gap: 8, alignItems: 'center',
-                fontSize: 11, fontWeight: 600, color: 'var(--c-text-2)',
+                background: isDark ? 'rgba(17,22,29,0.88)' : 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(8px)', borderRadius: 'var(--r-lg)',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'}`,
+                padding: '4px 6px', display: 'flex', alignItems: 'center', gap: 4,
+                boxShadow: 'var(--shadow-sm)',
               }}>
-                <span>Rotate</span><span style={{ opacity: 0.3 }}>|</span>
-                <span>Pan</span><span style={{ opacity: 0.3 }}>|</span>
-                <span>Zoom</span><span style={{ opacity: 0.3 }}>|</span>
-                <span>Reset</span>
+                {/* Zoom In */}
+                <button
+                  onClick={() => { worldMapRef.current?.zoomIn(); setIsFollowingRobot(false); }}
+                  title="Zoom In (Scroll up)"
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700, fontSize: 16,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+
+                {/* Zoom Out */}
+                <button
+                  onClick={() => { worldMapRef.current?.zoomOut(); setIsFollowingRobot(false); }}
+                  title="Zoom Out (Scroll down)"
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700, fontSize: 16,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+
+                <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
+
+                {/* Reset View */}
+                <button
+                  onClick={() => { worldMapRef.current?.resetView(); setIsFollowingRobot(false); }}
+                  title="Reset View: 100% Zoom & Default Position (Double-click canvas)"
+                  style={{
+                    padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4,
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                    fontFamily: 'var(--font-ui)',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+                  </svg>
+                  <span>Reset</span>
+                </button>
+
+                <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
+
+                {/* Follow Robot Toggle */}
+                <button
+                  onClick={() => {
+                    worldMapRef.current?.toggleFollow();
+                    setIsFollowingRobot(prev => !prev);
+                  }}
+                  title="Follow Robot: auto-center viewport on moving robot"
+                  style={{
+                    padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 6,
+                    borderRadius: 'var(--r-md)', border: isFollowingRobot ? '1px solid var(--c-accent)' : '1px solid transparent',
+                    background: isFollowingRobot ? 'var(--c-accent-bg)' : 'transparent',
+                    color: isFollowingRobot ? 'var(--c-accent)' : 'var(--c-text-1)',
+                    cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                    fontFamily: 'var(--font-ui)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" />
+                    <line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" />
+                  </svg>
+                  <span>Follow</span>
+                </button>
               </div>
             </div>
           </div>
