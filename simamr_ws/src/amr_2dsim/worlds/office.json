@@ -1,5 +1,5 @@
 {
-  "name": "Office (16x12m Partitioned)",
+  "name": "Shape Room",
   "walls": [
     [[-8.0, -6.0], [8.0, -6.0]],
     [[8.0, -6.0], [8.0, 6.0]],

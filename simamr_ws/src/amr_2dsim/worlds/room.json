@@ -1,5 +1,5 @@
 {
-  "name": "Room (10x10m with Obstacle)",
+  "name": "Square Room",
   "walls": [
     [[-5.0, -5.0], [5.0, -5.0]],
     [[5.0, -5.0], [5.0, 5.0]],
