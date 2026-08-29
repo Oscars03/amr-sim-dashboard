@@ -383,8 +383,8 @@ export default function CreateRobotView({ onCreated }) {
   const showSteeringAngle = form.kinematic_model === 'ackermann';
 
   return (
-    <div style={{ display: 'flex', width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden', background: isDark ? '#08080c' : '#f0f2f5' }}>
-      <div style={{ width: '320px', minWidth: '320px', background: isDark ? '#12121c' : '#ffffff', borderRight: `1px solid ${border}`, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', zIndex: 10, boxShadow: '2px 0 12px rgba(0,0,0,0.1)' }}>
+    <div style={{ display: 'flex', flexDirection: 'row-reverse', width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden', background: isDark ? '#08080c' : '#f0f2f5' }}>
+      <div style={{ width: '320px', minWidth: '320px', background: isDark ? '#12121c' : '#ffffff', borderLeft: `1px solid ${border}`, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', zIndex: 10, boxShadow: '-2px 0 12px rgba(0,0,0,0.1)' }}>
         <div style={{ padding: '20px', borderBottom: `1px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', color: text, fontWeight: 700 }}>Create New Robot</h2>

@@ -590,18 +590,20 @@ export default function CreateWorldView() {
         <div className="toolbar-divider" />
 
         {/* Undo / Redo */}
-        <button onClick={handleUndo} disabled={historyIndex === 0} className="btn btn-icon-only" title="Undo">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M 8 4 L 4 8 L 8 12"/>
-            <path d="M 4 8 C 12 8, 16 11, 16 17"/>
-          </svg>
-        </button>
-        <button onClick={handleRedo} disabled={historyIndex === history.length - 1} className="btn btn-icon-only" title="Redo">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M 16 4 L 20 8 L 16 12"/>
-            <path d="M 20 8 C 12 8, 8 11, 8 17"/>
-          </svg>
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={handleUndo} disabled={historyIndex === 0} className="btn btn-icon-only" title="Undo" style={{ flex: 1 }}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M 8 4 L 4 8 L 8 12"/>
+              <path d="M 4 8 C 12 8, 16 11, 16 17"/>
+            </svg>
+          </button>
+          <button onClick={handleRedo} disabled={historyIndex === history.length - 1} className="btn btn-icon-only" title="Redo" style={{ flex: 1 }}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M 16 4 L 20 8 L 16 12"/>
+              <path d="M 20 8 C 12 8, 8 11, 8 17"/>
+            </svg>
+          </button>
+        </div>
 
         <div className="toolbar-divider" />
 
@@ -618,6 +620,7 @@ export default function CreateWorldView() {
             value={wallThickness} 
             onChange={(e) => setWallThickness(parseFloat(e.target.value))}
             className="toolbar-select"
+            style={{ flex: 1 }}
           >
             <option value={0.05}>Thin</option>
             <option value={0.12}>Normal</option>
@@ -666,8 +669,6 @@ export default function CreateWorldView() {
           </svg>
           <span className="btn-label">Clear All</span>
         </button>
-
-        <div style={{ flex: 1 }} />
 
         {/* World Name Input */}
         <div className="toolbar-input-wrap">
