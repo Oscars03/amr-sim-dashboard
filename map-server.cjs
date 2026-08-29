@@ -262,7 +262,14 @@ function killRosProcess() {
     rosProcess.once('exit', done);
 
     try {
-      process.kill(-rosProcess.pid, 'SIGINT');
+      // SIGINT the launch process ONLY, not the group. `ros2 launch` runs its
+      // own orderly shutdown, signalling each node in turn -- so signalling
+      // the group means every node gets SIGINT twice: once from us and once
+      // from launch. amr_sim_node handled the first and was then killed
+      // outright by the second, which is why every stop logged
+      // "process has died [exit code -2]" while the other nodes exited
+      // cleanly. The group-wide SIGKILL below stays as the safety net.
+      process.kill(rosProcess.pid, 'SIGINT');
     } catch (e) {
       console.warn('   SIGINT failed:', e.message);
       done();
