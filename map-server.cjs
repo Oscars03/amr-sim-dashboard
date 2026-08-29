@@ -813,7 +813,7 @@ function checkEnvironment() {
 
   let recommendedCommand = '';
   if (!hasRos2) {
-    recommendedCommand = `sudo apt update && sudo apt install -y software-properties-common curl gnupg && sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null && sudo apt update && sudo apt install -y ros-${distro}-ros-base ros-${distro}-rosbridge-suite ros-${distro}-robot-state-publisher`;
+    recommendedCommand = `sudo apt update && sudo apt install -y software-properties-common curl gnupg && sudo add-apt-repository -y universe && sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null && sudo apt update && sudo apt install -y ros-${distro}-ros-base ros-${distro}-rosbridge-suite ros-${distro}-robot-state-publisher`;
   } else if (missingPackages.length > 0) {
     recommendedCommand = `sudo apt update && sudo apt install -y ${missingPackages.join(' ')}`;
   } else if (!hasWorkspace) {
