@@ -63,12 +63,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
   const effectActiveRef = useRef(effectActive);
   const collisionActiveRef = useRef(collisionActive);
 
-  const [debugStats, setDebugStats] = useState({ fps: 0, rtf: "1.00" });
-  const frameDeltasRef = useRef([]);
-  const lastFrameTimeRef = useRef(0); // seeded on the first frame
-  const lastUiUpdateRef = useRef(0);
-  const odomSamplesRef = useRef([]);
-
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   const [followRobot, setFollowRobot] = useState(false);
 
@@ -87,6 +81,14 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     zoomOut: () => {
       setFollowRobot(false);
       setView((v) => ({ ...v, zoom: Math.max(v.zoom / 1.25, 0.1) }));
+    },
+    rotateLeft: () => {
+      setFollowRobot(false);
+      setView((v) => ({ ...v, rotation: v.rotation - Math.PI / 12 }));
+    },
+    rotateRight: () => {
+      setFollowRobot(false);
+      setView((v) => ({ ...v, rotation: v.rotation + Math.PI / 12 }));
     },
     toggleFollow: () => {
       setFollowRobot((f) => !f);
@@ -201,23 +203,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
   }, []);
 
 
-  // RTF (real-time factor) sampling: was a [pose] effect, now sampled in the
-  // draw loop off the pose ref -- one sample per new /odom stamp.
-  const lastSampledStampRef = useRef(null);
-  const sampleRtf = (pose) => {
-    if (!pose || pose.x === "-") return;
-    const stampSec = pose.stampSec ?? null;
-    if (stampSec !== null && stampSec === lastSampledStampRef.current) return;
-    lastSampledStampRef.current = stampSec;
-    const nowWall = performance.now() / 1000;
-    const samples = odomSamplesRef.current;
-    samples.push({
-      sim: stampSec !== null && stampSec > 0 ? stampSec : (samples.length > 0 ? samples[samples.length - 1].sim + 0.05 : nowWall),
-      wall: nowWall,
-    });
-    if (samples.length > 40) samples.shift();
-  };
-
   // Assigned in an effect, not during render: the frame loop only ever reads
   // drawRef.current, so it is enough that this lands before the next tick.
   const draw = () => {
@@ -226,7 +211,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
     const pose = poseRef.current;
     const steeringAngle = steeringRef.current;
-    sampleRtf(pose);
     const ctx = canvas.getContext("2d");
 
     const bgFill = isDark ? "#d3d3d3" : "#222222";
@@ -476,38 +460,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     ctx.font = "bold 12px sans-serif";
     ctx.textAlign = "left";
     ctx.fillText("1 m", bx + barPx + 8, by + 4);
-
-    const now = performance.now();
-    const frameDelta = now - lastFrameTimeRef.current;
-    lastFrameTimeRef.current = now;
-    if (frameDelta > 0 && frameDelta < 1000) {
-      frameDeltasRef.current.push(frameDelta);
-      if (frameDeltasRef.current.length > 60) frameDeltasRef.current.shift();
-    }
-
-    if (now - lastUiUpdateRef.current >= 300) {
-      lastUiUpdateRef.current = now;
-      const deltas = frameDeltasRef.current;
-      const avgDelta = deltas.length > 0 ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0;
-      const calculatedFps = avgDelta > 0 ? Math.round(1000 / avgDelta) : 0;
-
-      const samples = odomSamplesRef.current;
-      let calculatedRtf = 1.0;
-      if (samples.length >= 2) {
-        const first = samples[0];
-        const last = samples[samples.length - 1];
-        const dSim = last.sim - first.sim;
-        const dWall = last.wall - first.wall;
-        if (dWall > 0.05) {
-          calculatedRtf = Math.min(9.99, Math.max(0.0, dSim / dWall));
-        }
-      }
-
-      setDebugStats({
-        fps: calculatedFps,
-        rtf: calculatedRtf.toFixed(2),
-      });
-    }
   };
 
   // No dep array: `draw` closes over view/followRobot/mapData/..., so the loop
@@ -518,34 +470,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <div
-        style={{
-          position: "absolute",
-          top: "16px",
-          left: "16px",
-          fontSize: "11px",
-          fontFamily: "monospace",
-          color: isDark ? "rgba(248, 250, 252, 0.75)" : "rgba(15, 23, 42, 0.75)",
-          background: isDark
-            ? "rgba(15, 23, 42, 0.65)"
-            : "rgba(255, 255, 255, 0.75)",
-          backdropFilter: "blur(6px)",
-          border: isDark
-            ? "1px solid rgba(255, 255, 255, 0.12)"
-            : "1px solid rgba(15, 23, 42, 0.12)",
-          borderRadius: "8px",
-          padding: "5px 9px",
-          pointerEvents: "none",
-          zIndex: 5,
-          display: "flex",
-          flexDirection: "column",
-          gap: "2px",
-          lineHeight: "1.3",
-        }}
-      >
-        <div>FPS: {debugStats.fps}</div>
-        <div>RTF: {debugStats.rtf}</div>
-      </div>
       <canvas
         ref={canvasRef}
         width={width}
@@ -563,185 +487,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
           height: "100%",
         }}
       />
-      <button
-        type="button"
-        onClick={() => {
-          setFollowRobot((prev) => {
-            if (prev) {
-              const { panX, panY } = getFollowPan(poseRef.current, mapData, width, height, view);
-              setView((v) => ({ ...v, panX, panY }));
-            }
-            return !prev;
-          });
-        }}
-        style={{
-          position: "absolute",
-          top: "16px",
-          right: "16px",
-          background: followRobot
-            ? "#2563eb"
-            : isDark
-              ? "rgba(15, 23, 42, 0.88)"
-              : "rgba(255, 255, 255, 0.95)",
-          color: followRobot ? "#ffffff" : isDark ? "#f8fafc" : "#0f172a",
-          border: followRobot
-            ? "1.5px solid #60a5fa"
-            : isDark
-              ? "1.5px solid rgba(255, 255, 255, 0.25)"
-              : "1.5px solid rgba(15, 23, 42, 0.2)",
-          borderRadius: "10px",
-          padding: "8px 14px",
-          fontSize: "13px",
-          fontWeight: 700,
-          cursor: "pointer",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          boxShadow: followRobot
-            ? "0 4px 16px rgba(37, 99, 235, 0.45)"
-            : "0 4px 12px rgba(0, 0, 0, 0.2)",
-          transition: "all 0.2s ease",
-          zIndex: 5,
-        }}
-      >
-        <span style={{ fontSize: "14px" }}>🎯</span>
-        <span style={{ letterSpacing: "0.2px" }}>
-          {followRobot ? "Following Robot" : "Follow Robot"}
-        </span>
-        {followRobot && (
-          <span
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: "#4ade80",
-              boxShadow: "0 0 8px #4ade80",
-            }}
-          />
-        )}
-      </button>
-      <div
-        style={{
-          position: "absolute",
-          bottom: "16px",
-          right: "16px",
-          fontSize: "18px",
-          color: isDark ? "#ffffff" : "#000000",
-          background: isDark
-            ? "rgba(0, 0, 0, 0.5)"
-            : "rgba(255, 255, 255, 0.5)",
-          backdropFilter: "blur(4px)",
-          padding: "12px 20px",
-          borderRadius: "12px",
-          pointerEvents: "none",
-          fontWeight: 600,
-          display: "flex",
-          gap: "24px",
-          alignItems: "center",
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="5" y="2" width="14" height="20" rx="7"></rect>
-            <path d="M5 9h14"></path>
-            <path d="M12 2v7"></path>
-            <path d="M5 9V9A7 7 0 0 1 12 2v7H5z" fill="currentColor"></path>
-          </svg>
-          Rotate
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="5" y="2" width="14" height="20" rx="7"></rect>
-            <path d="M5 9h14"></path>
-            <path d="M12 2v7"></path>
-            <rect
-              x="10.5"
-              y="3"
-              width="3"
-              height="5"
-              rx="1"
-              fill="currentColor"
-            ></rect>
-          </svg>
-          Pan
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="5" y="2" width="14" height="20" rx="7"></rect>
-            <path d="M12 5v4"></path>
-            <path d="M10 7l2-2 2 2"></path>
-            <path d="M10 9l2 2 2-2"></path>
-          </svg>
-          Zoom
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg
-            width="30"
-            height="30"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="4" y="8" width="10" height="14" rx="5"></rect>
-            <path d="M4 14h10"></path>
-            <path d="M9 8v6"></path>
-            <path d="M5 5L2 2"></path>
-            <path d="M2 9L0 7"></path>
-            <rect
-              x="12"
-              y="1"
-              width="12"
-              height="9"
-              rx="2"
-              fill="currentColor"
-              stroke="none"
-            ></rect>
-            <text
-              x="13.5"
-              y="7.5"
-              fill={isDark ? "#000" : "#fff"}
-              stroke="none"
-              fontSize="7.5"
-              fontWeight="900"
-              fontFamily="sans-serif"
-            >
-              2X
-            </text>
-          </svg>
-          Reset
-        </span>
-      </div>
     </div>
   );
 }));
@@ -3283,9 +3028,47 @@ export default function DashboardView() {
                 background: isDark ? 'rgba(17,22,29,0.88)' : 'rgba(255,255,255,0.92)',
                 backdropFilter: 'blur(8px)', borderRadius: 'var(--r-lg)',
                 border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'}`,
-                padding: '4px 6px', display: 'flex', alignItems: 'center', gap: 4,
+                padding: '4px 6px', display: 'flex', alignItems: 'center', gap: 3,
                 boxShadow: 'var(--shadow-sm)',
               }}>
+                {/* Rotate Left */}
+                <button
+                  onClick={() => { worldMapRef.current?.rotateLeft(); setIsFollowingRobot(false); }}
+                  title="Rotate Left 15° (or Left-click drag)"
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="1 4 1 10 7 10" />
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                  </svg>
+                </button>
+
+                {/* Rotate Right */}
+                <button
+                  onClick={() => { worldMapRef.current?.rotateRight(); setIsFollowingRobot(false); }}
+                  title="Rotate Right 15° (or Left-click drag)"
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" />
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                  </svg>
+                </button>
+
+                <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
+
                 {/* Zoom In */}
                 <button
                   onClick={() => { worldMapRef.current?.zoomIn(); setIsFollowingRobot(false); }}
