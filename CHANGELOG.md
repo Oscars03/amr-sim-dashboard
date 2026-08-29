@@ -12,6 +12,8 @@ All notable changes to the IRiSH AMR Simulator Dashboard project will be documen
 ### Fixed
 - **ROS connection leak**: `App.jsx` created a new `ROSLIB.Ros` (and WebSocket) every second while rosbridge was unreachable without closing the previous one. The old connection is now torn down before each reconnect.
 - **Dashboard render-loop CPU / memory**: `/odom` (20 Hz) went through the Zustand store, re-rendering the whole `DashboardView` tree every frame — a parked robot alone held the renderer at ~90 % CPU and grew RSS to multiple GB. Pose and steering angle are now refs read straight by the canvas; `WorldMap` is memoized and redraws only on real movement; the odometry numbers are a small self-polling component. Idle renderer CPU drops from ~90 % to ~3 %.
+- **Follow Robot / resize not repainting**: after the render-loop change, toggling Follow Robot (or resizing the window) while the robot was stationary didn't repaint the map until the robot next moved. `followRobot` and the canvas size are now redraw triggers.
+- **Scale bar rotated with the view**: the "1 m" scale bar was drawn inside the axis-widget's `translate + rotate(view.rotation)` transform, which was also never `restore()`d — so the bar swung around and rotated as the map was rotated, and one canvas state leaked per frame. It is now screen-aligned in the bottom-left corner, and the draw loop's save/restore is balanced.
 
 ## [0.2.8] - 2026-07-31
 
