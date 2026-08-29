@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore';
-import SplitButton from '../common/SplitButton';
 import useIsCompact from '../../hooks/useIsCompact';
 import ImportRosMapModal from './ImportRosMapModal';
 import './CreateWorldView.css';
@@ -32,6 +31,48 @@ function buildTransformEditor(mapInfo, canvasW, canvasH, zoom, pan) {
       wy: origin_y + (canvasW - offsetX - cx + 0.5) / scale,
     }),
   };
+}
+
+function PopupToolButton({ icon, isActive, onClick, options, selectedValue, onSelect, title }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef();
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button 
+        onClick={() => { onClick(); setIsOpen(!isOpen); }} 
+        className={`btn tool-btn ${isActive ? "active" : ""}`} 
+        title={title}
+      >
+        {icon}
+        <div style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '9px', opacity: 0.6 }}>▼</div>
+      </button>
+      
+      {isOpen && (
+        <div style={{ position: 'absolute', right: '100%', top: 0, marginRight: '8px', background: 'var(--bg-app, #1a1a1a)', border: '1px solid var(--border-color, #333)', borderRadius: '8px', padding: '6px', zIndex: 100, display: 'flex', flexDirection: 'column', gap: '4px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
+          {options.map(o => (
+            <button 
+              key={o.value} 
+              onClick={() => { onSelect(o.value); setIsOpen(false); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', background: selectedValue === o.value ? 'var(--accent-blue, #1976d2)' : 'transparent', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              {o.icon && <span style={{ display: 'flex', alignItems: 'center' }}>{o.icon}</span>}
+              <span style={{ fontSize: '13px', fontWeight: 'bold' }}>{o.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function CreateWorldView() {
@@ -590,70 +631,63 @@ export default function CreateWorldView() {
         <div className="toolbar-divider" />
 
         {/* Undo / Redo */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={handleUndo} disabled={historyIndex === 0} className="btn btn-icon-only" title="Undo" style={{ flex: 1 }}>
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M 8 4 L 4 8 L 8 12"/>
-              <path d="M 4 8 C 12 8, 16 11, 16 17"/>
-            </svg>
-          </button>
-          <button onClick={handleRedo} disabled={historyIndex === history.length - 1} className="btn btn-icon-only" title="Redo" style={{ flex: 1 }}>
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M 16 4 L 20 8 L 16 12"/>
-              <path d="M 20 8 C 12 8, 8 11, 8 17"/>
-            </svg>
-          </button>
-        </div>
+        <button onClick={handleUndo} disabled={historyIndex === 0} className="btn btn-icon-only" title="Undo">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M 8 4 L 4 8 L 8 12"/>
+            <path d="M 4 8 C 12 8, 16 11, 16 17"/>
+          </svg>
+        </button>
+        <button onClick={handleRedo} disabled={historyIndex === history.length - 1} className="btn btn-icon-only" title="Redo">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M 16 4 L 20 8 L 16 12"/>
+            <path d="M 20 8 C 12 8, 8 11, 8 17"/>
+          </svg>
+        </button>
 
         <div className="toolbar-divider" />
 
         {/* Drawing Tools */}
-        <button onClick={() => setTool("wall")} className={`btn tool-btn ${tool === "wall" ? "active" : ""}`} title="Draw Wall">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="7" x2="5" y2="17"/><line x1="19" y1="7" x2="19" y2="17"/>
-          </svg>
-          <span className="btn-label">Draw Wall</span>
-        </button>
+        <PopupToolButton
+          title="Draw Wall (Thickness)"
+          icon={
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="7" x2="5" y2="17"/><line x1="19" y1="7" x2="19" y2="17"/>
+            </svg>
+          }
+          isActive={tool === "wall"}
+          onClick={() => setTool("wall")}
+          options={[
+            { value: 0.05, label: "Thin Wall (0.05m)" },
+            { value: 0.12, label: "Normal Wall (0.12m)" },
+            { value: 0.25, label: "Thick Wall (0.25m)" }
+          ]}
+          selectedValue={wallThickness}
+          onSelect={(val) => { setWallThickness(val); setTool("wall"); }}
+        />
 
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', width: '100%' }} title="Wall Thickness">
-          <svg width="24" height="24" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
-            <line x1="2" y1="12" x2="22" y2="12" stroke="var(--text-primary)" strokeWidth={wallThickness === 0.05 ? 2 : wallThickness === 0.12 ? 4 : 8} strokeLinecap="round" />
-          </svg>
-          <select 
-            value={wallThickness} 
-            onChange={(e) => setWallThickness(parseFloat(e.target.value))}
-            className="toolbar-select"
-            style={{ width: '100%', padding: '0 4px', fontSize: '11px', textAlign: 'center', height: '32px' }}
-          >
-            <option value={0.05}>Thin</option>
-            <option value={0.12}>Norm</option>
-            <option value={0.25}>Thick</option>
-          </select>
-        </div>
-
-        <SplitButton
+        <PopupToolButton
+          title="Eraser Mode"
           icon={
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 20H7L3 16l10-10 7 7-3.5 3.5"/><line x1="6" y1="14" x2="10" y2="18"/>
             </svg>
           }
-          label="Eraser"
           isActive={tool === "eraser"}
-          onMainClick={() => setTool("eraser")}
+          onClick={() => setTool("eraser")}
           options={[
             {
               value: "radius",
-              label: "Circle",
+              label: "Circle Radius",
               icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
             },
             {
               value: "box",
-              label: "Box",
+              label: "Box Selection",
               icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
             }
           ]}
-          selectedOption={eraserMode}
-          onOptionSelect={(val) => { setEraserMode(val); setTool("eraser"); }}
+          selectedValue={eraserMode}
+          onSelect={(val) => { setEraserMode(val); setTool("eraser"); }}
         />
 
         <button onClick={() => setShowImport(true)} className="btn" title="Import a ROS map (.pgm + .yaml)">
