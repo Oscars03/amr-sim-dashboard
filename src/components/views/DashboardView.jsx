@@ -1671,7 +1671,10 @@ const SimSelector = forwardRef(function SimSelector(
   };
   useImperativeHandle(ref, () => ({ fetchRobots }));
   const [switching, setSwitching] = useState(false);
-  const [switchMsg, setSwitchMsg] = useState("");
+  // Errors only. This used to hold the success text too ("Switching → ...",
+  // straight from the server), which just restated the status pill above and
+  // then sat on screen until the next launch.
+  const [switchError, setSwitchError] = useState("");
   const statusRef = useRef(null);
   const autoLaunched = useRef(false);
 
@@ -1725,23 +1728,25 @@ const SimSelector = forwardRef(function SimSelector(
         return;
       }
       setSwitching(true);
-      setSwitchMsg("");
+      setSwitchError("");
       try {
         const res = await fetch(SWITCH_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ robot, world }),
         });
-        const data = await res.json();
-        setSwitchMsg(data.message ?? (data.ok ? "Launching…" : "Error"));
-
-        // 🌟 ทริกเกอร์ onSwitch ทันทีเพื่อให้ isWaitingOdom = true
-        // ปุ่มจะได้เข้าสู่สถานะ 'Waiting' ทันทีโดยไม่ต้องรอให้ Polling ของ Server ส่งค่ากลับมา
-        if (data.ok && onSwitch) {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          // A rejected launch answers { error }, not { message } -- report the
+          // reason ("Robot file not found: x.urdf") rather than a bare "Error".
+          setSwitchError(data.error ?? data.message ?? `map server returned ${res.status}`);
+        } else if (onSwitch) {
+          // 🌟 ทริกเกอร์ onSwitch ทันทีเพื่อให้ isWaitingOdom = true
+          // ปุ่มจะได้เข้าสู่สถานะ 'Waiting' ทันทีโดยไม่ต้องรอให้ Polling ของ Server ส่งค่ากลับมา
           onSwitch(robot, world);
         }
       } catch (err) {
-        setSwitchMsg(`${err.message}`);
+        setSwitchError(`${err.message}`);
       } finally {
         // 🌟 หน่วงเวลาสั้นๆ ก่อนปิดสถานะ request เพื่อให้ Server เปลี่ยนสถานะเป็น launching ได้ทันเวลา
         setTimeout(() => setSwitching(false), 1500);
@@ -1780,7 +1785,7 @@ const SimSelector = forwardRef(function SimSelector(
           await doSwitch(defaultRobot, defaultWorld);
         }
       } catch (err) {
-        setSwitchMsg(`Cannot reach server: ${err.message}`);
+        setSwitchError(`Cannot reach server: ${err.message}`);
       }
     };
     init();
@@ -2005,10 +2010,11 @@ const SimSelector = forwardRef(function SimSelector(
           onClick={async () => {
             setSwitching(true); // เพิ่มเพื่อให้ปุ่ม Stop มีสถานะเชื่อมต่อที่เนียนขึ้น
             try {
+              setSwitchError("");
               await fetch(STOP_URL, { method: "POST" });
               if (onStop) onStop();
             } catch (err) {
-              setSwitchMsg(`${err.message}`);
+              setSwitchError(`${err.message}`);
             } finally {
               setTimeout(() => setSwitching(false), 1500);
             }
@@ -2036,20 +2042,21 @@ const SimSelector = forwardRef(function SimSelector(
         </button>
       </div>
 
-      {/* switchMsg was collected from every failure path -- "Cannot reach
-          server", /switch errors, /stop errors -- and then never rendered, so
-          the card just sat there looking idle. */}
-      {switchMsg && (
+      {/* Every failure path -- "Cannot reach server", /switch and /stop
+          errors -- used to be collected and then never rendered, so the card
+          just sat there looking idle. A successful launch shows nothing here;
+          the status pill in the header already says LAUNCHING / RUNNING. */}
+      {switchError && (
         <div
           style={{
             padding: "0 20px 14px",
             fontSize: "12px",
             lineHeight: 1.4,
-            color: displayStatus === "error" ? "#ef5350" : (isDark ? "#9ca3af" : "#6b7280"),
+            color: "#ef5350",
             wordBreak: "break-word",
           }}
         >
-          {switchMsg}
+          {switchError}
         </div>
       )}
 
