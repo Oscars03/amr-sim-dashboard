@@ -4,11 +4,16 @@ import React, {
   useState,
   useRef,
   useCallback,
+  useMemo,
   forwardRef,
   useImperativeHandle,
 } from "react";
+import { useNavigate } from "react-router-dom";
 import * as ROSLIB from "roslib";
 import UpdateProgressModal from '../ui/UpdateProgressModal';
+import ShortcutModal from '../ui/ShortcutModal';
+import CommandPalette from '../ui/CommandPalette';
+import CoachTour from '../ui/CoachTour';
 
 const HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
 const MAP_SERVER_URL = `http://${HOST}:3001/map`;
@@ -2624,7 +2629,9 @@ export default function DashboardView() {
     setActiveRobot,
     rosObj,
     showMonitor,
+    setShowMonitor,
     isDark,
+    setIsDark,
     isWaitingOdom,
     setIsWaitingOdom,
   } = useAppStore();
@@ -3015,8 +3022,143 @@ export default function DashboardView() {
     ),
   };
 
+  const navigate = useNavigate();
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+
+  // Global shortcuts listener for ? and Ctrl+K / Cmd+K
+  useEffect(() => {
+    const handleGlobalKey = (e) => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      const isInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+        return;
+      }
+
+      if (e.key === '?' && !isInput) {
+        e.preventDefault();
+        setShowShortcuts((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, []);
+
+  const paletteActions = useMemo(() => [
+    {
+      id: 'reset-pose',
+      label: 'Reset Robot Pose',
+      desc: 'Publish initialpose to reset robot to spawn location',
+      shortcut: 'Alt+R',
+      icon: '🔄',
+      run: () => {
+        if (!rosObj) return;
+        const { spawnPose: curSpawn } = useAppStore.getState();
+        const sx = Number(curSpawn?.x) || 0;
+        const sy = Number(curSpawn?.y) || 0;
+        const syawDeg = Number(curSpawn?.yaw) || 0;
+        const syawRad = (syawDeg * Math.PI) / 180;
+        const qz = Math.sin(syawRad / 2);
+        const qw = Math.cos(syawRad / 2);
+        const initPoseTopic = new ROSLIB.Topic({
+          ros: rosObj,
+          name: '/initialpose',
+          messageType: 'geometry_msgs/msg/PoseWithCovarianceStamped',
+        });
+        initPoseTopic.publish({
+          header: { frame_id: 'map' },
+          pose: {
+            pose: {
+              position: { x: sx, y: sy, z: 0.0 },
+              orientation: { x: 0.0, y: 0.0, z: qz, w: qw },
+            },
+            covariance: new Array(36).fill(0),
+          },
+        });
+      },
+    },
+    {
+      id: 'tab-telemetry',
+      label: 'Switch to Telemetry Tab',
+      desc: 'View live robot odometry and collision status',
+      icon: '📊',
+      run: () => { setTab('telemetry'); if (!inspOpen) setInspOpen(true); },
+    },
+    {
+      id: 'tab-setup',
+      label: 'Switch to Setup Tab',
+      desc: 'Configure robot, map, and spawn coordinates',
+      icon: '⚙️',
+      run: () => { setTab('setup'); if (!inspOpen) setInspOpen(true); },
+    },
+    {
+      id: 'tab-drive',
+      label: 'Switch to Drive Tab',
+      desc: 'Teleoperate robot using 3x3 directional keypad',
+      icon: '🎮',
+      run: () => { setTab('drive'); if (!inspOpen) setInspOpen(true); },
+    },
+    {
+      id: 'tab-console',
+      label: 'Switch to Console Tab',
+      desc: 'Inspect ROS 2 topics and raw JSON streams',
+      icon: '💻',
+      run: () => { setTab('console'); if (!inspOpen) setInspOpen(true); },
+    },
+    {
+      id: 'toggle-theme',
+      label: `Switch to ${isDark ? 'Light' : 'Dark'} Mode`,
+      desc: 'Toggle application color theme',
+      icon: isDark ? '☀️' : '🌙',
+      run: () => setIsDark(!isDark),
+    },
+    {
+      id: 'env-check',
+      label: 'Environment Check',
+      desc: 'Check ROS 2, rosbridge_server, and amr_2dsim packages',
+      icon: '🔍',
+      run: () => setShowEnvModal(true),
+    },
+    {
+      id: 'topic-monitor',
+      label: 'Toggle Topic Monitor',
+      desc: 'Open / close topic monitor overlay',
+      icon: '📈',
+      run: () => setShowMonitor(!showMonitor),
+    },
+    {
+      id: 'create-robot',
+      label: 'Create / Edit Robot',
+      desc: 'Open visual URDF robot builder',
+      icon: '🤖',
+      run: () => navigate('/create-robot'),
+    },
+    {
+      id: 'create-world',
+      label: 'Create / Edit World',
+      desc: 'Open 2D grid world map editor',
+      icon: '🗺️',
+      run: () => navigate('/create-world'),
+    },
+    {
+      id: 'shortcuts',
+      label: 'Keyboard Shortcuts Guide',
+      desc: 'Show all keyboard shortcuts for simulator',
+      shortcut: '?',
+      icon: '⌨️',
+      run: () => setShowShortcuts(true),
+    },
+  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, showMonitor, setShowMonitor, navigate]);
+
   return (
     <>
+      {/* ── Modals & Palettes ────────────────────────────────────────────── */}
+      <ShortcutModal isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} isDark={isDark} />
+      <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} isDark={isDark} actions={paletteActions} />
+      <CoachTour isDark={isDark} />
       {/* ── Toasts ──────────────────────────────────────────────────────── */}
       {showStatusToast && updateInfo && updateInfo.status !== 'downloading' && updateInfo.status !== 'downloaded' && (
         <div style={{
