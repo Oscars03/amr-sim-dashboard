@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore';
 import useIsCompact from '../../hooks/useIsCompact';
@@ -35,21 +36,34 @@ function buildTransformEditor(mapInfo, canvasW, canvasH, zoom, pan) {
 
 function PopupToolButton({ icon, isActive, onClick, options, selectedValue, onSelect, title }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
   const ref = useRef();
+  const menuRef = useRef();
 
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
+      const isInsideMenu = menuRef.current && menuRef.current.contains(e.target);
+      const isInsideBtn = ref.current && ref.current.contains(e.target);
+      if (!isInsideMenu && !isInsideBtn) setIsOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
+  const toggleOpen = () => {
+    if (!isOpen && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      setPos({ top: rect.top, right: window.innerWidth - rect.left + 12 });
+    }
+    onClick();
+    setIsOpen(!isOpen);
+  };
+
   return (
     <div style={{ position: 'relative' }} ref={ref}>
       <button 
-        onClick={() => { onClick(); setIsOpen(!isOpen); }} 
+        onClick={toggleOpen} 
         className={`btn tool-btn ${isActive ? "active" : ""}`} 
         title={title}
       >
@@ -57,8 +71,11 @@ function PopupToolButton({ icon, isActive, onClick, options, selectedValue, onSe
         <div style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '9px', opacity: 0.6 }}>▼</div>
       </button>
       
-      {isOpen && (
-        <div style={{ position: 'absolute', right: '100%', top: 0, marginRight: '8px', background: 'var(--bg-app, #1a1a1a)', border: '1px solid var(--border-color, #333)', borderRadius: '8px', padding: '6px', zIndex: 100, display: 'flex', flexDirection: 'column', gap: '4px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
+      {isOpen && createPortal(
+        <div 
+          ref={menuRef}
+          style={{ position: 'fixed', right: pos.right, top: pos.top, background: 'var(--bg-app, #1a1a1a)', border: '1px solid var(--border-color, #333)', borderRadius: '8px', padding: '6px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '4px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}
+        >
           {options.map(o => (
             <button 
               key={o.value} 
@@ -69,7 +86,8 @@ function PopupToolButton({ icon, isActive, onClick, options, selectedValue, onSe
               <span style={{ fontSize: '13px', fontWeight: 'bold' }}>{o.label}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
