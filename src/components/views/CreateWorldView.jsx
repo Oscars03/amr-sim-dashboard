@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore';
 import SplitButton from '../common/SplitButton';
@@ -302,7 +302,7 @@ export default function CreateWorldView() {
     }
   };
 
-  const handlePointerUp = (e) => {
+  const handlePointerUp = () => {
     if (isPanning) {
       setIsPanning(false);
       setLastPanPt(null);
@@ -356,15 +356,31 @@ export default function CreateWorldView() {
   };
 
   const drawStateRef = useRef({ walls, obstacles, isDrawing, startPt, curPt, isDark, transform, mapInfo, canvasSize, tool, eraserMode, eraserRadius, mouseWorldPos, isPanning });
-  drawStateRef.current = { walls, obstacles, isDrawing, startPt, curPt, isDark, transform, mapInfo, canvasSize, tool, eraserMode, eraserRadius, mouseWorldPos, isPanning };
-  
+  const needsRedrawRef = useRef(true);
+
+  // Mirror everything the canvas draws from into a ref, and flag a redraw.
+  // Every input above is React state, so "something changed" and "we
+  // re-rendered" are the same event -- which lets the frame loop below sit
+  // idle instead of repainting 60 times a second at rest. Done in an effect
+  // rather than during render: writing a ref mid-render is not allowed.
+  useEffect(() => {
+    drawStateRef.current = { walls, obstacles, isDrawing, startPt, curPt, isDark, transform, mapInfo, canvasSize, tool, eraserMode, eraserRadius, mouseWorldPos, isPanning };
+    needsRedrawRef.current = true;
+  });
+
   useEffect(() => {
     let animationFrameId;
 
     const renderCanvas = () => {
+      // Schedule first: the old order bailed out before rescheduling when the
+      // canvas was not mounted yet, which killed the loop for good.
+      animationFrameId = requestAnimationFrame(renderCanvas);
+      if (!needsRedrawRef.current) return;
+
       const ctx = canvasRef.current?.getContext("2d");
-      if (!ctx) return;
-      
+      if (!ctx) return; // stay dirty, try again next frame
+
+      needsRedrawRef.current = false;
       const state = drawStateRef.current;
       const { w, h } = state.canvasSize;
       
@@ -470,13 +486,13 @@ export default function CreateWorldView() {
       ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - 30); ctx.stroke();
       ctx.strokeStyle = "#44ff44";
       ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox - 30, oy); ctx.stroke();
-      
-      animationFrameId = requestAnimationFrame(renderCanvas);
     };
 
     renderCanvas();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize, walls, obstacles, isDrawing, startPt, curPt, isDark, transform, mapInfo, tool]);
+    // Everything the loop reads comes from drawStateRef, so it never needs
+    // to be torn down and rebuilt.
+  }, []);
 
   const validateClosedLoop = (walls) => {
     if (walls.length < 3) return false;

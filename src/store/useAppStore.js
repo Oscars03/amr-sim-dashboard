@@ -14,7 +14,7 @@ const useAppStore = create((set) => ({
   // Simulation Config
   activeWorld: 'room.json',
   setActiveWorld: (world) => set({ activeWorld: world }),
-  activeRobot: 'amr_flaregun.urdf',
+  activeRobot: 'amr.urdf',
   setActiveRobot: (robot) => set({ activeRobot: robot }),
   urdf: null,
   setUrdf: (urdf) => set({ urdf: urdf }),

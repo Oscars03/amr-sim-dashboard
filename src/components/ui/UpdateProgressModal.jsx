@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import './UpdateProgressModal.css';
 import iconCircleTransparent from '/icon_circle_transparent.png?url';
 

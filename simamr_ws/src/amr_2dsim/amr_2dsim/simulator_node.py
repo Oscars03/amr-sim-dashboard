@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Twist, TransformStamped, PoseWithCovarianceStamped
 from sensor_msgs.msg import LaserScan, Imu, JointState
 from std_msgs.msg import String, Bool, Float64, Empty
@@ -948,9 +949,19 @@ class AmrSimulator(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = AmrSimulator()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        # Ctrl-C, or the SIGINT the dashboard's map-server sends on stop.
+        # Without this the exception escaped main(), the process died from the
+        # signal instead of returning, and ros2 launch logged every single
+        # stop as "process has died [exit code -2]" -- noise that would hide a
+        # real crash. destroy_node()/shutdown() never ran either.
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

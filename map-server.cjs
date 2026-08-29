@@ -262,7 +262,14 @@ function killRosProcess() {
     rosProcess.once('exit', done);
 
     try {
-      process.kill(-rosProcess.pid, 'SIGINT');
+      // SIGINT the launch process ONLY, not the group. `ros2 launch` runs its
+      // own orderly shutdown, signalling each node in turn -- so signalling
+      // the group means every node gets SIGINT twice: once from us and once
+      // from launch. amr_sim_node handled the first and was then killed
+      // outright by the second, which is why every stop logged
+      // "process has died [exit code -2]" while the other nodes exited
+      // cleanly. The group-wide SIGKILL below stays as the safety net.
+      process.kill(rosProcess.pid, 'SIGINT');
     } catch (e) {
       console.warn('   SIGINT failed:', e.message);
       done();
@@ -710,27 +717,6 @@ app.delete('/api/robots/:fileName', (req, res) => {
     res.status(403).json({ error: 'Cannot delete built-in robot (Read-only on AppImage)' });
   } else {
     res.status(404).json({ error: 'File not found or could not be deleted' });
-  }
-});
-
-// GET /api/worlds/:fileName
-app.get('/api/worlds/:fileName', (req, res) => {
-  const shareDir = getShareDir();
-  if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
-  const { fileName } = req.params;
-  if (!fileName || !fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..')) {
-    return res.status(400).json({ error: 'Invalid file name' });
-  }
-  const filePath = path.join(shareDir, 'worlds', fileName);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
-  }
-  try {
-    const data = fs.readFileSync(filePath, 'utf8');
-    res.json(JSON.parse(data));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to read world file' });
   }
 });
 

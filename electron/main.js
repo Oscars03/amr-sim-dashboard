@@ -106,7 +106,7 @@ function checkAutoUpdate() {
     // The front-end custom UI now displays a confirmation popup and calls start-download
   })
 
-  autoUpdater.on('update-not-available', (info) => {
+  autoUpdater.on('update-not-available', () => {
     win?.webContents.send('update-status', { status: 'not-available', message: 'App is up to date.' })
   })
 

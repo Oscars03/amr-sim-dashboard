@@ -72,8 +72,6 @@ export default function CreateRobotView({ onCreated }) {
 
   const [form, setForm] = useState({
     name: '', kinematic_model: 'diff_drive', color: '#2196f3',
-    spawn_x: 0.0, spawn_y: 0.0, spawn_yaw: 0.0,
-    max_linear_vel: 1.0, max_angular_vel: 1.0,
     geometry_type: 'rectangle',
     body_length_x: 0.70, body_width_y: 0.50, body_size: 0.70, body_radius: 0.35, body_height: 0.20,
     wheel_base: 0.50, wheel_radius: 0.05, wheel_width: 0.03, axle_track: 0.40, max_steering_angle: 30,
@@ -99,19 +97,30 @@ export default function CreateRobotView({ onCreated }) {
   const canvasRef = useRef(null);
 
   const formRef = useRef(form);
-  useEffect(() => { formRef.current = form; }, [form]);
   const viewRef = useRef({ zoom: 1, panX: 0, panY: 0 });
   const dragRef = useRef({ active: false, lastX: 0, lastY: 0 });
+  // The preview is static between edits, so the frame loop below draws only
+  // when something actually moved. zoom/pan live in a ref (no re-render), so
+  // their handlers raise this flag themselves.
+  const needsRedrawRef = useRef(true);
+  const canvasSizeRef = useRef({ w: 0, h: 0 });
+
+  useEffect(() => {
+    formRef.current = form;
+    needsRedrawRef.current = true;
+  }, [form]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    needsRedrawRef.current = true; // isDark is baked into the closure below
 
     const onWheel = (e) => {
       e.preventDefault();
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       viewRef.current.zoom = Math.max(0.1, Math.min(viewRef.current.zoom * factor, 10));
+      needsRedrawRef.current = true;
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
@@ -121,6 +130,7 @@ export default function CreateRobotView({ onCreated }) {
       viewRef.current.panX += e.clientX - dragRef.current.lastX;
       viewRef.current.panY += e.clientY - dragRef.current.lastY;
       dragRef.current.lastX = e.clientX; dragRef.current.lastY = e.clientY;
+      needsRedrawRef.current = true;
     };
     const onUp = (e) => { dragRef.current.active = false; if (e.target && e.target.style) e.target.style.cursor = 'grab'; };
 
@@ -129,15 +139,28 @@ export default function CreateRobotView({ onCreated }) {
     window.addEventListener('mouseup', onUp);
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 
+    // Watch the container instead of measuring it every frame -- the old
+    // getBoundingClientRect() call forced a layout on all 60 frames a second.
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      canvasSizeRef.current = { w: Math.round(width), h: Math.round(height) };
+      needsRedrawRef.current = true;
+    });
+    ro.observe(canvas.parentElement);
+
     let animationFrameId;
     const PX_PER_M = 100;
 
     const render = () => {
+      animationFrameId = requestAnimationFrame(render);
+      if (!needsRedrawRef.current) return;
+      needsRedrawRef.current = false;
+
       const f = formRef.current;
       const v = viewRef.current;
-      const rect = canvas.parentElement.getBoundingClientRect();
-      if (canvas.width !== rect.width || canvas.height !== rect.height) {
-        canvas.width = rect.width; canvas.height = rect.height;
+      const { w: cw, h: ch } = canvasSizeRef.current;
+      if (cw > 0 && (canvas.width !== cw || canvas.height !== ch)) {
+        canvas.width = cw; canvas.height = ch;
       }
       const W = canvas.width; const H = canvas.height;
       const ox = W / 2 + v.panX;
@@ -299,13 +322,12 @@ export default function CreateRobotView({ onCreated }) {
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
 
       ctx.restore(); // Restore from ROS coordinate frame
-
-      animationFrameId = requestAnimationFrame(render);
     };
     render();
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      ro.disconnect();
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('mousedown', onDown);
       window.removeEventListener('mousemove', onMove);

@@ -14,7 +14,7 @@ describe('useAppStore', () => {
     expect(state.rosObj).toBeNull()
     expect(state.rosStatus).toBe('Disconnected')
     expect(state.activeWorld).toBe('room.json')
-    expect(state.activeRobot).toBe('amr_flaregun.urdf')
+    expect(state.activeRobot).toBe('amr.urdf')
     expect(state.urdf).toBeNull()
     expect(state.mapName).toBe('')
     expect(state.mapData).toBeNull()

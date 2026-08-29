@@ -17,9 +17,6 @@ const ROBOTS_URL = `http://${HOST}:3001/robots`;
 const STATUS_URL = `http://${HOST}:3001/status`;
 const SWITCH_URL = `http://${HOST}:3001/switch`;
 const STOP_URL = `http://${HOST}:3001/stop`;
-const SAVE_MAP_URL = `http://${HOST}:3001/save_map`;
-const ROSBRIDGE_URL = `ws://${HOST}:9090`;
-const FETCH_INTERVAL = 3000;
 const STATUS_INTERVAL = 1500;
 // Stop the sim if the robot hasn't moved for this long, then wait for the
 // user to Launch again. Guards against a dashboard left running overnight
@@ -30,7 +27,6 @@ const IDLE_MOVE_EPS_M = 0.02;   // metres
 const IDLE_MOVE_EPS_DEG = 1.0;  // degrees
 
 import { parseURDF, drawRobot, normaliseMap, buildTransform } from '../../utils/robot';
-import MapEditor from './MapEditor';
 
 function getFollowPan(pose, mapData, width, height, view) {
   if (!pose || pose.x === "-" || !mapData?.map_info) return { panX: view.panX, panY: view.panY };
@@ -94,8 +90,7 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   const [debugStats, setDebugStats] = useState({ fps: 0, rtf: "1.00" });
   const frameDeltasRef = useRef([]);
-  const lastFrameTimeRef = useRef(performance.now());
-  const lastDrawTimeRef = useRef(0);
+  const lastFrameTimeRef = useRef(0); // seeded on the first frame
   const lastUiUpdateRef = useRef(0);
   const odomSamplesRef = useRef([]);
 
@@ -204,9 +199,9 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     if (samples.length > 40) samples.shift();
   };
 
-  drawRef.current = () => {
-    const renderStart = performance.now();
-
+  // Assigned in an effect, not during render: the frame loop only ever reads
+  // drawRef.current, so it is enough that this lands before the next tick.
+  const draw = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -495,6 +490,12 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       });
     }
   };
+
+  // No dep array: `draw` closes over view/followRobot/mapData/..., so the loop
+  // must always be handed the newest one.
+  useEffect(() => {
+    drawRef.current = draw;
+  });
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
@@ -1670,7 +1671,10 @@ const SimSelector = forwardRef(function SimSelector(
   };
   useImperativeHandle(ref, () => ({ fetchRobots }));
   const [switching, setSwitching] = useState(false);
-  const [switchMsg, setSwitchMsg] = useState("");
+  // Errors only. This used to hold the success text too ("Switching → ...",
+  // straight from the server), which just restated the status pill above and
+  // then sat on screen until the next launch.
+  const [switchError, setSwitchError] = useState("");
   const statusRef = useRef(null);
   const autoLaunched = useRef(false);
 
@@ -1724,23 +1728,25 @@ const SimSelector = forwardRef(function SimSelector(
         return;
       }
       setSwitching(true);
-      setSwitchMsg("");
+      setSwitchError("");
       try {
         const res = await fetch(SWITCH_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ robot, world }),
         });
-        const data = await res.json();
-        setSwitchMsg(data.message ?? (data.ok ? "Launching…" : "Error"));
-
-        // 🌟 ทริกเกอร์ onSwitch ทันทีเพื่อให้ isWaitingOdom = true
-        // ปุ่มจะได้เข้าสู่สถานะ 'Waiting' ทันทีโดยไม่ต้องรอให้ Polling ของ Server ส่งค่ากลับมา
-        if (data.ok && onSwitch) {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          // A rejected launch answers { error }, not { message } -- report the
+          // reason ("Robot file not found: x.urdf") rather than a bare "Error".
+          setSwitchError(data.error ?? data.message ?? `map server returned ${res.status}`);
+        } else if (onSwitch) {
+          // 🌟 ทริกเกอร์ onSwitch ทันทีเพื่อให้ isWaitingOdom = true
+          // ปุ่มจะได้เข้าสู่สถานะ 'Waiting' ทันทีโดยไม่ต้องรอให้ Polling ของ Server ส่งค่ากลับมา
           onSwitch(robot, world);
         }
       } catch (err) {
-        setSwitchMsg(`${err.message}`);
+        setSwitchError(`${err.message}`);
       } finally {
         // 🌟 หน่วงเวลาสั้นๆ ก่อนปิดสถานะ request เพื่อให้ Server เปลี่ยนสถานะเป็น launching ได้ทันเวลา
         setTimeout(() => setSwitching(false), 1500);
@@ -1764,7 +1770,7 @@ const SimSelector = forwardRef(function SimSelector(
         const worlds = worldData.worlds ?? [];
         setRobotList(robots);
         setWorldList(worlds);
-        const defaultRobot = statusData.robot || robots.find(r => r.name === 'amr_flaregun.urdf')?.name || robots[0]?.name || "";
+        const defaultRobot = statusData.robot || robots.find(r => r.name === 'amr.urdf')?.name || robots[0]?.name || "";
         const defaultWorld = statusData.world || worlds[0]?.name || "";
         setSelRobot(defaultRobot);
         setSelWorld(defaultWorld);
@@ -1779,7 +1785,7 @@ const SimSelector = forwardRef(function SimSelector(
           await doSwitch(defaultRobot, defaultWorld);
         }
       } catch (err) {
-        setSwitchMsg(`Cannot reach server: ${err.message}`);
+        setSwitchError(`Cannot reach server: ${err.message}`);
       }
     };
     init();
@@ -2004,10 +2010,11 @@ const SimSelector = forwardRef(function SimSelector(
           onClick={async () => {
             setSwitching(true); // เพิ่มเพื่อให้ปุ่ม Stop มีสถานะเชื่อมต่อที่เนียนขึ้น
             try {
+              setSwitchError("");
               await fetch(STOP_URL, { method: "POST" });
               if (onStop) onStop();
             } catch (err) {
-              setSwitchMsg(`${err.message}`);
+              setSwitchError(`${err.message}`);
             } finally {
               setTimeout(() => setSwitching(false), 1500);
             }
@@ -2034,6 +2041,24 @@ const SimSelector = forwardRef(function SimSelector(
           Stop
         </button>
       </div>
+
+      {/* Every failure path -- "Cannot reach server", /switch and /stop
+          errors -- used to be collected and then never rendered, so the card
+          just sat there looking idle. A successful launch shows nothing here;
+          the status pill in the header already says LAUNCHING / RUNNING. */}
+      {switchError && (
+        <div
+          style={{
+            padding: "0 20px 14px",
+            fontSize: "12px",
+            lineHeight: 1.4,
+            color: "#ef5350",
+            wordBreak: "break-word",
+          }}
+        >
+          {switchError}
+        </div>
+      )}
 
       <style>{`
         @keyframes simPulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
@@ -2378,9 +2403,13 @@ function NotificationModal({ notification, onClose, isDark }) {
 const PoseReadout = React.memo(function PoseReadout({ poseRef, isDark }) {
   // Polls the live pose ref a few times a second -- only this small component
   // re-renders, never the dashboard.
-  const [pose, setPose] = useState(() => poseRef.current);
+  // Seeded with the placeholder rather than poseRef.current -- reading a ref
+  // during render is not allowed, and the first poll 150 ms later fills it in.
+  const [pose, setPose] = useState({ x: "-", y: "-", theta: "-" });
   useEffect(() => {
-    let prev = poseRef.current;
+    // null, not poseRef.current: the first tick must sync even for a robot
+    // that is already parked and will never change the ref again.
+    let prev = null;
     const iv = setInterval(() => {
       if (poseRef.current !== prev) {
         prev = poseRef.current;
@@ -2465,8 +2494,6 @@ const PoseReadout = React.memo(function PoseReadout({ poseRef, isDark }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DashboardView() {
   const {
-    rosStatus: status,
-    setRosStatus: setStatus,
     mapData,
     setMapData,
     mapName,
@@ -2480,18 +2507,14 @@ export default function DashboardView() {
     activeRobot,
     setActiveRobot,
     rosObj,
-    setRosObj,
     showMonitor,
-    setShowMonitor,
     isDark,
-    setIsDark,
     isWaitingOdom,
     setIsWaitingOdom,
   } = useAppStore();
   const simSelectorRef = useRef(null);
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [updateInfo, setUpdateInfo] = useState(null);
-  const [isSpinningUpdate, setIsSpinningUpdate] = useState(false);
   const [showStatusToast, setShowStatusToast] = useState(false);
   const toastTimerRef = useRef(null);
 
@@ -2524,7 +2547,13 @@ export default function DashboardView() {
     setIdleStopped(false); // no-op re-render if already false
   }, []);
 
-  useEffect(() => { markActive(); }, [markActive]); // seed the clock on mount
+  // Seed the idle clock on mount. markActive() would do it, but it also calls
+  // setIdleStopped, and a setState straight from an effect body is a cascading
+  // render -- the refs are all this needs.
+  useEffect(() => {
+    lastMoveRef.current = Date.now();
+    idleStopFiredRef.current = false;
+  }, []);
 
   // Movement detector, called from the /odom handler -- a stationary robot
   // still streams /odom, so compare successive poses, not message arrival.
@@ -2560,29 +2589,9 @@ export default function DashboardView() {
     return () => clearInterval(iv);
   }, [setIsWaitingOdom]);
 
-  const showNotification = (title, message, type = "info", onConfirm = null) => {
-    setNotification({ title, message, type, onConfirm });
-  };
-
-  const triggerUpdateCheck = () => {
-    setIsSpinningUpdate(true);
-    setTimeout(() => setIsSpinningUpdate(false), 1200);
-
-    setShowStatusToast(true);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => {
-      setShowStatusToast(false);
-    }, 10000);
-
-    if (window.electronAPI) {
-      window.electronAPI.checkForUpdates();
-    } else {
-      setUpdateInfo({ status: "checking", message: "Checking for updates..." });
-      setTimeout(() => {
-        setUpdateInfo({ status: "latest", message: "No update available." });
-      }, 1500);
-    }
-  };
+  // The manual update check lives in Header (its own handleUpdate); the copy
+  // that used to sit here was never wired to anything. Update toasts still
+  // arrive through the onUpdateStatus subscription below.
 
   useEffect(() => {
     if (window.electronAPI) {
@@ -2627,9 +2636,7 @@ export default function DashboardView() {
     };
   }, []);
 
-  const rosRef = useRef(null);
   const odomRef = useRef(null);
-  const fetchRef = useRef(null);
 
 
 
@@ -2733,7 +2740,7 @@ export default function DashboardView() {
       collisionTopic.unsubscribe();
       jointStatesTopic.unsubscribe();
     };
-  }, [rosObj, noteMovement]);
+  }, [rosObj, noteMovement, setIsWaitingOdom]);
 
   // Both fetchers take the file explicitly and depend on nothing, so their
   // identity is stable. They used to fall back to activeWorld/activeRobot,
@@ -2819,16 +2826,6 @@ export default function DashboardView() {
 
   const isNarrow = winSize.w < 900; // stack vertically
   const isShort = winSize.h < 600; // compress padding
-
-  const rosConnected = status.includes("Connected");
-  const mapBadgeText =
-    mapStatus === "ok"
-      ? "Loaded"
-      : mapStatus === "loading"
-        ? "Loading"
-        : mapStatus === "error"
-          ? "Error"
-          : "Waiting";
 
   const S = {
     app: {
@@ -3250,8 +3247,29 @@ export default function DashboardView() {
                 >
                   World:{" "}
                   <span style={{ color: isDark ? "#fff" : "#111" }}>
-                    {mapName || "Loading..."}
+                    {mapStatus === "error"
+                      ? (activeWorld || "unknown")
+                      : mapName || "Loading..."}
                   </span>
+                  {mapStatus === "error" && (
+                    <span
+                      title="The map server could not load this world"
+                      style={{
+                        marginLeft: "8px",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        letterSpacing: "0.5px",
+                        color: "#ef5350",
+                        border: "1px solid #ef535066",
+                        background: "#ef535015",
+                        borderRadius: "6px",
+                        padding: "2px 7px",
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      LOAD FAILED
+                    </span>
+                  )}
                 </div>
                 <button
                   onClick={() => {
