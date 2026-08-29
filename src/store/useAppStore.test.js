@@ -19,7 +19,6 @@ describe('useAppStore', () => {
     expect(state.mapName).toBe('')
     expect(state.mapData).toBeNull()
     expect(state.mapStatus).toBe('idle')
-    expect(state.pose).toEqual({ x: '-', y: '-', theta: '-' })
     expect(state.isWaitingOdom).toBe(false)
     expect(state.showMonitor).toBe(false)
     expect(state.appVersion).toBe('0.2.0')
@@ -37,7 +36,6 @@ describe('useAppStore', () => {
     ['setMapName', 'mapName', 'My Map'],
     ['setMapData', 'mapData', { walls: [] }],
     ['setMapStatus', 'mapStatus', 'loading'],
-    ['setPose', 'pose', { x: 1, y: 2, theta: 3 }],
     ['setIsWaitingOdom', 'isWaitingOdom', true],
     ['setShowMonitor', 'showMonitor', true],
     ['setAppVersion', 'appVersion', '1.0.0'],
