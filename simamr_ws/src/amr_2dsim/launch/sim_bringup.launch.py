@@ -16,7 +16,7 @@ def generate_launch_description():
     pkg_name  = 'amr_2dsim'
     pkg_share = get_package_share_directory(pkg_name)
 
-    default_urdf  = os.path.join(pkg_share, 'urdf',   'amr_flaregun.urdf')
+    default_urdf  = os.path.join(pkg_share, 'urdf',   'amr.urdf')
     default_world = os.path.join(pkg_share, 'worlds', 'room.json')
 
     declare_urdf = DeclareLaunchArgument(

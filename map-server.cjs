@@ -713,27 +713,6 @@ app.delete('/api/robots/:fileName', (req, res) => {
   }
 });
 
-// GET /api/worlds/:fileName
-app.get('/api/worlds/:fileName', (req, res) => {
-  const shareDir = getShareDir();
-  if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
-  const { fileName } = req.params;
-  if (!fileName || !fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..')) {
-    return res.status(400).json({ error: 'Invalid file name' });
-  }
-  const filePath = path.join(shareDir, 'worlds', fileName);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found' });
-  }
-  try {
-    const data = fs.readFileSync(filePath, 'utf8');
-    res.json(JSON.parse(data));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to read world file' });
-  }
-});
-
 // DELETE /api/worlds/:fileName
 app.delete('/api/worlds/:fileName', (req, res) => {
   const { fileName } = req.params;

@@ -91,7 +91,7 @@ app.get('/robots', (req, res) => {
 // GET /urdf?file=amr.urdf
 // ═════════════════════════════════════════════════════════════════════════════
 app.get('/urdf', (req, res) => {
-  const file     = path.basename(req.query.file || 'amr_flaregun.urdf');
+  const file     = path.basename(req.query.file || 'amr.urdf');
   const filePath = path.join(URDF_DIR, file);
   if (!fs.existsSync(filePath)) {
     return res.status(404).send('URDF not found');

@@ -211,12 +211,9 @@ export function drawRobot(
   steeringAngle = null
 ) {
   const { shapes, maxR, config } = urdf ?? { shapes: [], maxR: 0.2, config: null };
-  const labelR = Math.max(10, maxR * scale);
   const kinematicModel = config?.kinematicModel ?? "diff_drive";
 
-  const textColor = isDark ? "#000000" : "#ffffff";
   const lineColor = isDark ? "#000000" : "#ffffff";
-  const coordColor = isDark ? "#000652" : "#3ed6fc";
 
   ctx.save();
   ctx.translate(rx, ry);
