@@ -29,17 +29,42 @@ def generate_launch_description():
         default_value=default_world,
         description='Full path to world JSON file',
     )
+    declare_initial_x = DeclareLaunchArgument(
+        'initial_x',
+        default_value='0.0',
+        description='Initial spawn X position in meters',
+    )
+    declare_initial_y = DeclareLaunchArgument(
+        'initial_y',
+        default_value='0.0',
+        description='Initial spawn Y position in meters',
+    )
+    declare_initial_yaw = DeclareLaunchArgument(
+        'initial_yaw',
+        default_value='0.0',
+        description='Initial spawn Yaw angle in radians',
+    )
 
-    urdf_file  = LaunchConfiguration('urdf_file')
-    world_file = LaunchConfiguration('world_file')
+    urdf_file   = LaunchConfiguration('urdf_file')
+    world_file  = LaunchConfiguration('world_file')
+    initial_x   = LaunchConfiguration('initial_x')
+    initial_y   = LaunchConfiguration('initial_y')
+    initial_yaw = LaunchConfiguration('initial_yaw')
 
     def create_nodes(context):
         urdf_path  = context.perform_substitution(urdf_file)
         world_path = context.perform_substitution(world_file)
+        try:
+            init_x = float(context.perform_substitution(initial_x))
+            init_y = float(context.perform_substitution(initial_y))
+            init_yaw = float(context.perform_substitution(initial_yaw))
+        except (ValueError, TypeError):
+            init_x, init_y, init_yaw = 0.0, 0.0, 0.0
 
         print(f'\n{"="*55}')
         print(f'  🤖 Robot : {os.path.basename(urdf_path)}')
         print(f'  🌍 World : {os.path.basename(world_path)}')
+        print(f'  📍 Spawn : ({init_x:.2f}, {init_y:.2f}, yaw={init_yaw:.3f} rad)')
         print(f'{"="*55}\n')
 
         with open(urdf_path, 'r') as f:
@@ -59,7 +84,11 @@ def generate_launch_description():
             executable = 'amr_sim_node',
             name       = 'amr_simulator',
             output     = 'screen',
-            parameters = [{'map_file': world_path, 'urdf_file': urdf_path}],
+            parameters = [{
+                'map_file': world_path,
+                'urdf_file': urdf_path,
+                'initial_pose': [init_x, init_y, init_yaw],
+            }],
         )
 
         rosbridge = Node(
@@ -80,6 +109,9 @@ def generate_launch_description():
     return LaunchDescription([
         declare_urdf,
         declare_world,
+        declare_initial_x,
+        declare_initial_y,
+        declare_initial_yaw,
         set_map_env,
         set_urdf_env,
         OpaqueFunction(function=create_nodes),

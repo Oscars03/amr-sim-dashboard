@@ -66,6 +66,7 @@ app.use(express.json());
 let currentState = {
   robot: 'amr.urdf',
   world: 'room.json',
+  spawnPose: { x: 0.0, y: 0.0, yaw: 0.0 },
   status: 'idle',   // idle | launching | running | stopping | error
   pid: null,
   launchedAt: null,
@@ -289,8 +290,12 @@ function killRosProcess() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Launch ROS
 // ─────────────────────────────────────────────────────────────────────────────
-function launchRos(shareDir, urdfPath, worldPath) {
-  
+function launchRos(shareDir, urdfPath, worldPath, spawnPose = { x: 0, y: 0, yaw: 0 }) {
+  const spawnX = Number(spawnPose?.x) || 0;
+  const spawnY = Number(spawnPose?.y) || 0;
+  const spawnYawDeg = Number(spawnPose?.yaw) || 0;
+  const spawnYawRad = (spawnYawDeg * Math.PI) / 180;
+
   console.log('\n' + '═'.repeat(55));
   console.log('🚀 launchRos() called [MULTI-DISTRO READY]');
   console.log('═'.repeat(55));
@@ -298,6 +303,7 @@ function launchRos(shareDir, urdfPath, worldPath) {
   console.log(`shareDir  : ${shareDir}`);
   console.log(`urdfPath  : ${urdfPath}`);
   console.log(`worldPath : ${worldPath}`);
+  console.log(`spawnPose : (x=${spawnX}, y=${spawnY}, yaw=${spawnYawDeg}° / ${spawnYawRad.toFixed(3)} rad)`);
   console.log(`urdf exists  : ${fs.existsSync(urdfPath)}`);
   console.log(`world exists : ${fs.existsSync(worldPath)}`);
 
@@ -331,7 +337,10 @@ function launchRos(shareDir, urdfPath, worldPath) {
     `source ${WS_SETUP_BASH} && ` +
     `ros2 launch amr_2dsim sim_bringup.launch.py ` +
     `urdf_file:=${urdfPath} ` +
-    `world_file:=${worldPath}`;
+    `world_file:=${worldPath} ` +
+    `initial_x:=${spawnX} ` +
+    `initial_y:=${spawnY} ` +
+    `initial_yaw:=${spawnYawRad}`;
 
   console.log('\n Shell command:');
   console.log(`  ${shellCmd}`);
@@ -870,9 +879,9 @@ app.get('/status', (req, res) => {
   });
 });
 
-// POST /switch  { robot: "tango.urdf", world: "room.json" }
+// POST /switch  { robot: "tango.urdf", world: "room.json", spawnPose: { x: 0, y: 0, yaw: 0 } }
 app.post('/switch', async (req, res) => {
-  const { robot, world } = req.body ?? {};
+  const { robot, world, spawnPose } = req.body ?? {};
 
   if (!robot || !world)
     return res.status(400).json({ error: 'robot and world are required' });
@@ -887,6 +896,12 @@ app.post('/switch', async (req, res) => {
   if (!world.endsWith('.json'))
     return res.status(400).json({ error: 'world must be .json' });
 
+  const parsedSpawn = {
+    x: Number(spawnPose?.x) || 0,
+    y: Number(spawnPose?.y) || 0,
+    yaw: Number(spawnPose?.yaw) || 0,
+  };
+
   const shareDir = getShareDir();
   if (!shareDir)
     return res.status(500).json({ error: 'Cannot resolve ROS package' });
@@ -898,9 +913,16 @@ app.post('/switch', async (req, res) => {
   const urdfPath = rObj.fullPath;
   const worldPath = wObj.fullPath;
 
+  const sameSpawn =
+    currentState.spawnPose &&
+    currentState.spawnPose.x === parsedSpawn.x &&
+    currentState.spawnPose.y === parsedSpawn.y &&
+    currentState.spawnPose.yaw === parsedSpawn.yaw;
+
   if (
     currentState.robot === robot &&
     currentState.world === world &&
+    sameSpawn &&
     currentState.status === 'running' &&
     rosProcess !== null
   ) {
@@ -914,17 +936,18 @@ app.post('/switch', async (req, res) => {
   currentState.status = 'launching';
   currentState.robot = robot;
   currentState.world = world;
+  currentState.spawnPose = parsedSpawn;
 
   res.json({
     ok: true,
-    message: `Switching → robot="${robot}"  world="${world}"`,
+    message: `Switching → robot="${robot}"  world="${world}"  spawn=(${parsedSpawn.x}, ${parsedSpawn.y}, ${parsedSpawn.yaw}°)`,
     state: currentState,
   });
 
   try {
     await killRosProcess();
     await new Promise(r => setTimeout(r, 1500));
-    launchRos(shareDir, urdfPath, worldPath);
+    launchRos(shareDir, urdfPath, worldPath, parsedSpawn);
   } catch (err) {
     console.error('Switch failed:', err.message);
     currentState.status = 'error';
