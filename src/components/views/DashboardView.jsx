@@ -1659,6 +1659,7 @@ const SimSelector = forwardRef(function SimSelector(
   const [selRobot, setSelRobot] = useState("");
   const [selWorld, setSelWorld] = useState("");
   const [simStatus, setSimStatus] = useState(null);
+  const { spawnPose, setSpawnPose } = useAppStore();
 
   const fetchRobots = async () => {
     try {
@@ -1720,20 +1721,21 @@ const SimSelector = forwardRef(function SimSelector(
   };
 
   const doSwitch = useCallback(
-    async (robot, world) => {
+    async (robot, world, customSpawn) => {
       if (!robot || !world) return;
-      const { envData, setShowEnvModal } = useAppStore.getState();
+      const { envData, setShowEnvModal, spawnPose: storeSpawn } = useAppStore.getState();
       if (envData && !envData.allReady) {
         setShowEnvModal(true);
         return;
       }
+      const targetSpawn = customSpawn ?? storeSpawn ?? { x: 0, y: 0, yaw: 0 };
       setSwitching(true);
       setSwitchError("");
       try {
         const res = await fetch(SWITCH_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ robot, world }),
+          body: JSON.stringify({ robot, world, spawnPose: targetSpawn }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
@@ -1930,6 +1932,190 @@ const SimSelector = forwardRef(function SimSelector(
             label: w.mapName || w.name.replace(/\.json$/i, ""),
           }))}
         />
+      </div>
+
+      {/* ── Spawn Pose Config ── */}
+      <div
+        style={{
+          padding: "0 20px 14px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "6px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "10px",
+              fontWeight: 700,
+              color: isDark ? "#6b7280" : "#9ca3af",
+              textTransform: "uppercase",
+              letterSpacing: "1.2px",
+            }}
+          >
+            Spawn Pose (Initial)
+          </span>
+          <button
+            type="button"
+            onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
+            title="Reset spawn coordinates to (0, 0, 0°)"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: isDark ? "#90caf9" : "#1976d2",
+              fontSize: "11px",
+              fontWeight: 600,
+              cursor: "pointer",
+              padding: "2px 4px",
+              borderRadius: "4px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            ↺ Reset (0, 0, 0°)
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr",
+            gap: "8px",
+          }}
+        >
+          {/* X Input */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              background: isDark ? "#1a1a2e" : "#f8f9fa",
+              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              borderRadius: "8px",
+              padding: "5px 8px",
+              gap: "4px",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                color: isDark ? "#90caf9" : "#1976d2",
+              }}
+            >
+              X:
+            </span>
+            <input
+              type="number"
+              step="0.1"
+              value={spawnPose?.x ?? 0}
+              onChange={(e) =>
+                setSpawnPose({ ...spawnPose, x: parseFloat(e.target.value) || 0 })
+              }
+              style={{
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                color: isDark ? "#e2e8f0" : "#1a1a2a",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                outline: "none",
+              }}
+              placeholder="0.0"
+            />
+            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>m</span>
+          </div>
+
+          {/* Y Input */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              background: isDark ? "#1a1a2e" : "#f8f9fa",
+              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              borderRadius: "8px",
+              padding: "5px 8px",
+              gap: "4px",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                color: isDark ? "#90caf9" : "#1976d2",
+              }}
+            >
+              Y:
+            </span>
+            <input
+              type="number"
+              step="0.1"
+              value={spawnPose?.y ?? 0}
+              onChange={(e) =>
+                setSpawnPose({ ...spawnPose, y: parseFloat(e.target.value) || 0 })
+              }
+              style={{
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                color: isDark ? "#e2e8f0" : "#1a1a2a",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                outline: "none",
+              }}
+              placeholder="0.0"
+            />
+            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>m</span>
+          </div>
+
+          {/* Yaw Input */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              background: isDark ? "#1a1a2e" : "#f8f9fa",
+              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              borderRadius: "8px",
+              padding: "5px 8px",
+              gap: "4px",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                color: isDark ? "#90caf9" : "#1976d2",
+              }}
+            >
+              Yaw:
+            </span>
+            <input
+              type="number"
+              step="5"
+              value={spawnPose?.yaw ?? 0}
+              onChange={(e) =>
+                setSpawnPose({ ...spawnPose, yaw: parseFloat(e.target.value) || 0 })
+              }
+              style={{
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                color: isDark ? "#e2e8f0" : "#1a1a2a",
+                fontSize: "12.5px",
+                fontWeight: 600,
+                outline: "none",
+              }}
+              placeholder="0"
+            />
+            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>°</span>
+          </div>
+        </div>
       </div>
 
       {/* ── Buttons ── */}
@@ -2920,11 +3106,32 @@ export default function DashboardView() {
               </div>
               <button
                 onClick={() => {
-                  if (!rosObj) return;
-                  const svc = new ROSLIB.Service({ ros: rosObj, name: '/reset_pose', serviceType: 'std_srvs/srv/Trigger' });
-                  svc.callService({}, () => {}, (err) => console.error('[ResetPose]', err));
+                  if (!rosObj) { console.warn('[ResetPose] no rosObj'); return; }
+                  const { spawnPose: curSpawn } = useAppStore.getState();
+                  const sx = Number(curSpawn?.x) || 0;
+                  const sy = Number(curSpawn?.y) || 0;
+                  const syawDeg = Number(curSpawn?.yaw) || 0;
+                  const syawRad = (syawDeg * Math.PI) / 180;
+                  const qz = Math.sin(syawRad / 2);
+                  const qw = Math.cos(syawRad / 2);
+
+                  const initPoseTopic = new ROSLIB.Topic({
+                    ros: rosObj,
+                    name: '/initialpose',
+                    messageType: 'geometry_msgs/msg/PoseWithCovarianceStamped',
+                  });
+                  initPoseTopic.publish({
+                    header: { frame_id: 'map' },
+                    pose: {
+                      pose: {
+                        position: { x: sx, y: sy, z: 0.0 },
+                        orientation: { x: 0.0, y: 0.0, z: qz, w: qw },
+                      },
+                      covariance: new Array(36).fill(0),
+                    },
+                  });
                 }}
-                title="Reset robot to origin (0, 0)"
+                title="Reset robot to configured spawn pose"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none',
