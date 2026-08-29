@@ -2628,8 +2628,6 @@ export default function DashboardView() {
     activeRobot,
     setActiveRobot,
     rosObj,
-    showMonitor,
-    setShowMonitor,
     isDark,
     setIsDark,
     isWaitingOdom,
@@ -3053,7 +3051,6 @@ export default function DashboardView() {
       label: 'Reset Robot Pose',
       desc: 'Publish initialpose to reset robot to spawn location',
       shortcut: 'Alt+R',
-      icon: '🔄',
       run: () => {
         if (!rosObj) return;
         const { spawnPose: curSpawn } = useAppStore.getState();
@@ -3084,63 +3081,48 @@ export default function DashboardView() {
       id: 'tab-telemetry',
       label: 'Switch to Telemetry Tab',
       desc: 'View live robot odometry and collision status',
-      icon: '📊',
       run: () => { setTab('telemetry'); if (!inspOpen) setInspOpen(true); },
     },
     {
       id: 'tab-setup',
       label: 'Switch to Setup Tab',
       desc: 'Configure robot, map, and spawn coordinates',
-      icon: '⚙️',
       run: () => { setTab('setup'); if (!inspOpen) setInspOpen(true); },
     },
     {
       id: 'tab-drive',
       label: 'Switch to Drive Tab',
       desc: 'Teleoperate robot using 3x3 directional keypad',
-      icon: '🎮',
       run: () => { setTab('drive'); if (!inspOpen) setInspOpen(true); },
     },
     {
       id: 'tab-console',
       label: 'Switch to Console Tab',
       desc: 'Inspect ROS 2 topics and raw JSON streams',
-      icon: '💻',
       run: () => { setTab('console'); if (!inspOpen) setInspOpen(true); },
     },
     {
       id: 'toggle-theme',
       label: `Switch to ${isDark ? 'Light' : 'Dark'} Mode`,
       desc: 'Toggle application color theme',
-      icon: isDark ? '☀️' : '🌙',
       run: () => setIsDark(!isDark),
     },
     {
       id: 'env-check',
       label: 'Environment Check',
       desc: 'Check ROS 2, rosbridge_server, and amr_2dsim packages',
-      icon: '🔍',
       run: () => setShowEnvModal(true),
-    },
-    {
-      id: 'topic-monitor',
-      label: 'Toggle Topic Monitor',
-      desc: 'Open / close topic monitor overlay',
-      icon: '📈',
-      run: () => setShowMonitor(!showMonitor),
     },
     {
       id: 'create-robot',
       label: 'Create / Edit Robot',
       desc: 'Open visual URDF robot builder',
-      icon: '🤖',
       run: () => navigate('/create-robot'),
     },
     {
       id: 'create-world',
       label: 'Create / Edit World',
       desc: 'Open 2D grid world map editor',
-      icon: '🗺️',
       run: () => navigate('/create-world'),
     },
     {
@@ -3148,10 +3130,9 @@ export default function DashboardView() {
       label: 'Keyboard Shortcuts Guide',
       desc: 'Show all keyboard shortcuts for simulator',
       shortcut: '?',
-      icon: '⌨️',
       run: () => setShowShortcuts(true),
     },
-  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, showMonitor, setShowMonitor, navigate]);
+  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, navigate]);
 
   return (
     <>
@@ -3182,7 +3163,7 @@ export default function DashboardView() {
           border: `1px solid ${isDark ? '#ef5350' : '#ef9a9a'}`, padding: '8px 18px',
           borderRadius: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '13px', fontWeight: 600,
         }}>
-          <span>⚠️ Collision detected</span>
+          <span>Collision detected</span>
           <button onClick={() => setShowCollisionToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
@@ -3196,19 +3177,13 @@ export default function DashboardView() {
           border: `1px solid ${isDark ? '#ffb300' : '#ffe082'}`, padding: '8px 18px',
           borderRadius: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '13px', fontWeight: 600,
         }}>
-          <span>⏸️ Sim stopped — idle 1 h. Press Launch to resume.</span>
+          <span>Simulation stopped — idle 1 h. Press Launch to resume.</span>
         </div>
       )}
 
       <UpdateProgressModal updateInfo={updateInfo} appVersion={appVersion} onClose={() => setUpdateInfo(null)} />
       <NotificationModal notification={notification} onClose={() => setNotification(null)} isDark={isDark} />
 
-      {/* ── Monitor popup ──────────────────────────────────────────── */}
-      {showMonitor && (
-        <div style={{ position: 'fixed', top: '60px', right: '20px', width: isNarrow ? 'calc(100vw - 40px)' : '380px', zIndex: 1000 }}>
-          <TopicMonitor ros={rosObj} isDark={isDark} />
-        </div>
-      )}
 
       {/* ── Main shell: canvas | inspector ──────────────────────────── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>

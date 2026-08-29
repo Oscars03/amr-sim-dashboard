@@ -8,7 +8,7 @@ export default function CoachTour({ isDark }) {
     try {
       const done = localStorage.getItem('amr-sim-tour-done');
       if (!done) {
-        const timer = setTimeout(() => setIsOpen(true), 800);
+        const timer = setTimeout(() => setIsOpen(true), 600);
         return () => clearTimeout(timer);
       }
     } catch {
@@ -29,24 +29,34 @@ export default function CoachTour({ isDark }) {
 
   const STEPS = [
     {
-      title: 'Welcome to AMR Simulator 🚀',
-      desc: 'A modern, high-performance 2D autonomous mobile robot simulator. Let us take a quick 4-step tour of the interface.',
-      pos: { bottom: '40px', left: '50%', transform: 'translateX(-50%)' },
+      title: 'Welcome to AMR Simulator',
+      desc: 'High-performance 2D mobile robot simulator. Take a quick interactive overview of the workspace.',
+      pos: { bottom: '50px', left: '50%', transform: 'translateX(-50%)' },
+      highlight: null,
     },
     {
-      title: '2D Canvas & View HUD 🗺️',
-      desc: 'Pan, rotate, and zoom the flat 2D viewport. The top-left HUD displays active world info and instant pose reset.',
-      pos: { top: '70px', left: '24px' },
+      title: '2D Map & HUD Controls',
+      desc: 'Top-left card shows active world name and instant Reset Pose. Use middle-mouse or left-mouse to pan, rotate, and zoom.',
+      pos: { top: '160px', left: '20px' },
+      highlight: { top: '64px', left: '12px', width: '220px', height: '90px', borderRadius: '12px' },
     },
     {
-      title: 'Inspector & Control Tabs 🎛️',
-      desc: 'Use the 4 tabs on the right to inspect Telemetry, configure Robot/Map Setup, Drive via teleop keys, and view Console topics.',
-      pos: { top: '70px', right: '50px' },
+      title: 'Inspector & Control Tabs',
+      desc: 'Telemetry, Robot Setup & Spawn Pose, Teleop Drive, and Topic Monitor console are all organized in this panel.',
+      pos: { top: '80px', right: '360px' },
+      highlight: { top: '52px', right: '0px', width: '340px', bottom: '24px', borderRadius: '0px' },
     },
     {
-      title: 'Quick Shortcuts & Palette ⌨️',
-      desc: 'Press "?" at any time for the keyboard guide, or "Ctrl+K" to launch the Command Palette.',
-      pos: { bottom: '40px', left: '50%', transform: 'translateX(-50%)' },
+      title: 'Status & Telemetry Bar',
+      desc: 'Real-time indicators for ROS 2 connection, Environment readiness, FPS limit toggle, and Real-Time Factor (RTF).',
+      pos: { bottom: '45px', left: '20px' },
+      highlight: { bottom: '0px', left: '0px', right: '0px', height: '24px', borderRadius: '0px' },
+    },
+    {
+      title: 'Command Palette & Shortcuts',
+      desc: 'Press "?" at any time for the full shortcut guide, or "Ctrl+K" (Cmd+K) to open the Command Palette.',
+      pos: { bottom: '50px', left: '50%', transform: 'translateX(-50%)' },
+      highlight: null,
     },
   ];
 
@@ -60,10 +70,26 @@ export default function CoachTour({ isDark }) {
         zIndex: 99998,
         pointerEvents: 'auto',
         background: 'rgba(0, 0, 0, 0.45)',
-        backdropFilter: 'blur(3px)',
+        backdropFilter: 'blur(2px)',
         animation: 'fade-in 0.2s var(--ease-out)',
       }}
     >
+      {/* Visual feature spotlight highlight */}
+      {cur.highlight && (
+        <div
+          style={{
+            position: 'absolute',
+            ...cur.highlight,
+            border: '2px solid var(--c-accent)',
+            boxShadow: '0 0 0 4px rgba(34, 211, 238, 0.25), 0 0 30px rgba(34, 211, 238, 0.35)',
+            pointerEvents: 'none',
+            zIndex: 99999,
+            transition: 'all 0.3s var(--ease-out)',
+          }}
+        />
+      )}
+
+      {/* Tour Dialog Card */}
       <div
         style={{
           position: 'absolute',
@@ -79,7 +105,9 @@ export default function CoachTour({ isDark }) {
           flexDirection: 'column',
           gap: '12px',
           color: 'var(--c-text-1)',
+          zIndex: 100000,
           animation: 'fade-in 0.15s var(--ease-out)',
+          transition: 'top 0.3s var(--ease-out), bottom 0.3s var(--ease-out), left 0.3s var(--ease-out), right 0.3s var(--ease-out)',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -164,7 +192,7 @@ export default function CoachTour({ isDark }) {
                 boxShadow: '0 2px 8px rgba(14, 165, 233, 0.35)',
               }}
             >
-              {step < STEPS.length - 1 ? 'Next →' : 'Get Started'}
+              {step < STEPS.length - 1 ? 'Next' : 'Finish'}
             </button>
           </div>
         </div>

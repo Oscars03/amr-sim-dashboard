@@ -78,7 +78,6 @@ export default function ShortcutModal({ isOpen, onClose, isDark }) {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '18px' }}>⌨️</span>
             <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-ui)' }}>
               Keyboard Shortcuts
             </h2>

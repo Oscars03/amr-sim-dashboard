@@ -8,7 +8,7 @@ import './Header.css';
 export default function Header() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDark, setIsDark, showMonitor, setShowMonitor, setShowEnvModal } = useAppStore();
+  const { isDark, setIsDark, setShowEnvModal } = useAppStore();
 
   const [appVersion, setAppVersion] = useState('0.0.0');
   const [isSpinningUpdate, setIsSpinningUpdate] = useState(false);
@@ -39,13 +39,6 @@ export default function Header() {
           <button className="hdr-icon-btn" onClick={handleUpdate} title="Check for updates">
             <svg className={isSpinningUpdate ? 'spin' : ''} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-            </svg>
-          </button>
-        )}
-        {onDashboard && (
-          <button className={`hdr-icon-btn ${showMonitor ? 'active' : ''}`} onClick={() => setShowMonitor(!showMonitor)} title="Topic Monitor">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
             </svg>
           </button>
         )}
