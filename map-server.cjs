@@ -182,20 +182,60 @@ function getRobotFiles(shareDir) {
   return results;
 }
 
-function forceKillOrphans() {
-  try {
-    execSync('fuser -k -9 9090/tcp', { stdio: 'ignore' });
-  } catch { /* ignored */ }
+// PGID of the last sim we spawned. spawn(..., { detached: true }) puts the
+// launch and every node it starts (amr_sim_node, robot_state_publisher,
+// rosbridge) in their own process group, so killing that group cleans up
+// everything this server owns -- and nothing it doesn't. The old name-based
+// `pkill -9 -f "ros2 launch"` / `"rosbridge"` sweep also killed ROS nodes the
+// user was running outside the app.
+let lastRosPgid = null;
 
-  const patterns = ['ros2 launch', 'amr_sim_node', 'robot_state_publisher', 'rosbridge', 'sim_bringup.launch.py'];
-  patterns.forEach((p) => {
+// Mirrored to disk so a *new* server (after a crash or a SIGKILL) can still
+// find and reap the previous run's sim instead of leaving it fighting the new
+// one over /odom and /cmd_vel.
+const PGID_FILE = path.join(os.homedir(), '.config', 'irish-amr-sim', 'last-sim.pgid');
+
+function rememberPgid(pgid) {
+  lastRosPgid = pgid;
+  try {
+    fs.mkdirSync(path.dirname(PGID_FILE), { recursive: true });
+    fs.writeFileSync(PGID_FILE, String(pgid), 'utf8');
+  } catch (e) {
+    console.warn(`Could not record sim pgid: ${e.message}`);
+  }
+}
+
+function forgetPgid() {
+  lastRosPgid = null;
+  try { fs.unlinkSync(PGID_FILE); } catch { /* not there */ }
+}
+
+// True only if `pid` is still one of *our* sims. PIDs get reused, so the
+// recorded number alone is not enough -- check that the process really is the
+// bash -c wrapper we spawned before signalling its whole group.
+function isOurSim(pid) {
+  try {
+    const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+    return cmdline.includes('sim_bringup.launch.py');
+  } catch {
+    return false; // process gone, or not Linux
+  }
+}
+
+function forceKillOrphans() {
+  let pgid = lastRosPgid;
+  if (pgid === null) {
+    try { pgid = parseInt(fs.readFileSync(PGID_FILE, 'utf8').trim(), 10); } catch { /* none */ }
+  }
+  if (!Number.isInteger(pgid) || pgid <= 1) { forgetPgid(); return; }
+
+  if (isOurSim(pgid)) {
     try {
-      execSync(`pkill -9 -f "${p}"`, { stdio: 'ignore' });
-      console.log(`pkill -9 -f "${p}" matched`);
-    } catch {
-      // exit code 1 = nothing matched, not an error
-    }
-  });
+      process.kill(-pgid, 'SIGKILL');
+      console.log(`Swept leftover sim process group ${pgid}`);
+    } catch { /* group already gone */ }
+  }
+  forgetPgid();
 }
 
 function killRosProcess() {
@@ -348,6 +388,8 @@ function launchRos(shareDir, urdfPath, worldPath) {
   });
 
   currentState.pid = rosProcess.pid;
+  // detached spawn => pgid === pid; forceKillOrphans() sweeps this group.
+  rememberPgid(rosProcess.pid);
   currentState.status = 'running';
   currentState.launchedAt = new Date().toISOString();
   currentState.error = null;
@@ -1033,11 +1075,6 @@ app.listen(PORT, () => {
   console.log('');
 });
 
-// ดักจับคำสั่ง Kill จาก Electron (หรือจากระบบปฏิบัติการ)
-process.on('SIGTERM', () => {
-    console.log('Received SIGTERM, shutting down gently...');
-    if (typeof forceKillOrphans === 'function') {
-        forceKillOrphans(); // เรียกใช้ฟังก์ชันเคลียร์ ROS เดิมของคุณ
-    }
-    process.exit(0);
-});
+// SIGTERM จาก Electron (before-quit) ถูกจัดการโดย shutdown() ด้านบนแล้ว —
+// handler ตัวที่สองที่เคยอยู่ตรงนี้เรียก process.exit(0) แบบ sync ทำให้
+// `await killRosProcess()` ใน shutdown() ไม่มีทางทำงานจบ เหลือแต่การกวาดแบบดิบ
