@@ -1411,7 +1411,7 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
 // SimSelector  — now uses CustomDropdown as a stable external component
 // ─────────────────────────────────────────────────────────────────────────────
 const SimSelector = forwardRef(function SimSelector(
-  { onSwitch, onStop, isDark, isWaitingOdom },
+  { onSwitch, onStop, isDark, isWaitingOdom, poseRef },
   ref,
 ) {
   const [robotList, setRobotList] = useState([]);
@@ -1721,26 +1721,56 @@ const SimSelector = forwardRef(function SimSelector(
           >
             Spawn Pose (Initial)
           </span>
-          <button
-            type="button"
-            onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
-            title="Reset spawn coordinates to (0, 0, 0°)"
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--c-accent)",
-              fontSize: "11px",
-              fontWeight: 700,
-              cursor: "pointer",
-              padding: "2px 4px",
-              borderRadius: "4px",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            ↺ Reset (0, 0, 0°)
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (poseRef?.current) {
+                  const p = poseRef.current;
+                  const x = typeof p.x === "number" ? parseFloat(p.x.toFixed(2)) : 0;
+                  const y = typeof p.y === "number" ? parseFloat(p.y.toFixed(2)) : 0;
+                  const yaw = typeof p.theta === "number" ? parseFloat((p.theta * 180 / Math.PI).toFixed(1)) : 0;
+                  setSpawnPose({ x, y, yaw });
+                }
+              }}
+              title="Use current live pose of the robot"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--c-text-2)",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: "2px 4px",
+                borderRadius: "4px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              📍 Use Current
+            </button>
+            <button
+              type="button"
+              onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
+              title="Reset spawn coordinates to (0, 0, 0°)"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--c-accent)",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: "2px 4px",
+                borderRadius: "4px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              ↺ Reset
+            </button>
+          </div>
         </div>
 
         <div
@@ -3023,7 +3053,7 @@ export default function DashboardView() {
             </div>
 
             {/* HUD top-right: Interactive View Tools */}
-            <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', alignItems: 'center', gap: 6, zIndex: 5 }}>
+            <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, zIndex: 5 }}>
               <div style={{
                 background: isDark ? 'rgba(17,22,29,0.88)' : 'rgba(255,255,255,0.92)',
                 backdropFilter: 'blur(8px)', borderRadius: 'var(--r-lg)',
@@ -3105,10 +3135,10 @@ export default function DashboardView() {
 
                 <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
 
-                {/* Reset View */}
+                {/* Reset View -> Center */}
                 <button
                   onClick={() => { worldMapRef.current?.resetView(); setIsFollowingRobot(false); }}
-                  title="Reset View: 100% Zoom & Default Position (Double-click canvas)"
+                  title="Center Camera: 100% Zoom & Default Position (Double-click canvas)"
                   style={{
                     padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4,
                     borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
@@ -3121,7 +3151,7 @@ export default function DashboardView() {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
                   </svg>
-                  <span>Reset</span>
+                  <span>Center</span>
                 </button>
 
                 <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
@@ -3149,6 +3179,19 @@ export default function DashboardView() {
                   </svg>
                   <span>Follow</span>
                 </button>
+              </div>
+
+              {/* Mouse Controls Hint */}
+              <div style={{
+                fontSize: 10,
+                color: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)',
+                fontWeight: 600,
+                fontFamily: 'var(--font-ui)',
+                paddingRight: 6,
+                userSelect: 'none',
+                letterSpacing: '0.2px',
+              }}>
+                🖱️ Left: Rotate • Mid: Pan • Scroll: Zoom
               </div>
             </div>
           </div>
@@ -3227,6 +3270,7 @@ export default function DashboardView() {
                         onStop={() => setIsWaitingOdom(false)}
                         isDark={isDark}
                         isWaitingOdom={isWaitingOdom}
+                        poseRef={poseRef}
                       />
                     )}
 
