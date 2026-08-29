@@ -106,9 +106,9 @@ export default function App() {
     <div
       className={`app-container ${isDark ? 'dark-theme' : 'light-theme'}`}
       style={{
-        background: isDark ? '#08080c' : '#f0f2f5',
-        color: isDark ? '#e0e0e0' : '#333333',
-        fontFamily: "'Segoe UI', system-ui, sans-serif",
+        background: 'var(--c-bg)',
+        color: 'var(--c-text-1)',
+        fontFamily: 'var(--font-ui)',
       }}
     >
       <Header />
