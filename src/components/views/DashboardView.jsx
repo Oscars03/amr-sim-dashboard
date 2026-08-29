@@ -2139,21 +2139,19 @@ function TopicMonitor({ ros, isDark }) {
     return () => clearInterval(inv);
   }, [refreshTopics]);
 
-  useEffect(() => {
-    if (subRef.current) {
-      subRef.current.unsubscribe();
-      subRef.current = null;
-    }
-    setMsgData(null);
+  // Depend on the resolved message type (a string), not on `topics` -- that
+  // array is rebuilt every 5 s by refreshTopics, and having it in the deps
+  // below tore the subscription down and rebuilt it on every refresh.
+  const rawType = topics.find((x) => x.name === selTopic)?.type;
+  const selTopicType = Array.isArray(rawType) ? rawType[0] : rawType;
 
-    if (!selTopic || !ros) return;
-    const t = topics.find((x) => x.name === selTopic);
-    if (!t) return;
+  useEffect(() => {
+    if (!selTopic || !ros || !selTopicType) return;
 
     const listener = new ROSLIB.Topic({
       ros: ros,
-      name: t.name,
-      messageType: Array.isArray(t.type) ? t.type[0] : t.type,
+      name: selTopic,
+      messageType: selTopicType,
     });
 
     listener.subscribe((m) => {
@@ -2162,12 +2160,10 @@ function TopicMonitor({ ros, isDark }) {
     subRef.current = listener;
 
     return () => {
-      if (subRef.current) {
-        subRef.current.unsubscribe();
-        subRef.current = null;
-      }
+      listener.unsubscribe();
+      if (subRef.current === listener) subRef.current = null;
     };
-  }, [selTopic, ros, topics]);
+  }, [selTopic, ros, selTopicType]);
 
   const S = {
     wrap: {
@@ -2221,7 +2217,12 @@ function TopicMonitor({ ros, isDark }) {
       <select
         style={S.select}
         value={selTopic}
-        onChange={(e) => setSelTopic(e.target.value)}
+        onChange={(e) => {
+          // Clear here rather than in the subscribe effect: the panel should
+          // blank when the user picks a different topic, not on every reconnect.
+          setMsgData(null);
+          setSelTopic(e.target.value);
+        }}
       >
         <option
           value=""
@@ -2734,44 +2735,55 @@ export default function DashboardView() {
     };
   }, [rosObj, noteMovement]);
 
-  const fetchMap = useCallback(async (mapFile) => {
-    const file = mapFile ?? activeWorld;
+  // Both fetchers take the file explicitly and depend on nothing, so their
+  // identity is stable. They used to fall back to activeWorld/activeRobot,
+  // which put those in the deps -- that rippled out through handleSwitch into
+  // SimSelector, whose mount-only bootstrap effect then re-ran after every
+  // launch and reset the robot/world the user had picked.
+  const fetchMap = useCallback(async (file) => {
+    if (!file) return;
     setMapStatus("loading");
     try {
       const res = await fetch(`${MAP_SERVER_URL}?file=${file}`);
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error(`map server returned ${res.status}`);
       const raw = await res.json();
       setMapName(raw._meta?.mapName ?? raw.name ?? "Unknown");
       setMapData(normaliseMap(raw));
       setMapStatus("ok");
     } catch (err) {
+      console.warn(`Could not load world "${file}":`, err.message);
       setMapStatus("error");
     }
-  }, [activeWorld]);
+  }, [setMapStatus, setMapName, setMapData]);
 
   useEffect(() => {
-    fetchMap();
-  }, [fetchMap]);
+    fetchMap(activeWorld);
+  }, [fetchMap, activeWorld]);
 
   const fetchUrdf = useCallback(
-    async (robotFile) => {
-      const file = robotFile ?? activeRobot;
+    async (file) => {
+      if (!file) return;
       try {
         const res = await fetch(`${URDF_SERVER_URL}?file=${file}`);
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error(`urdf server returned ${res.status}`);
         const xml = await res.text();
         setUrdf(parseURDF(xml));
       } catch (err) {
-        /* ignore */
+        // Swallowing this used to leave the canvas with no robot at all and no
+        // hint why. Clear the model so drawRobot falls back to its placeholder,
+        // and say what happened.
+        console.warn(`Could not load robot "${file}":`, err.message);
+        setUrdf(null);
       }
     },
-    [activeRobot],
+    [setUrdf],
   );
 
   useEffect(() => {
-    fetchUrdf();
-  }, [fetchUrdf]);
+    fetchUrdf(activeRobot);
+  }, [fetchUrdf, activeRobot]);
 
+  // Setting activeRobot/activeWorld is enough -- the two effects above refetch.
   const handleSwitch = useCallback(
     (robot, world) => {
       setIsWaitingOdom(true);
@@ -2779,12 +2791,10 @@ export default function DashboardView() {
       steeringRef.current = null;
       setActiveRobot(robot);
       setActiveWorld(world);
-      fetchUrdf(robot);
-      fetchMap(world);
       lastPoseRef.current = null;
       markActive();
     },
-    [fetchUrdf, fetchMap, markActive],
+    [markActive, setIsWaitingOdom, setActiveRobot, setActiveWorld],
   );
 
   const [winSize, setWinSize] = useState({

@@ -514,10 +514,10 @@ export default function CreateWorldView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: finalName, data: mapJson }),
       });
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      
-      const result = await res.json();
-      
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.ok === false)
+        throw new Error(result.message || `map server returned ${res.status}`);
+
       const toast = document.createElement("div");
       toast.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#4caf50;color:white;padding:12px 24px;border-radius:8px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-weight:bold;";
       toast.textContent = `✅ Saved ${finalName}`;
@@ -525,18 +525,23 @@ export default function CreateWorldView() {
       setTimeout(() => toast.remove(), 3000);
 
       if (launchAfter) {
+         // Launch whatever robot the dashboard has active, not a hardcoded
+         // "amr.urdf" -- that name is not guaranteed to exist, and /switch
+         // answering 404 used to leave the button doing nothing at all.
+         const robot = useAppStore.getState().activeRobot;
          try {
            const switchRes = await fetch(`http://${HOST}:3001/switch`, {
              method: "POST",
              headers: { "Content-Type": "application/json" },
-             body: JSON.stringify({ robot: "amr.urdf", world: finalName }),
+             body: JSON.stringify({ robot, world: finalName }),
            });
-           if (switchRes.ok) {
-             navigate("/");
-           }
+           const switchData = await switchRes.json().catch(() => ({}));
+           if (!switchRes.ok)
+             throw new Error(switchData.error || `map server returned ${switchRes.status}`);
+           navigate("/");
          } catch (e) {
              console.error("Failed to launch map", e);
-             alert("Failed to launch map. Is the backend running?");
+             alert(`Saved ${finalName}, but could not launch it: ${e.message}`);
          }
       }
     } catch (err) {

@@ -223,7 +223,22 @@ export function drawRobot(
 
   ctx.rotate(-Math.PI / 2 - thetaRad);
 
+  // No URDF (still loading, or the fetch failed): draw a placeholder rather
+  // than nothing. /odom is streaming a real pose, and silently omitting the
+  // robot reads as "the sim is dead" when it is only the model that is missing.
   if (shapes.length === 0) {
+    const r = Math.max(6, maxR * scale);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();          // heading tick: +x is forward in this frame
+    ctx.moveTo(0, 0);
+    ctx.lineTo(r, 0);
+    ctx.stroke();
     ctx.restore();
     return;
   }
