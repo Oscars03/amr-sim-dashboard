@@ -2,7 +2,7 @@
 
 All notable changes to the IRiSH AMR Simulator Dashboard project will be documented in this file.
 
-## [0.3.0] - 2026-08-29
+## [Unreleased]
 
 ### Added
 - **UI Redesign**: Complete overhaul of the Dashboard UI based on new wireframes.
