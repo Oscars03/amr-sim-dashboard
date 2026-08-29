@@ -520,7 +520,11 @@ app.post('/api/robots', (req, res) => {
   const fileName = `${name.replace(/[^a-z0-9_]/gi, '_').toLowerCase()}.urdf`;
   const urdfPath = path.join(shareDir, 'urdf', fileName);
 
-  if (fs.existsSync(urdfPath)) {
+  // Check every directory the robot list is built from, not just shareDir:
+  // creation also writes to the source workspace and to the ~/.config fallback,
+  // so a shareDir-only check let a robot living in either of those be silently
+  // overwritten.
+  if (getRobotFiles(shareDir).some(r => r.name === fileName)) {
     return res.status(400).json({ error: 'Robot with this name already exists' });
   }
 
