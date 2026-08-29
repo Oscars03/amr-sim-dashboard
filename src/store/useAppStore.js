@@ -27,9 +27,9 @@ const useAppStore = create((set) => ({
   mapStatus: 'idle',
   setMapStatus: (status) => set({ mapStatus: status }),
 
-  // Robot Pose
-  pose: { x: '-', y: '-', theta: '-' },
-  setPose: (pose) => set({ pose: pose }),
+  // Robot pose is NOT kept here -- /odom arrives at 20 Hz and a store write
+  // re-renders every useAppStore() subscriber. It lives in a ref in
+  // DashboardView and is read straight off it by the canvas / PoseReadout.
   isWaitingOdom: false,
   setIsWaitingOdom: (val) => set({ isWaitingOdom: val }),
 

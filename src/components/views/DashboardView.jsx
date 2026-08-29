@@ -53,14 +53,20 @@ function getFollowPan(pose, mapData, width, height, view) {
 // ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component
 // ─────────────────────────────────────────────────────────────────────────────
-function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive, steeringAngle }) {
+const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, steeringRef, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive }, ref) {
   const canvasRef = useRef(null);
   const drawRef = useRef(null);
-  const { fpsLimit } = useAppStore();
+  const fpsLimit = useAppStore((s) => s.fpsLimit);
 
   const needsRedrawRef = useRef(true);
   const effectActiveRef = useRef(effectActive);
   const collisionActiveRef = useRef(collisionActive);
+
+  // /odom (20 Hz) and /joint_states write their refs and call this instead of
+  // setting React state, so a moving robot never reconciles the view tree.
+  useImperativeHandle(ref, () => ({
+    markDirty: () => { needsRedrawRef.current = true; },
+  }), []);
 
   useEffect(() => {
     if (fpsLimit === 0) {
@@ -95,12 +101,13 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
 
-  // Mark dirty whenever visual inputs change
+  // Mark dirty whenever a visual input that lives in React changes. Pose and
+  // steering angle are refs now -- they signal redraw via markDirty().
   useEffect(() => {
     needsRedrawRef.current = true;
     effectActiveRef.current = effectActive;
     collisionActiveRef.current = collisionActive;
-  }, [pose, effectActive, collisionActive, steeringAngle, mapData, urdf, isDark, view]);
+  }, [effectActive, collisionActive, mapData, urdf, isDark, view]);
 
   const dragRef = useRef({
     isMiddle: false,
@@ -142,7 +149,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
     } else if (dragRef.current.isMiddle) {
       if (followRobot) {
         setFollowRobot(false);
-        const { panX, panY } = getFollowPan(pose, mapData, width, height, view);
+        const { panX, panY } = getFollowPan(poseRef.current, mapData, width, height, view);
         setView((v) => ({ ...v, panX, panY }));
       }
       const dx = e.clientX - dragRef.current.lastX;
@@ -179,24 +186,32 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
   }, []);
 
 
-  useEffect(() => {
+  // RTF (real-time factor) sampling: was a [pose] effect, now sampled in the
+  // draw loop off the pose ref -- one sample per new /odom stamp.
+  const lastSampledStampRef = useRef(null);
+  const sampleRtf = (pose) => {
     if (!pose || pose.x === "-") return;
-    const nowWall = performance.now() / 1000;
     const stampSec = pose.stampSec ?? null;
+    if (stampSec !== null && stampSec === lastSampledStampRef.current) return;
+    lastSampledStampRef.current = stampSec;
+    const nowWall = performance.now() / 1000;
     const samples = odomSamplesRef.current;
-
     samples.push({
       sim: stampSec !== null && stampSec > 0 ? stampSec : (samples.length > 0 ? samples[samples.length - 1].sim + 0.05 : nowWall),
       wall: nowWall,
     });
     if (samples.length > 40) samples.shift();
-  }, [pose]);
+  };
 
   drawRef.current = () => {
     const renderStart = performance.now();
 
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    const pose = poseRef.current;
+    const steeringAngle = steeringRef.current;
+    sampleRtf(pose);
     const ctx = canvas.getContext("2d");
 
     const bgFill = isDark ? "#d3d3d3" : "#222222";
@@ -527,7 +542,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
         onClick={() => {
           setFollowRobot((prev) => {
             if (prev) {
-              const { panX, panY } = getFollowPan(pose, mapData, width, height, view);
+              const { panX, panY } = getFollowPan(poseRef.current, mapData, width, height, view);
               setView((v) => ({ ...v, panX, panY }));
             }
             return !prev;
@@ -703,7 +718,7 @@ function WorldMap({ mapData, pose, urdf, width = 560, height = 560, isDark, effe
       </div>
     </div>
   );
-}
+}));
 
 const ArrowSvg = ({ angle = 0 }) => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: `rotate(${angle}deg)` }}>
@@ -2339,14 +2354,101 @@ function NotificationModal({ notification, onClose, isDark }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Odometry number panel. Its own store subscription + memo so the throttled
+// pose updates never re-render DashboardView.
+// ─────────────────────────────────────────────────────────────────────────────
+const PoseReadout = React.memo(function PoseReadout({ poseRef, isDark }) {
+  // Polls the live pose ref a few times a second -- only this small component
+  // re-renders, never the dashboard.
+  const [pose, setPose] = useState(() => poseRef.current);
+  useEffect(() => {
+    let prev = poseRef.current;
+    const iv = setInterval(() => {
+      if (poseRef.current !== prev) {
+        prev = poseRef.current;
+        setPose(prev);
+      }
+    }, 150);
+    return () => clearInterval(iv);
+  }, [poseRef]);
+  const fmt = (v, d) => (typeof v === "number" ? v.toFixed(d) : v);
+  const items = [
+    { label: "X", value: fmt(pose.x, 2), unit: "[m]" },
+    { label: "Y", value: fmt(pose.y, 2), unit: "[m]" },
+    { label: "Angle", value: pose.theta === "-" ? "-" : `${fmt(pose.theta, 1)}°`, unit: "[degrees]" },
+  ];
+  return (
+    <div style={{ display: "flex", gap: "10px", alignItems: "stretch", minWidth: 0 }}>
+      {items.map(({ label, value, unit }) => (
+        <div
+          key={label}
+          style={{
+            background: isDark ? "#ffffff08" : "#f8f9fa",
+            border: `1px solid ${isDark ? "#ffffff10" : "#eeeeee"}`,
+            borderRadius: "10px",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            flex: "1 1 0",
+            minWidth: 0,
+            padding: "clamp(10px, 1.5vw, 20px) 5px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "clamp(11px, 1.2vw, 14px)",
+              fontWeight: 700,
+              color: isDark ? "#9e9ec0" : "#666",
+              textTransform: "uppercase",
+              marginBottom: "8px",
+              letterSpacing: "1px",
+              textAlign: "center",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: "100%",
+            }}
+          >
+            {label}
+          </div>
+          <div
+            style={{
+              fontSize: "clamp(16px, 2.2vw, 32px)",
+              fontWeight: 700,
+              color: isDark ? "#00e5ff" : "#007b83",
+              fontFamily: "monospace",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {value}
+          </div>
+          <div
+            style={{
+              fontSize: "clamp(10px, 1vw, 13px)",
+              fontWeight: 600,
+              color: isDark ? "#7a7a9e" : "#999999",
+              marginTop: "8px",
+              letterSpacing: "0.5px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {unit}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // App (Main - No Scroll Layout)
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DashboardView() {
   const {
     rosStatus: status,
     setRosStatus: setStatus,
-    pose,
-    setPose,
     mapData,
     setMapData,
     mapName,
@@ -2386,9 +2488,11 @@ export default function DashboardView() {
   const [showCollisionToast, setShowCollisionToast] = useState(false);
   const collisionToastTimerRef = useRef(null);
 
-  // Real front-wheel steering angle (radians) from /joint_states -- tracks
-  // the actual commanded angle at any speed, including standing still.
-  const [steeringAngle, setSteeringAngle] = useState(null);
+  // Live robot state consumed by the canvas at frame rate. NOT React state:
+  // /odom and /joint_states arrive at 20 Hz and must not reconcile the view.
+  const poseRef = useRef({ x: "-", y: "-", theta: "-" });
+  const steeringRef = useRef(null);
+  const worldMapRef = useRef(null);
 
   // Idle watchdog: stop the sim after IDLE_STOP_MS without robot movement.
   const [idleStopped, setIdleStopped] = useState(false);
@@ -2404,23 +2508,19 @@ export default function DashboardView() {
 
   useEffect(() => { markActive(); }, [markActive]); // seed the clock on mount
 
-  // Movement detector -- a stationary robot still streams /odom at 20 Hz, so
-  // compare successive poses rather than trusting message arrival.
-  useEffect(() => {
-    if (!pose || pose.x === "-") return;
-    const x = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
-    const y = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
-    const th = typeof pose.theta === "string" ? parseFloat(pose.theta) : pose.theta;
+  // Movement detector, called from the /odom handler -- a stationary robot
+  // still streams /odom, so compare successive poses, not message arrival.
+  const noteMovement = useCallback((x, y, deg) => {
     const prev = lastPoseRef.current;
-    const moved =
+    if (
       !prev ||
       Math.hypot(x - prev.x, y - prev.y) > IDLE_MOVE_EPS_M ||
-      Math.abs(th - prev.th) > IDLE_MOVE_EPS_DEG;
-    if (moved) {
-      lastPoseRef.current = { x, y, th };
+      Math.abs(deg - prev.th) > IDLE_MOVE_EPS_DEG
+    ) {
+      lastPoseRef.current = { x, y, th: deg };
       markActive();
     }
-  }, [pose, markActive]);
+  }, [markActive]);
 
   // Watchdog tick. idleStopFiredRef makes this fire /stop at most once per
   // idle stretch; markActive() re-arms it on the next launch or movement.
@@ -2538,17 +2638,25 @@ export default function DashboardView() {
       const w = msg.twist?.twist?.angular?.z ?? 0;
 
       if (!isNaN(x) && !isNaN(y) && !isNaN(theta)) {
+        const deg = (theta * 180) / Math.PI;
         const stampSec = (msg.header?.stamp?.sec ?? 0) + (msg.header?.stamp?.nanosec ?? 0) * 1e-9;
-        setPose({
-          x: x,
-          y: y,
-          theta: (theta * 180) / Math.PI,
-          vx: vx,
-          w: w,
-          stampSec: stampSec,
-        });
 
-        setIsWaitingOdom(false);
+        // Live pose -> ref only. A parked robot still streams /odom at 20 Hz;
+        // give poseRef a fresh object (and redraw the canvas) only when the
+        // pose actually changed, so an idle sim costs nothing.
+        const p = poseRef.current;
+        const poseChanged =
+          p.x === "-" ||
+          Math.abs(x - p.x) > 1e-4 ||
+          Math.abs(y - p.y) > 1e-4 ||
+          Math.abs(deg - p.theta) > 1e-3;
+        if (poseChanged) {
+          poseRef.current = { x, y, theta: deg, vx, w, stampSec };
+          worldMapRef.current?.markDirty();
+        }
+        noteMovement(x, y, deg);
+
+        if (useAppStore.getState().isWaitingOdom) setIsWaitingOdom(false);
       }
     });
     odomRef.current = odom;
@@ -2594,7 +2702,10 @@ export default function DashboardView() {
     });
     jointStatesTopic.subscribe((msg) => {
       const i = msg.name?.indexOf("virtual_wheel_fl") ?? -1;
-      if (i >= 0) setSteeringAngle(msg.position[i]);
+      if (i >= 0 && Math.abs(msg.position[i] - (steeringRef.current ?? 0)) > 1e-3) {
+        steeringRef.current = msg.position[i];
+        worldMapRef.current?.markDirty();
+      }
     });
 
     return () => {
@@ -2604,7 +2715,7 @@ export default function DashboardView() {
       collisionTopic.unsubscribe();
       jointStatesTopic.unsubscribe();
     };
-  }, [rosObj]);
+  }, [rosObj, noteMovement]);
 
   const fetchMap = useCallback(async (mapFile) => {
     const file = mapFile ?? activeWorld;
@@ -2647,7 +2758,8 @@ export default function DashboardView() {
   const handleSwitch = useCallback(
     (robot, world) => {
       setIsWaitingOdom(true);
-      setPose({ x: "-", y: "-", theta: "-" });
+      poseRef.current = { x: "-", y: "-", theta: "-" };
+      steeringRef.current = null;
       setActiveRobot(robot);
       setActiveWorld(world);
       fetchUrdf(robot);
@@ -2874,47 +2986,6 @@ export default function DashboardView() {
       flexShrink: 0,
       boxShadow: isDark ? "none" : "0 6px 16px rgba(0,0,0,0.04)",
       overflow: "hidden",
-    },
-
-    poseGrid: {
-      display: "flex",
-      gap: "10px",
-      alignItems: "stretch",
-      minWidth: 0,
-    },
-
-    poseItem: {
-      background: isDark ? "#ffffff08" : "#f8f9fa",
-      border: `1px solid ${isDark ? "#ffffff10" : "#eeeeee"}`,
-      borderRadius: "10px",
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: "center",
-      alignItems: "center",
-      flex: "1 1 0",
-      minWidth: 0,
-      padding: "clamp(10px, 1.5vw, 20px) 5px",
-      overflow: "hidden",
-    },
-    poseLabel: {
-      fontSize: "clamp(11px, 1.2vw, 14px)",
-      fontWeight: 700,
-      color: isDark ? "#9e9ec0" : "#666",
-      textTransform: "uppercase",
-      marginBottom: "8px",
-      letterSpacing: "1px",
-      textAlign: "center",
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      maxWidth: "100%",
-    },
-    poseVal: {
-      fontSize: "clamp(16px, 2.2vw, 32px)",
-      fontWeight: 700,
-      color: isDark ? "#00e5ff" : "#007b83",
-      fontFamily: "monospace",
-      whiteSpace: "nowrap",
     },
 
     popupWrap2: {
@@ -3201,8 +3272,10 @@ export default function DashboardView() {
 
               <div style={S.mapCanvasWrap} ref={mapWrapRef}>
                 <WorldMap
+                  ref={worldMapRef}
                   mapData={mapData}
-                  pose={pose}
+                  poseRef={poseRef}
+                  steeringRef={steeringRef}
                   urdf={urdf}
                   width={canvasSize.w}
                   height={canvasSize.h}
@@ -3211,7 +3284,6 @@ export default function DashboardView() {
                   effectStartTime={effectStartTime}
                   effectEndTime={effectEndTime}
                   collisionActive={collisionActive}
-                  steeringAngle={steeringAngle}
                 />
               </div>
             </div>
@@ -3246,34 +3318,7 @@ export default function DashboardView() {
                 >
                   {collisionActive ? "⚠️ Collision: DETECTED" : "✅ Collision: OK"}
                 </div>
-                <div style={S.poseGrid}>
-                  {[
-                    { label: "X", value: typeof pose.x === 'number' ? pose.x.toFixed(2) : pose.x, unit: "[m]" },
-                    { label: "Y", value: typeof pose.y === 'number' ? pose.y.toFixed(2) : pose.y, unit: "[m]" },
-                    {
-                      label: "Angle",
-                      value: pose.theta === "-" ? "-" : `${typeof pose.theta === 'number' ? pose.theta.toFixed(1) : pose.theta}°`,
-                      unit: "[degrees]",
-                    },
-                  ].map(({ label, value, unit }) => (
-                    <div key={label} style={S.poseItem}>
-                      <div style={S.poseLabel}>{label}</div>
-                      <div style={S.poseVal}>{value}</div>
-                      <div
-                        style={{
-                          fontSize: "clamp(10px, 1vw, 13px)",
-                          fontWeight: 600,
-                          color: isDark ? "#7a7a9e" : "#999999",
-                          marginTop: "8px",
-                          letterSpacing: "0.5px",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {unit}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <PoseReadout poseRef={poseRef} isDark={isDark} />
               </div>
 
               <SimSelector

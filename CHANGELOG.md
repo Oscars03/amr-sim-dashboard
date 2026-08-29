@@ -11,6 +11,7 @@ All notable changes to the IRiSH AMR Simulator Dashboard project will be documen
 
 ### Fixed
 - **ROS connection leak**: `App.jsx` created a new `ROSLIB.Ros` (and WebSocket) every second while rosbridge was unreachable without closing the previous one. The old connection is now torn down before each reconnect.
+- **Dashboard render-loop CPU / memory**: `/odom` (20 Hz) went through the Zustand store, re-rendering the whole `DashboardView` tree every frame — a parked robot alone held the renderer at ~90 % CPU and grew RSS to multiple GB. Pose and steering angle are now refs read straight by the canvas; `WorldMap` is memoized and redraws only on real movement; the odometry numbers are a small self-polling component. Idle renderer CPU drops from ~90 % to ~3 %.
 
 ## [0.2.8] - 2026-07-31
 

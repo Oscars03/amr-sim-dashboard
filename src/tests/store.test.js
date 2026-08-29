@@ -14,7 +14,6 @@ beforeEach(async () => {
     fpsLimit: 20,
     isDark: true,
     rosStatus: 'Disconnected',
-    pose: { x: '-', y: '-', theta: '-' },
   });
 });
 
@@ -34,11 +33,6 @@ describe('useAppStore', () => {
   it('setIsDark toggles theme', () => {
     useAppStore.getState().setIsDark(false);
     expect(useAppStore.getState().isDark).toBe(false);
-  });
-
-  it('setPose updates pose fields', () => {
-    useAppStore.getState().setPose({ x: '1.23', y: '4.56', theta: '0.78' });
-    expect(useAppStore.getState().pose).toEqual({ x: '1.23', y: '4.56', theta: '0.78' });
   });
 
   it('setRosStatus transitions Connected→Disconnected', () => {
