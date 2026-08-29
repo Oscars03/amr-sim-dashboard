@@ -615,20 +615,20 @@ export default function CreateWorldView() {
           <span className="btn-label">Draw Wall</span>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', width: '100%' }} title="Wall Thickness">
+          <svg width="24" height="24" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+            <line x1="2" y1="12" x2="22" y2="12" stroke="var(--text-primary)" strokeWidth={wallThickness === 0.05 ? 2 : wallThickness === 0.12 ? 4 : 8} strokeLinecap="round" />
+          </svg>
           <select 
             value={wallThickness} 
             onChange={(e) => setWallThickness(parseFloat(e.target.value))}
             className="toolbar-select"
-            style={{ flex: 1 }}
+            style={{ width: '100%', padding: '0 4px', fontSize: '11px', textAlign: 'center', height: '32px' }}
           >
             <option value={0.05}>Thin</option>
-            <option value={0.12}>Normal</option>
+            <option value={0.12}>Norm</option>
             <option value={0.25}>Thick</option>
           </select>
-          <svg width="24" height="24" viewBox="0 0 24 24" style={{ marginLeft: '2px', flexShrink: 0 }}>
-            <line x1="2" y1="12" x2="22" y2="12" stroke="var(--text-primary)" strokeWidth={wallThickness === 0.05 ? 2 : wallThickness === 0.12 ? 4 : 8} strokeLinecap="round" />
-          </svg>
         </div>
 
         <SplitButton
@@ -669,34 +669,6 @@ export default function CreateWorldView() {
           </svg>
           <span className="btn-label">Clear All</span>
         </button>
-
-        {/* World Name Input */}
-        <div className="toolbar-input-wrap">
-          <span className="btn-label" style={{ fontSize: '15px', fontWeight: 'bold' }}>World:</span>
-          <input
-            value={mapName}
-            onChange={(e) => setMapName(e.target.value)}
-            className="toolbar-input"
-            placeholder="custom_world"
-            style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
-          />
-        </div>
-
-        <div className="toolbar-divider" />
-
-        {/* Actions */}
-        <button onClick={() => saveMap(false)} className="btn btn-save btn-save-outline" title="Save World">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-          </svg>
-          <span className="btn-label">Save World</span>
-        </button>
-        <button onClick={() => saveMap(true)} className="btn btn-save" title="Save & Launch">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-          </svg>
-          <span className="btn-label">Save & Launch</span>
-        </button>
       </div>
       
       <div className="canvas-wrap" ref={wrapRef}>
@@ -712,6 +684,29 @@ export default function CreateWorldView() {
           className="map-canvas"
           style={{ cursor }}
         />
+        {/* Floating Save Controls */}
+        <div style={{ position: 'absolute', top: '16px', right: '16px', background: isDark ? 'rgba(20,20,30,0.85)' : 'rgba(255,255,255,0.85)', padding: '12px', borderRadius: '12px', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`, display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(10px)', boxShadow: '0 8px 32px rgba(0,0,0,0.15)', pointerEvents: 'auto' }}>
+          <span style={{ fontSize: '13px', fontWeight: 'bold', color: isDark ? '#fff' : '#000' }}>World:</span>
+          <input
+            value={mapName}
+            onChange={(e) => setMapName(e.target.value)}
+            placeholder="custom_world"
+            style={{ width: '120px', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${isDark ? '#333' : '#ccc'}`, background: isDark ? '#0b0b14' : '#fff', color: isDark ? '#fff' : '#000', outline: 'none', fontSize: '13px', fontWeight: 'bold' }}
+          />
+          <button onClick={() => saveMap(false)} className="btn btn-save btn-save-outline" style={{ width: 'auto', padding: '0 12px', height: '32px' }} title="Save World">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+            </svg>
+            <span style={{ display: 'inline', marginLeft: '6px', fontSize: '12px' }}>Save</span>
+          </button>
+          <button onClick={() => saveMap(true)} className="btn btn-save" style={{ width: 'auto', padding: '0 12px', height: '32px' }} title="Save & Launch">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span style={{ display: 'inline', marginLeft: '6px', fontSize: '12px' }}>Launch</span>
+          </button>
+        </div>
+
         {/* HUD Elements */}
         <div style={{ position: 'absolute', bottom: '16px', right: '16px', color: '#fff', background: 'rgba(0,0,0,0.7)', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)' }}>
           <button onClick={() => { setZoom(1); setPan({x:0, y:0}); }} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.4)', color: 'white', borderRadius: '4px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>

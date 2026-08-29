@@ -12,12 +12,12 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  align-items: stretch;
+  align-items: center;
   background: var(--bg-card, #121212);
-  padding: 16px;
+  padding: 16px 8px;
   border-left: 1px solid var(--border-color, #2a2a2a);
   flex-shrink: 0;
-  width: 280px;
+  width: 72px;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -86,36 +86,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: clamp(4px, 0.5vw, 6px);
   background: var(--bg-app, #1a1a1a);
   border: 1px solid var(--border-color, #333);
   color: var(--text-secondary, #aaa);
-  padding: 0 clamp(6px, 0.9vw, 12px);
-  height: 40px;
-  font-size: clamp(12px, 0.9vw, 14px);
+  padding: 0;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   cursor: pointer;
-  font-weight: 600;
   transition: all 0.15s;
-  white-space: nowrap;
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   box-sizing: border-box;
 }
 
 .btn-icon-only {
-  width: 40px;
-  padding: 0;
-  flex-shrink: 0;
+  width: 44px;
 }
 
 .btn-label {
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-
-.toolbar.compact .btn-label {
   display: none;
 }
 
