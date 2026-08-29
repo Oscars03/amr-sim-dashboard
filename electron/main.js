@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { fork, execSync } from 'child_process'
+import { fork } from 'child_process'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import pkg from 'electron-updater'
@@ -159,18 +159,33 @@ app.whenReady().then(() => {
   })
 })
 
-app.on('before-quit', () => {
-  if (mapServer) {
-    mapServer.kill();
-  }
-  try {
-    execSync('pkill -f map-server || true');
-    execSync('pkill -f amr_sim_node || true');
-    execSync('pkill -f rosbridge || true');
-    execSync('pkill -f gz || true');
-  } catch (e) {
-    console.log("Cleanup background process finished");
-  }
+// map-server owns every ROS process it spawned (they share its process group),
+// so quitting means: SIGTERM it, wait for its own graceful shutdown, then go.
+// The previous `pkill -f <name>` sweep matched on substrings -- `pkill -f gz`
+// alone would kill any unrelated process whose command line contained "gz".
+let isQuitting = false;
+
+app.on('before-quit', (e) => {
+  if (isQuitting || !mapServer) return;
+  e.preventDefault();
+  isQuitting = true;
+
+  const child = mapServer;
+  const finish = () => {
+    mapServer = null;
+    app.quit();
+  };
+  const forceTimer = setTimeout(() => {
+    console.warn('map-server did not exit in time — killing it');
+    try { child.kill('SIGKILL') } catch { /* already gone */ }
+    finish();
+  }, 4000);
+
+  child.once('exit', () => {
+    clearTimeout(forceTimer);
+    finish();
+  });
+  child.kill('SIGTERM');
 });
 
 app.on('window-all-closed', () => {

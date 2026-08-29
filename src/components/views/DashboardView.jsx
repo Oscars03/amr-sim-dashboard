@@ -857,30 +857,36 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
 
     const loop = setInterval(() => {
       if (!cmdPubRef.current) return;
-      if (!webControl) return;
 
       let lx = 0, ly = 0, az = 0;
       let moving = false;
 
-      // Non-Holonomic
-      if (keys["u"]) { lx = speed; az = turnSpeed; moving = true; }
-      if (keys["i"]) { lx = speed; az = 0; moving = true; }
-      if (keys["o"]) { lx = speed; az = -turnSpeed; moving = true; }
-      if (keys["j"]) { lx = 0; az = turnSpeed; moving = true; }
-      if (keys["l"]) { lx = 0; az = -turnSpeed; moving = true; }
-      if (keys["m"]) { lx = -speed; az = -turnSpeed; moving = true; }
-      if (keys[","]) { lx = -speed; az = 0; moving = true; }
-      if (keys["."]) { lx = -speed; az = turnSpeed; moving = true; }
+      // Terminal mode is "commanding zero", not "publishing nothing": bailing
+      // out here left the last twist latched, so switching to Terminal while
+      // the robot was driving kept it driving (forever, with the watchdog off).
+      // Falling through sends the 10 stop messages below, then goes quiet so
+      // it never fights a teleop node running in a shell.
+      if (webControl) {
+        // Non-Holonomic
+        if (keys["u"]) { lx = speed; az = turnSpeed; moving = true; }
+        if (keys["i"]) { lx = speed; az = 0; moving = true; }
+        if (keys["o"]) { lx = speed; az = -turnSpeed; moving = true; }
+        if (keys["j"]) { lx = 0; az = turnSpeed; moving = true; }
+        if (keys["l"]) { lx = 0; az = -turnSpeed; moving = true; }
+        if (keys["m"]) { lx = -speed; az = -turnSpeed; moving = true; }
+        if (keys[","]) { lx = -speed; az = 0; moving = true; }
+        if (keys["."]) { lx = -speed; az = turnSpeed; moving = true; }
 
-      // Holonomic
-      if (keys["U"]) { lx = speed; ly = speed; moving = true; }
-      if (keys["I"]) { lx = speed; ly = 0; moving = true; }
-      if (keys["O"]) { lx = speed; ly = -speed; moving = true; }
-      if (keys["J"]) { lx = 0; ly = speed; moving = true; }
-      if (keys["L"]) { lx = 0; ly = -speed; moving = true; }
-      if (keys["M"]) { lx = -speed; ly = speed; moving = true; }
-      if (keys["<"]) { lx = -speed; ly = 0; moving = true; }
-      if (keys[">"]) { lx = -speed; ly = -speed; moving = true; }
+        // Holonomic
+        if (keys["U"]) { lx = speed; ly = speed; moving = true; }
+        if (keys["I"]) { lx = speed; ly = 0; moving = true; }
+        if (keys["O"]) { lx = speed; ly = -speed; moving = true; }
+        if (keys["J"]) { lx = 0; ly = speed; moving = true; }
+        if (keys["L"]) { lx = 0; ly = -speed; moving = true; }
+        if (keys["M"]) { lx = -speed; ly = speed; moving = true; }
+        if (keys["<"]) { lx = -speed; ly = 0; moving = true; }
+        if (keys[">"]) { lx = -speed; ly = -speed; moving = true; }
+      }
 
       if (moving) {
         zeroCount = 0;
@@ -1218,7 +1224,12 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
         </div>
 
         {/* Web/Terminal toggle */}
-        <div style={{ ...S.toggleWrap, margin: 0 }} onClick={() => setWebControl(!webControl)}>
+        <div style={{ ...S.toggleWrap, margin: 0 }} onClick={() => {
+          // Drop the latched keys on the way out, so handing control back to
+          // the UI later doesn't silently resume the command it was holding.
+          if (webControl) setKeys({});
+          setWebControl(!webControl);
+        }}>
           <div style={S.toggleOpt(!webControl, "#ff1744")}>
             <div style={{ width: "8px", height: "8px", borderRadius: "30%", background: !webControl ? "#ff1744" : "transparent", boxShadow: !webControl ? "0 0 8px #ff1744" : "none", transition: "all 0.2s" }} />
             Terminal
