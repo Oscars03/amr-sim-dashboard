@@ -36,21 +36,21 @@ export default function CoachTour({ isDark }) {
     },
     {
       title: '2D Map & HUD Controls',
-      desc: 'Top-left card shows active world name and instant Reset Pose. Use middle-mouse or left-mouse to pan, rotate, and zoom.',
-      pos: { top: '160px', left: '20px' },
-      highlight: { top: '64px', left: '12px', width: '220px', height: '90px', borderRadius: '12px' },
+      desc: 'Top-left card shows active world name and instant Reset Pose. Top-right buttons control Camera Center, Rotate, and Zoom.',
+      pos: { top: '170px', left: '20px' },
+      highlight: { top: '64px', left: '12px', width: '220px', height: '95px', borderRadius: '12px' },
     },
     {
       title: 'Inspector & Control Tabs',
       desc: 'Telemetry, Robot Setup & Spawn Pose, Teleop Drive, and Topic Monitor console are all organized in this panel.',
       pos: { top: '80px', right: '360px' },
-      highlight: { top: '52px', right: '0px', width: '340px', bottom: '24px', borderRadius: '0px' },
+      highlight: { top: '52px', right: '0px', width: '340px', bottom: '28px', borderRadius: '0px' },
     },
     {
       title: 'Status & Telemetry Bar',
       desc: 'Real-time indicators for ROS 2 connection, Environment readiness, FPS limit toggle, and Real-Time Factor (RTF).',
-      pos: { bottom: '45px', left: '20px' },
-      highlight: { bottom: '0px', left: '0px', right: '0px', height: '24px', borderRadius: '0px' },
+      pos: { bottom: '48px', left: '20px' },
+      highlight: { bottom: '0px', left: '0px', right: '0px', height: '28px', borderRadius: '0px' },
     },
     {
       title: 'Command Palette & Shortcuts',
@@ -69,22 +69,29 @@ export default function CoachTour({ isDark }) {
         inset: 0,
         zIndex: 99998,
         pointerEvents: 'auto',
-        background: 'rgba(0, 0, 0, 0.45)',
-        backdropFilter: 'blur(2px)',
-        animation: 'fade-in 0.2s var(--ease-out)',
+        overflow: 'hidden',
       }}
     >
-      {/* Visual feature spotlight highlight */}
-      {cur.highlight && (
+      {/* True spotlight cutout (clear focus inside, darkened outside) */}
+      {cur.highlight ? (
         <div
           style={{
             position: 'absolute',
             ...cur.highlight,
-            border: '2px solid var(--c-accent)',
-            boxShadow: '0 0 0 4px rgba(34, 211, 238, 0.25), 0 0 30px rgba(34, 211, 238, 0.35)',
+            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.65), 0 0 0 2px var(--c-accent), 0 0 24px rgba(2, 132, 199, 0.45)',
             pointerEvents: 'none',
             zIndex: 99999,
             transition: 'all 0.3s var(--ease-out)',
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.60)',
+            pointerEvents: 'none',
+            zIndex: 99999,
           }}
         />
       )}

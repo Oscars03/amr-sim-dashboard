@@ -53,7 +53,7 @@
 
   /* App bar */
   --bar-h:       52px;
-  --status-bar-h:24px;
+  --status-bar-h:28px;
 
   /* Inspector */
   --inspector-w: 340px;
@@ -155,6 +155,7 @@ body, html, #root {
   padding: 0 !important;
   width: 100% !important;
   height: 100% !important;
+  height: 100dvh !important;
   background-color: var(--c-bg) !important;
   color: var(--c-text-1);
   font-family: var(--font-ui);
@@ -172,8 +173,10 @@ body, html, #root {
 .app-container {
   display: flex;
   flex-direction: column;
+  width: 100%;
   width: 100vw;
-  height: 100vh;
+  height: 100%;
+  height: 100dvh;
   overflow: hidden;
 }
 

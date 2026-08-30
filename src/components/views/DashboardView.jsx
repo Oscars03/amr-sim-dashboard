@@ -2972,7 +2972,7 @@ export default function DashboardView() {
 
 
       {/* ── Main shell: canvas | inspector ──────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', height: '100%', minHeight: 0, overflow: 'hidden' }}>
         {/* Content row */}
         <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
 
@@ -3348,12 +3348,12 @@ export default function DashboardView() {
 
         {/* ── Bottom Status Bar ──────────────────────────────────────── */}
         <div style={{
-          height: 'var(--status-bar-h, 24px)', flexShrink: 0,
+          height: 'var(--status-bar-h, 28px)', flexShrink: 0,
           display: 'flex', alignItems: 'center',
           borderTop: '1px solid var(--c-border)',
           background: isDark ? 'var(--c-bg)' : 'var(--c-panel)',
           padding: '0 12px', gap: 0, overflow: 'hidden',
-          fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-3)',
+          fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-2)',
           position: 'relative', zIndex: 20,
         }}>
 
@@ -3363,7 +3363,7 @@ export default function DashboardView() {
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px',
               height: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
-              color: 'var(--c-text-3)', fontFamily: 'var(--font-mono)', fontSize: 11,
+              color: 'var(--c-text-2)', fontFamily: 'var(--font-mono)', fontSize: 11,
               transition: 'background var(--dur-fast)',
             }}
             onMouseEnter={e => e.currentTarget.style.background = 'var(--c-panel-2)'}
