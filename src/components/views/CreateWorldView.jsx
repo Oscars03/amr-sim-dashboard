@@ -61,8 +61,8 @@ function PopupToolButton({ icon, isActive, onClick, options, selectedValue, onSe
   };
 
   const selectedOpt = options.find(o => String(o.value) === String(selectedValue));
-  // Short label: first word only, max 5 chars
-  const badge = selectedOpt ? selectedOpt.label.split(' ')[0].slice(0, 5) : '';
+  // Short label: first word only (e.g. "Normal", "Circle")
+  const badge = selectedOpt ? selectedOpt.label.split(' ')[0] : '';
 
   return (
     <div style={{ position: 'relative' }} ref={ref}>
@@ -73,7 +73,7 @@ function PopupToolButton({ icon, isActive, onClick, options, selectedValue, onSe
         style={{ flexDirection: 'column', gap: '1px', height: '52px' }}
       >
         {icon}
-        <span style={{ fontSize: '9px', fontWeight: 700, opacity: 0.8, letterSpacing: '0.02em', lineHeight: 1 }}>{badge}</span>
+        <span style={{ fontSize: '9px', fontWeight: 700, opacity: 0.8, letterSpacing: '0.02em', lineHeight: 1, whiteSpace: 'nowrap' }}>{badge}</span>
       </button>
 
       {isOpen && createPortal(
