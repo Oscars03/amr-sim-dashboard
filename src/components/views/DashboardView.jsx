@@ -1823,22 +1823,6 @@ const SimSelector = forwardRef(function SimSelector(
               </svg>
               Use Current
             </button>
-            <button
-              type="button"
-              onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
-              title="Reset spawn coordinates to (0, 0, 0°)"
-              style={{
-                background: "transparent", border: "none",
-                color: "var(--c-accent)", fontSize: "12px", fontWeight: 700,
-                cursor: "pointer", padding: "2px 4px", borderRadius: "4px",
-                display: "flex", alignItems: "center", gap: "4px",
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
-              </svg>
-              Reset
-            </button>
           </div>
         </div>
 
@@ -1983,6 +1967,28 @@ const SimSelector = forwardRef(function SimSelector(
             />
             <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>°</span>
           </div>
+        </div>
+
+        {/* Reset sits under the fields it clears, right-aligned so it lands
+            below Yaw. It was next to "Use Current" in the header, where the two
+            read as a pair despite doing opposite things. */}
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
+            title="Reset spawn coordinates to (0, 0, 0°)"
+            style={{
+              background: "transparent", border: "none",
+              color: "var(--c-accent)", fontSize: "12px", fontWeight: 700,
+              cursor: "pointer", padding: "2px 4px", borderRadius: "4px",
+              display: "flex", alignItems: "center", gap: "4px",
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+            </svg>
+            Reset
+          </button>
         </div>
       </div>
 
