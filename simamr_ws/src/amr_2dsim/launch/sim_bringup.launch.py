@@ -98,8 +98,18 @@ def generate_launch_description():
             output     = 'screen',
         )
 
+        # rosapi backs ros.getTopics()/getServices() in the dashboard. Running
+        # rosbridge_websocket alone leaves /rosapi/topics undefined, so the
+        # Topic Monitor dropdown comes up empty.
+        rosapi = Node(
+            package    = 'rosapi',
+            executable = 'rosapi_node',
+            name       = 'rosapi',
+            output     = 'screen',
+        )
+
         # ── NO map-server here ───────────────────────────────────────────────
-        return [rsp_node, sim_node, rosbridge]
+        return [rsp_node, sim_node, rosbridge, rosapi]
 
     set_map_env  = SetEnvironmentVariable(
         name='AMR_MAP_FILE', value=world_file)

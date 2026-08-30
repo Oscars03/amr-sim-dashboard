@@ -781,7 +781,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
       fontSize: "13px",
       fontWeight: 700,
       letterSpacing: "0.5px",
-      color: active ? color : isDark ? "#94a3b8" : "#475569",
+      color: active ? color : isDark ? "#cbd5e1" : "#475569",
       background: active ? `${color}20` : "transparent",
       border: active ? `1px solid ${color}` : "1px solid transparent",
       transition: "all 0.2s ease-in-out",
@@ -1038,10 +1038,10 @@ function KeyboardController({ ros, isDark, isShort = true }) {
           style={{
             display: 'flex', alignItems: 'center', gap: '6px',
             padding: '6px 12px', borderRadius: '20px', cursor: 'pointer',
-            fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px',
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.4px',
             userSelect: 'none', transition: 'all 0.2s', height: '28px',
             background: watchdogEnabled ? '#00e67625' : (isDark ? '#ffffff0d' : '#e0e0e0'),
-            color: watchdogEnabled ? '#00e676' : (isDark ? '#888' : '#666'),
+            color: watchdogEnabled ? '#00e676' : (isDark ? '#cbd5e1' : '#475569'),
           }}
         >
           <div style={{
@@ -1079,7 +1079,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
             title={!webControl ? "Enable UI control first" : "Toggle Holonomic Mode"}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '8px',
-              fontSize: '11px', fontWeight: 800, letterSpacing: '0.6px',
+              fontSize: '12px', fontWeight: 800, letterSpacing: '0.4px',
               userSelect: 'none', cursor: webControl ? 'pointer' : 'not-allowed',
               opacity: webControl ? 1 : 0.5,
             }}
@@ -1128,7 +1128,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
           display: 'flex', flexDirection: 'column', gap: isShort ? '8px' : '10px',
           alignSelf: 'stretch', width: '100%', minWidth: 0, boxSizing: 'border-box',
         }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-text-2)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
             Movement Scale
           </div>
 
@@ -1152,7 +1152,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
               style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
               +<span style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '8px', opacity: 0.5 }}>W</span>
             </button>
-            <span style={{ width: '30px', flexShrink: 0, textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{speed.toFixed(2)}</span>
+            <span style={{ width: '34px', flexShrink: 0, textAlign: 'right', fontSize: '14px', fontWeight: 700, color: 'var(--c-text-1)' }}>{speed.toFixed(2)}</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
@@ -1175,24 +1175,25 @@ function KeyboardController({ ros, isDark, isShort = true }) {
               style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
               +<span style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '8px', opacity: 0.5 }}>E</span>
             </button>
-            <span style={{ width: '30px', flexShrink: 0, textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{turnSpeed.toFixed(2)}</span>
+            <span style={{ width: '34px', flexShrink: 0, textAlign: 'right', fontSize: '14px', fontWeight: 700, color: 'var(--c-text-1)' }}>{turnSpeed.toFixed(2)}</span>
           </div>
         </div>
       </div>
 
-      {/* X/Z live command — demoted to dim 11px mono strip */}
+      {/* /cmd_vel live command */}
       <div style={{
-        marginTop: isShort ? '6px' : '10px',
-        fontFamily: 'var(--font-mono)', fontSize: 11,
-        color: isDark ? '#475569' : '#94a3b8',
-        textAlign: 'center', letterSpacing: '0.3px',
+        marginTop: isShort ? '8px' : '12px',
+        display: 'flex', justifyContent: 'center', gap: '20px',
+        background: 'var(--c-panel-2)', borderRadius: 'var(--r-md)', padding: '8px 14px',
+        fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 700,
+        color: 'var(--c-text-3)',
       }}>
-        X: <span style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+        <span>X <span style={{ color: 'var(--c-text-1)' }}>
           {keys["i"] && webControl ? speed.toFixed(2) : keys[","] && webControl ? (-speed).toFixed(2) : "0.00"}
-        </span>
-        {'  '}Z: <span style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+        </span></span>
+        <span>Z <span style={{ color: 'var(--c-text-1)' }}>
           {keys["j"] && webControl ? turnSpeed.toFixed(2) : keys["l"] && webControl ? (-turnSpeed).toFixed(2) : "0.00"}
-        </span>
+        </span></span>
       </div>
 
       <button
@@ -1232,7 +1233,7 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
   const accent = isDark ? "var(--c-accent)" : "var(--c-accent)";
   const border = isDark ? "rgba(255, 255, 255, 0.16)" : "rgba(0, 0, 0, 0.15)";
   const inputBg = isDark ? "#161c25" : "#f8fafc";
-  const textSub = isDark ? "#94a3b8" : "#334155";
+  const textSub = isDark ? "#cbd5e1" : "#475569";
   const textMain = isDark ? "#ffffff" : "#0f172a";
 
   useEffect(() => {
@@ -1250,11 +1251,11 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
       {/* Label */}
       <div
         style={{
-          fontSize: "11px",
+          fontSize: "12px",
           fontWeight: 700,
           color: textSub,
           textTransform: "uppercase",
-          letterSpacing: "1.2px",
+          letterSpacing: "0.4px",
           marginBottom: "6px",
         }}
       >
@@ -1666,7 +1667,7 @@ const SimSelector = forwardRef(function SimSelector(
           justifyContent: "space-between",
         }}
       >
-        <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--c-text-3)" }}>
+        <span style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px", color: "var(--c-text-2)" }}>
           Simulation Config
         </span>
         <div
@@ -1760,11 +1761,11 @@ const SimSelector = forwardRef(function SimSelector(
         >
           <span
             style={{
-              fontSize: "11px",
+              fontSize: "12px",
               fontWeight: 800,
               color: isDark ? "#ffffff" : "#0f172a",
               textTransform: "uppercase",
-              letterSpacing: "1.2px",
+              letterSpacing: "0.4px",
             }}
           >
             Spawn Pose (Initial)
@@ -1784,7 +1785,7 @@ const SimSelector = forwardRef(function SimSelector(
               title="Use current live pose of the robot"
               style={{
                 background: "transparent", border: "none",
-                color: "var(--c-text-2)", fontSize: "11px", fontWeight: 700,
+                color: "var(--c-text-2)", fontSize: "12px", fontWeight: 700,
                 cursor: "pointer", padding: "2px 4px", borderRadius: "4px",
                 display: "flex", alignItems: "center", gap: "4px",
               }}
@@ -1800,7 +1801,7 @@ const SimSelector = forwardRef(function SimSelector(
               title="Reset spawn coordinates to (0, 0, 0°)"
               style={{
                 background: "transparent", border: "none",
-                color: "var(--c-accent)", fontSize: "11px", fontWeight: 700,
+                color: "var(--c-accent)", fontSize: "12px", fontWeight: 700,
                 cursor: "pointer", padding: "2px 4px", borderRadius: "4px",
                 display: "flex", alignItems: "center", gap: "4px",
               }}
@@ -1834,7 +1835,7 @@ const SimSelector = forwardRef(function SimSelector(
           >
             <span
               style={{
-                fontSize: "12px",
+                fontSize: "13px",
                 fontWeight: 800,
                 color: "var(--c-accent)",
               }}
@@ -1855,13 +1856,13 @@ const SimSelector = forwardRef(function SimSelector(
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
-                fontSize: "13px",
+                fontSize: "15px",
                 fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0.0"
             />
-            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>m</span>
           </div>
 
           {/* Y Input */}
@@ -1878,7 +1879,7 @@ const SimSelector = forwardRef(function SimSelector(
           >
             <span
               style={{
-                fontSize: "12px",
+                fontSize: "13px",
                 fontWeight: 800,
                 color: "var(--c-accent)",
               }}
@@ -1899,13 +1900,13 @@ const SimSelector = forwardRef(function SimSelector(
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
-                fontSize: "13px",
+                fontSize: "15px",
                 fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0.0"
             />
-            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>m</span>
           </div>
 
           {/* Yaw Input — full width on its own row */}
@@ -1923,7 +1924,7 @@ const SimSelector = forwardRef(function SimSelector(
           >
             <span
               style={{
-                fontSize: "12px",
+                fontSize: "13px",
                 fontWeight: 800,
                 color: "var(--c-accent)",
               }}
@@ -1944,13 +1945,13 @@ const SimSelector = forwardRef(function SimSelector(
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
-                fontSize: "13px",
+                fontSize: "15px",
                 fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0"
             />
-            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>°</span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>°</span>
           </div>
         </div>
       </div>
@@ -2222,37 +2223,38 @@ function TopicMonitor({ ros, isDark }) {
       gap: "10px",
     },
     title: {
-      fontSize: "11px",
+      fontSize: "12px",
       fontWeight: 700,
       textTransform: "uppercase",
-      letterSpacing: "0.8px",
-      color: "var(--c-text-3)",
+      letterSpacing: "0.4px",
+      color: "var(--c-text-2)",
       fontFamily: "var(--font-ui)",
     },
     select: {
       width: "100%",
       boxSizing: "border-box",
-      padding: "8px 10px",
+      padding: "9px 11px",
       borderRadius: "var(--r-md)",
       background: "var(--c-panel-2)",
       color: "var(--c-text-1)",
       border: "1px solid var(--c-border)",
-      fontSize: "13px",
+      fontSize: "14px",
       outline: "none",
       cursor: "pointer",
-      fontWeight: 500,
+      fontWeight: 600,
       colorScheme: isDark ? "dark" : "light",
     },
     dataBox: {
       height: "240px",
       overflowY: "auto",
-      padding: "10px",
+      padding: "12px",
       background: "var(--c-panel-2)",
       border: "1px solid var(--c-border)",
       borderRadius: "var(--r-md)",
-      fontSize: "12px",
+      fontSize: "13px",
+      lineHeight: 1.5,
       fontFamily: "var(--font-mono)",
-      color: "var(--c-text-2)",
+      color: "var(--c-text-1)",
     },
   };
 
@@ -2445,7 +2447,7 @@ const PoseSingle = React.memo(function PoseSingle({ poseRef, field, unit, isAngl
   const fmt = typeof raw === 'number' ? (isAngle ? raw.toFixed(1) : raw.toFixed(2)) : '-';
   const disp = typeof raw === 'number' && isAngle ? `${fmt}°` : fmt;
   if (compact) return (
-    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-accent)' }}>{field.toUpperCase()} <strong style={{ fontWeight: 800 }}>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}</span>
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--c-accent)' }}>{field.toUpperCase()} <strong style={{ fontWeight: 800 }}>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}</span>
   );
   return (
     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 24, fontWeight: 800, color: 'var(--c-accent)' }}>{disp}<span style={{ fontSize: 13, marginLeft: 4, color: 'var(--c-text-2)', fontWeight: 600 }}>{isAngle ? '' : unit}</span></span>
