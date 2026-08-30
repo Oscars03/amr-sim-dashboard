@@ -594,56 +594,6 @@ const StopSquareSvg = () => (
   </svg>
 );
 
-// ─── SparkLine ────────────────────────────────────────────────────────────────
-// 10-second ring buffer sampled from poseRef at 150ms. Pure SVG polyline.
-// UI-only — does NOT add ROS topics. Zero React state churn (uses ref + RAF).
-const SPARK_PTS = 60; // 60 × 150ms = 9s window
-function SparkLine({ poseRef, field, isAngle, color = '#22d3ee', height = 32 }) {
-  const svgRef = useRef(null);
-  const buf = useRef(Array(SPARK_PTS).fill(null));
-  const prev = useRef(null);
-
-  useEffect(() => {
-    let frame;
-    const tick = () => {
-      const p = poseRef.current;
-      if (p !== prev.current) {
-        prev.current = p;
-        let raw = p?.[field];
-        if (typeof raw === 'number') {
-          if (isAngle) raw = raw * 180 / Math.PI; // convert to degrees for display
-          buf.current.push(raw);
-          if (buf.current.length > SPARK_PTS) buf.current.shift();
-        }
-      }
-      const pts = buf.current.filter(v => v !== null);
-      if (pts.length >= 2 && svgRef.current) {
-        const mn = Math.min(...pts), mx = Math.max(...pts);
-        const range = mx - mn || 1;
-        const w = svgRef.current.clientWidth || 260;
-        const h = height;
-        const points = pts.map((v, i) => {
-          const x = (i / (SPARK_PTS - 1)) * w;
-          const y = h - ((v - mn) / range) * (h - 4) - 2;
-          return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
-        const poly = svgRef.current.querySelector('polyline');
-        if (poly) poly.setAttribute('points', points);
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [poseRef, field, isAngle, height]);
-
-  return (
-    <svg ref={svgRef} width="100%" height={height} style={{ display: 'block', overflow: 'visible' }}>
-      <polyline points="" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
-    </svg>
-  );
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // KeyboardController
 // ─────────────────────────────────────────────────────────────────────────────
