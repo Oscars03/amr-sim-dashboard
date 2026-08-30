@@ -387,6 +387,34 @@ class AmrSimulator(Node):
         )
         self._robot_radius_sq = 0.0  # set after robot_radius is loaded
 
+        # Lidar geometry. Defaults describe the RPLIDAR S2E the real robot carries,
+        # in Sensitivity mode over UDP, so that a scenario run in simulation and
+        # the same scenario run on hardware present Nav2 with the same kind of
+        # measurement rather than two very different ones.
+        #
+        # What the two used to produce, read off bags from 2026-08-29:
+        #
+        #                   simulator        RPLIDAR S2E
+        #   points/scan     360              3240
+        #   angular step    1.0 deg          0.111 deg
+        #   angle range     0 .. 2pi         -pi .. +pi
+        #   range_max       12 m             30 m
+        #   rate            20 Hz            10 Hz
+        #
+        # range_max mattered most: on a 64 m map a simulated robot that cannot see
+        # past 12 m builds a different global costmap from the real one, which is
+        # not a difference between controllers. The angular step matters at
+        # distance -- at 10 m, 1 deg leaves 17 cm between beams against a 5 cm
+        # costmap cell, so the simulated obstacle layer marks a dashed wall where
+        # the real one marks a solid one.
+        #
+        # Halving the rate to 10 Hz is not a concession to CPU, it is the S2E's
+        # actual rate; it happens to offset most of the cost of 9x the rays.
+        self.declare_parameter('laser_num_rays', 3240)
+        self.declare_parameter('laser_angle_min', -math.pi)
+        self.declare_parameter('laser_rate_hz', 10.0)
+        self.declare_parameter('laser_range_max_override', 30.0)
+
         self.declare_parameter('enable_watchdog', False)
         self.declare_parameter('watchdog_timeout', 0.5)
         # Cache parameter values — updated via callback, not polled every tick
@@ -427,7 +455,30 @@ class AmrSimulator(Node):
         # ----------------------------------------------------
         self.total_pulse_left = 0.0
         self.total_pulse_right = 0.0
-        self._scan_intensities = [1.0] * 360  # pre-allocated, reused every tick
+        # Resolved once. num_rays sets the array sizes below, so it cannot be a
+        # live parameter without reallocating everything that depends on it.
+        self.laser_num_rays = int(self.get_parameter('laser_num_rays').value)
+        self.laser_angle_min = float(self.get_parameter('laser_angle_min').value)
+        _rmax = float(self.get_parameter('laser_range_max_override').value)
+        if _rmax > 0.0:
+            self.laser_range_max = _rmax
+        self._laser_angle_increment = (2.0 * math.pi) / self.laser_num_rays
+        self._laser_angles = (self.laser_angle_min
+                              + np.arange(self.laser_num_rays, dtype=np.float64)
+                              * self._laser_angle_increment)
+
+        # The scan publishes on a divisor of the physics tick rather than on its
+        # own timer, so a scan is always in step with the pose it was taken from.
+        _rate = float(self.get_parameter('laser_rate_hz').value)
+        self._scan_divisor = max(1, int(round((1.0 / 0.05) / _rate))) if _rate > 0 else 1
+        self._scan_tick = 0
+        self._scan_time = 0.05 * self._scan_divisor
+
+        self._scan_intensities = [1.0] * self.laser_num_rays  # reused every tick
+        self.get_logger().info(
+            f"lidar: {self.laser_num_rays} rays, "
+            f"{math.degrees(self._laser_angle_increment):.3f} deg step, "
+            f"{self.laser_range_max:.1f} m, {1.0/self._scan_time:.1f} Hz")
 
         self.tf_broadcaster = TransformBroadcaster(self)
         
@@ -712,7 +763,11 @@ class AmrSimulator(Node):
         self.stamp = self.get_clock().now().to_msg()
 
         self.publish_tf()
-        self.publish_scan()
+        # Scan at the sensor's own rate, not the physics rate.
+        self._scan_tick += 1
+        if self._scan_tick >= self._scan_divisor:
+            self._scan_tick = 0
+            self.publish_scan()
         self.publish_odom()
         self.publish_collision(collided)
 
@@ -783,28 +838,29 @@ class AmrSimulator(Node):
         scan = LaserScan()
         scan.header.stamp = self.stamp
         scan.header.frame_id = self.laser_frame_id
-        scan.angle_min = 0.0
-        scan.angle_max = 2 * math.pi
-        scan.angle_increment = math.radians(1.0) 
+        scan.angle_min = self.laser_angle_min
+        scan.angle_max = self.laser_angle_min + 2 * math.pi
+        scan.angle_increment = self._laser_angle_increment
         scan.range_min = 0.05
         scan.range_max = self.laser_range_max
-        scan.scan_time = 0.05
-        scan.time_increment = 0.05 / 360.0
+        scan.scan_time = self._scan_time
+        scan.time_increment = self._scan_time / self.laser_num_rays
         
         # ponytail: dynamic laser offset based on URDF to fix map swinging
         lx = self.pose['x'] + self.laser_offset_x * math.cos(self.pose['theta']) - self.laser_offset_y * math.sin(self.pose['theta'])
         ly = self.pose['y'] + self.laser_offset_x * math.sin(self.pose['theta']) + self.laser_offset_y * math.cos(self.pose['theta'])
 
-        # Fully vectorized: batch all 360 rays × all walls in one numpy op
-        # angles shape: (360,)  walls shape: (N,)  result: (360, N)
-        angles = self.pose['theta'] + self.laser_offset_yaw + np.arange(360, dtype=np.float64) * scan.angle_increment
-        dx = scan.range_max * np.cos(angles)  # (360,)
-        dy = scan.range_max * np.sin(angles)  # (360,)
+        # Fully vectorized: batch all rays × all walls in one numpy op.
+        # angles shape: (R,)  walls shape: (N,)  result: (R, N)
+        # The per-ray offsets are precomputed; only the robot's heading changes.
+        angles = self.pose['theta'] + self.laser_offset_yaw + self._laser_angles
+        dx = scan.range_max * np.cos(angles)  # (R,)
+        dy = scan.range_max * np.sin(angles)  # (R,)
 
         dwy = self.wall_y4 - self.wall_y3   # (N,)
         dwx = self.wall_x4 - self.wall_x3   # (N,)
         # den[i,j] = dx[i]*dwy[j] - dy[i]*dwx[j]
-        den = dx[:, None] * dwy - dy[:, None] * dwx  # (360, N)
+        den = dx[:, None] * dwy - dy[:, None] * dwx  # (R, N)
 
         wx3_lx = self.wall_x3 - lx  # (N,)
         wy3_ly = self.wall_y3 - ly  # (N,)
@@ -813,17 +869,17 @@ class AmrSimulator(Node):
             np.abs(den) > 1e-9,
             (wx3_lx * dwy - wy3_ly * dwx) / np.where(np.abs(den) > 1e-9, den, 1.0),
             np.inf
-        )  # (360, N)
+        )  # (R, N)
         u_all = np.where(
             np.abs(den) > 1e-9,
             (wx3_lx * dy[:, None] - wy3_ly * dx[:, None]) / np.where(np.abs(den) > 1e-9, den, 1.0),
             np.inf
-        )  # (360, N)
+        )  # (R, N)
 
         hit = (t_all >= 0.0) & (t_all <= 1.0) & (u_all >= 0.0) & (u_all <= 1.0)
         t_all[~hit] = np.inf
 
-        t_min = np.min(t_all, axis=1)  # (360,)
+        t_min = np.min(t_all, axis=1)  # (R,)
         distances = np.where(np.isinf(t_min), scan.range_max, t_min * scan.range_max)
 
         # Sensor noise: a real 2D lidar's range readings carry Gaussian error.
