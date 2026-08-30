@@ -56,6 +56,10 @@ const useAppStore = create((set) => ({
   // Spawn Pose Config { x: 0, y: 0, yaw: 0 } (yaw in degrees)
   spawnPose: { x: 0, y: 0, yaw: 0 },
   setSpawnPose: (pose) => set({ spawnPose: pose }),
+
+  // Shortcuts Modal
+  showShortcuts: false,
+  setShowShortcuts: (val) => set({ showShortcuts: val }),
 }));
 
 export default useAppStore;

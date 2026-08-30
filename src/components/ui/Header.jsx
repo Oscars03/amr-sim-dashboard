@@ -8,7 +8,7 @@ import './Header.css';
 export default function Header() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDark, setIsDark, setShowEnvModal } = useAppStore();
+  const { isDark, setIsDark, setShowShortcuts } = useAppStore();
 
   const [appVersion, setAppVersion] = useState('0.0.0');
   const [isSpinningUpdate, setIsSpinningUpdate] = useState(false);
@@ -43,9 +43,9 @@ export default function Header() {
           </button>
         )}
         {onDashboard && (
-          <button className="hdr-icon-btn" onClick={() => setShowEnvModal(true)} title="Environment Check">
+          <button className="hdr-icon-btn" onClick={() => setShowShortcuts(true)} title="Keyboard Shortcuts & Guide (?)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+              <circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
           </button>
         )}
