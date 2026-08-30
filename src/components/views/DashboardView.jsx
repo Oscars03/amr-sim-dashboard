@@ -703,10 +703,6 @@ function KeyboardController({ ros, isDark, isShort = true }) {
 
   const S = {
     wrap: {
-      background: isDark ? "#121212" : "#ffffff",
-      border: `1px solid ${isDark ? "#333333" : "#e0e0e0"}`,
-      borderRadius: "16px",
-      padding: isShort ? "8px" : "16px",
       opacity: webControl ? 1 : 0.6,
       transition: "opacity 0.3s",
       display: "flex",
@@ -979,9 +975,8 @@ function KeyboardController({ ros, isDark, isShort = true }) {
       `}</style>
 
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px',
-        background: isDark ? '#1e1e2d' : '#f5f5f5', padding: '6px 12px', borderRadius: '12px', marginBottom: isShort ? '8px' : '16px',
-        border: `1px solid ${isDark ? '#333' : '#e0e0e0'}`
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px',
+        marginBottom: isShort ? '10px' : '14px',
       }}>
         {/* Watchdog toggle */}
         <div
@@ -1065,20 +1060,17 @@ function KeyboardController({ ros, isDark, isShort = true }) {
           </div>
         </div>
 
-        {/* Movement Scale Sub-panel */}
+        {/* Movement Scale */}
         <div style={{
-          display: 'flex', flexDirection: 'column', gap: isShort ? '8px' : '12px',
-          background: isDark ? '#ffffff05' : '#f8f9fa',
-          border: `1px solid ${isDark ? '#ffffff15' : '#e0e0e0'}`,
-          borderRadius: '12px', padding: isShort ? '10px' : '16px',
+          display: 'flex', flexDirection: 'column', gap: isShort ? '8px' : '10px',
           alignSelf: 'stretch', width: '100%', minWidth: 0, boxSizing: 'border-box',
         }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: isDark ? '#aaa' : '#666', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
             Movement Scale
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-            <span style={{ width: '34px', flexShrink: 0, fontSize: '13px', fontWeight: 600, color: isDark ? '#ccc' : '#444' }}>Speed</span>
+            <span style={{ width: '40px', flexShrink: 0, fontSize: '13px', fontWeight: 600, color: 'var(--c-text-2)' }}>Speed</span>
             <button
               title="Decrease Speed (X)"
               onClick={() => webControl && setSpeed(Math.max(0.1, speed - 0.1))}
@@ -1101,7 +1093,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-            <span style={{ width: '34px', flexShrink: 0, fontSize: '13px', fontWeight: 600, color: isDark ? '#ccc' : '#444' }}>Angle</span>
+            <span style={{ width: '40px', flexShrink: 0, fontSize: '13px', fontWeight: 600, color: 'var(--c-text-2)' }}>Angle</span>
             <button
               title="Decrease Angle (C)"
               onClick={() => webControl && setTurnSpeed(Math.max(0.1, turnSpeed - 0.1))}
@@ -1126,11 +1118,10 @@ function KeyboardController({ ros, isDark, isShort = true }) {
       </div>
 
       <div style={{
-        display: 'flex', justifyContent: 'center', gap: '24px', marginTop: isShort ? '8px' : '16px',
-        background: isDark ? '#00000033' : '#e0e0e055',
-        padding: isShort ? '8px 16px' : '12px 24px', borderRadius: '8px',
-        fontFamily: 'monospace', fontSize: '14px', fontWeight: 600,
-        border: `1px solid ${isDark ? '#333' : '#ccc'}`
+        display: 'flex', justifyContent: 'center', gap: '24px', marginTop: isShort ? '8px' : '12px',
+        background: 'var(--c-panel-2)',
+        padding: '8px 16px', borderRadius: 'var(--r-md)',
+        fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600,
       }}>
         <span>
           X: <span style={{ color: webControl ? (isDark ? "#85B7EB" : "#1a3a8f") : (isDark ? "#555" : "#aaa") }}>
@@ -1596,19 +1587,11 @@ const SimSelector = forwardRef(function SimSelector(
     glow: "transparent",
   };
 
-  const accent = isDark ? "#90caf9" : "#1976d2";
-  const cardBg = isDark ? "#111118" : "#ffffff";
-  const border = isDark ? "#ffffff12" : "#e8eaed";
+  const border = "var(--c-border)";
 
   return (
     <div
       style={{
-        background: cardBg,
-        borderRadius: "16px",
-        border: `1px solid ${border}`,
-        boxShadow: isDark
-          ? "0 4px 24px rgba(0,0,0,0.4)"
-          : "0 4px 24px rgba(0,0,0,0.06)",
         overflow: "visible",
         flexShrink: 0,
         position: "relative",
@@ -1618,14 +1601,13 @@ const SimSelector = forwardRef(function SimSelector(
       {/* ── Header ── */}
       <div
         style={{
-          padding: "14px 20px",
-          borderBottom: `1px solid ${border}`,
+          padding: "0 0 10px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
         }}
       >
-        <span style={{ fontSize: "15px", fontWeight: 700, color: accent }}>
+        <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--c-text-3)" }}>
           Simulation Config
         </span>
         <div
@@ -1671,7 +1653,7 @@ const SimSelector = forwardRef(function SimSelector(
       {/* ── Dropdowns ── */}
       <div
         style={{
-          padding: "16px 20px",
+          padding: "12px 0 0",
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           gap: "12px",
@@ -1704,7 +1686,7 @@ const SimSelector = forwardRef(function SimSelector(
       {/* ── Spawn Pose Config ── */}
       <div
         style={{
-          padding: "0 20px 14px",
+          padding: "0 0 14px",
           display: "flex",
           flexDirection: "column",
           gap: "6px",
@@ -1923,7 +1905,7 @@ const SimSelector = forwardRef(function SimSelector(
       </div>
 
       {/* ── Buttons ── */}
-      <div style={{ padding: "0 20px 16px", display: "flex", gap: "10px" }}>
+      <div style={{ padding: "0 0 16px", display: "flex", gap: "10px" }}>
         <button
           onClick={() => {
             doSwitch(selRobot, selWorld);
@@ -2039,7 +2021,7 @@ const SimSelector = forwardRef(function SimSelector(
       {switchError && (
         <div
           style={{
-            padding: "0 20px 14px",
+            padding: "0 0 14px",
             fontSize: "12px",
             lineHeight: 1.4,
             color: "#ef5350",
@@ -2182,32 +2164,27 @@ function TopicMonitor({ ros, isDark }) {
 
   const S = {
     wrap: {
-      background: isDark ? "#151525f0" : "#fffffffa",
-      border: `1px solid ${isDark ? "#ffffff30" : "#e0e0e0"}`,
-      borderRadius: "16px",
-      padding: "20px",
-      backdropFilter: "blur(12px)",
-      boxShadow: isDark
-        ? "0 16px 40px rgba(0,0,0,0.5)"
-        : "0 16px 40px rgba(0,0,0,0.15)",
       display: "flex",
       flexDirection: "column",
-      gap: "14px",
+      gap: "10px",
     },
     title: {
-      fontSize: "18px",
-      fontWeight: 600,
-      color: isDark ? "#90caf9" : "#1976d2",
-      textAlign: "center",
+      fontSize: "11px",
+      fontWeight: 700,
+      textTransform: "uppercase",
+      letterSpacing: "0.8px",
+      color: "var(--c-text-3)",
+      fontFamily: "var(--font-ui)",
     },
     select: {
       width: "100%",
-      padding: "10px",
-      borderRadius: "8px",
-      background: isDark ? "#ffffff10" : "#f5f5f5",
-      color: isDark ? "#e0e0e0" : "#333",
-      border: `1px solid ${isDark ? "#ffffff20" : "#ccc"}`,
-      fontSize: "14px",
+      boxSizing: "border-box",
+      padding: "8px 10px",
+      borderRadius: "var(--r-md)",
+      background: "var(--c-panel-2)",
+      color: "var(--c-text-1)",
+      border: "1px solid var(--c-border)",
+      fontSize: "13px",
       outline: "none",
       cursor: "pointer",
       fontWeight: 500,
@@ -2216,13 +2193,13 @@ function TopicMonitor({ ros, isDark }) {
     dataBox: {
       height: "240px",
       overflowY: "auto",
-      padding: "12px",
-      background: isDark ? "#00000088" : "#f8f9fa",
-      border: `1px solid ${isDark ? "#ffffff15" : "#eee"}`,
-      borderRadius: "8px",
+      padding: "10px",
+      background: "var(--c-panel-2)",
+      border: "1px solid var(--c-border)",
+      borderRadius: "var(--r-md)",
       fontSize: "12px",
-      fontFamily: "monospace",
-      color: isDark ? "#a5d6ff" : "#005b9f",
+      fontFamily: "var(--font-mono)",
+      color: "var(--c-text-2)",
     },
   };
 
@@ -2811,7 +2788,8 @@ export default function DashboardView() {
     ),
     setup: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="3" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" />
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+        <circle cx="12" cy="12" r="3" />
       </svg>
     ),
     drive: (
