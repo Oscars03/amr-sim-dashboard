@@ -60,27 +60,32 @@ function PopupToolButton({ icon, isActive, onClick, options, selectedValue, onSe
     setIsOpen(!isOpen);
   };
 
+  const selectedOpt = options.find(o => String(o.value) === String(selectedValue));
+  // Short label: first word only, max 5 chars
+  const badge = selectedOpt ? selectedOpt.label.split(' ')[0].slice(0, 5) : '';
+
   return (
     <div style={{ position: 'relative' }} ref={ref}>
-      <button 
-        onClick={toggleOpen} 
-        className={`btn tool-btn ${isActive ? "active" : ""}`} 
-        title={title}
+      <button
+        onClick={toggleOpen}
+        className={`btn tool-btn ${isActive ? "active" : ""}`}
+        title={`${title} — ${selectedOpt?.label ?? ''}`}
+        style={{ flexDirection: 'column', gap: '1px', height: '52px' }}
       >
         {icon}
-        <div style={{ position: 'absolute', bottom: '2px', right: '4px', fontSize: '9px', opacity: 0.6 }}>▼</div>
+        <span style={{ fontSize: '9px', fontWeight: 700, opacity: 0.8, letterSpacing: '0.02em', lineHeight: 1 }}>{badge}</span>
       </button>
-      
+
       {isOpen && createPortal(
-        <div 
+        <div
           ref={menuRef}
           style={{ position: 'fixed', right: pos.right, top: pos.top, background: 'var(--bg-app, #1a1a1a)', border: '1px solid var(--border-color, #333)', borderRadius: '8px', padding: '6px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '4px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}
         >
           {options.map(o => (
-            <button 
-              key={o.value} 
+            <button
+              key={o.value}
               onClick={() => { onSelect(o.value); setIsOpen(false); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px', background: selectedValue === o.value ? 'var(--accent-blue, #1976d2)' : 'transparent', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', background: String(selectedValue) === String(o.value) ? 'var(--accent-blue, #1976d2)' : 'transparent', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
               {o.icon && <span style={{ display: 'flex', alignItems: 'center' }}>{o.icon}</span>}
               <span style={{ fontSize: '13px', fontWeight: 'bold' }}>{o.label}</span>
@@ -736,8 +741,8 @@ export default function CreateWorldView() {
           className="map-canvas"
           style={{ cursor }}
         />
-        {/* Floating Save Controls */}
-        <div style={{ position: 'absolute', top: '16px', right: '16px', background: isDark ? 'rgba(20,20,30,0.85)' : 'rgba(255,255,255,0.85)', padding: '12px', borderRadius: '12px', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`, display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(10px)', boxShadow: '0 8px 32px rgba(0,0,0,0.15)', pointerEvents: 'auto' }}>
+        {/* Floating Save Controls — top-left */}
+        <div style={{ position: 'absolute', top: '16px', left: '16px', background: isDark ? 'rgba(20,20,30,0.85)' : 'rgba(255,255,255,0.85)', padding: '10px 14px', borderRadius: '12px', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`, display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(10px)', boxShadow: '0 8px 32px rgba(0,0,0,0.15)', pointerEvents: 'auto' }}>
           <span style={{ fontSize: '13px', fontWeight: 'bold', color: isDark ? '#fff' : '#000' }}>World:</span>
           <input
             value={mapName}
