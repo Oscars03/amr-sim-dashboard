@@ -2,7 +2,9 @@
 set -e
 
 APP_NAME="irish-amr-simulator"
-VERSION="1.0.0"
+# Track package.json so this never drifts (was pinned at 1.0.0 through the 0.2.x
+# releases). Run from the repo root.
+VERSION="$(node -p "require('./package.json').version")"
 ARCH="amd64"
 DEB_DIR="/tmp/${APP_NAME}_${VERSION}_${ARCH}"
 
