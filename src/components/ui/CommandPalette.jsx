@@ -69,6 +69,9 @@ export default function CommandPalette({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         style={{
           width: '560px',
           maxWidth: '100%',
@@ -93,7 +96,7 @@ export default function CommandPalette({
             borderBottom: '1px solid var(--c-border)',
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--c-text-3)" strokeWidth="2.2">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--c-text-3)" strokeWidth="2.2">
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
@@ -101,6 +104,11 @@ export default function CommandPalette({
             ref={inputRef}
             type="text"
             placeholder="Type a command or search action..."
+            aria-label="Search commands"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="cmdpalette-list"
+            aria-activedescendant={filteredActions[selectedIndex] ? `cmdpalette-opt-${selectedIndex}` : undefined}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -134,6 +142,9 @@ export default function CommandPalette({
 
         {/* Results List */}
         <div
+          id="cmdpalette-list"
+          role="listbox"
+          aria-label="Commands"
           className="scrollable"
           style={{
             maxHeight: '320px',
@@ -162,6 +173,9 @@ export default function CommandPalette({
               return (
                 <div
                   key={action.id || action.label}
+                  id={`cmdpalette-opt-${idx}`}
+                  role="option"
+                  aria-selected={isSelected}
                   onClick={() => {
                     action.run();
                     onClose();
