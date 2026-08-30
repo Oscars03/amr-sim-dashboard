@@ -505,7 +505,9 @@ const CircleSvg = () => (
 // ─────────────────────────────────────────────────────────────────────────────
 // KeyboardController
 // ─────────────────────────────────────────────────────────────────────────────
-function KeyboardController({ ros, isDark, isNarrow, isShort }) {
+// isShort defaults on: this only ever renders inside the ~300px inspector, which
+// is always tight. Pass isShort={false} to get the roomy layout back.
+function KeyboardController({ ros, isDark, isShort = true }) {
   const cmdPubRef = useRef(null);
   const [keys, setKeys] = useState({});
   const [speed, setSpeed] = useState(0.5);
@@ -692,19 +694,6 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
       boxSizing: "border-box",
       flexShrink: 0,
       overflow: "hidden",
-    },
-    titleRow: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      flexWrap: "wrap",
-      gap: "8px",
-      marginBottom: isShort ? "8px" : "20px",
-    },
-    title: {
-      fontSize: isShort || isNarrow ? "15px" : "18px",
-      fontWeight: 700,
-      color: isDark ? "#ffffff" : "#0f172a",
     },
     toggleWrap: {
       display: "flex",
@@ -1011,10 +1000,6 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
             UI
           </div>
         </div>
-      </div>
-
-      <div style={S.titleRow}>
-        <div style={S.title}>Robot Control</div>
       </div>
 
       <div style={S.controlBody}>
@@ -2731,8 +2716,6 @@ export default function DashboardView() {
     };
   }, []);
 
-  const isNarrow = winSize.w < 900; // stack vertically
-  const isShort = winSize.h < 600; // compress padding
   const inspectorCollapsed = winSize.w < 1280;
 
   // RTF ref for status bar — updated at 1 Hz inside WorldMap, lifted via callback
@@ -3303,7 +3286,7 @@ export default function DashboardView() {
                         <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
                         <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle compact />
                       </div>
-                      <KeyboardController ros={rosObj} isDark={isDark} isNarrow={isNarrow} isShort={isShort} />
+                      <KeyboardController ros={rosObj} isDark={isDark} />
                     </div>
                   )}
 

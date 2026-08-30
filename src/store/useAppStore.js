@@ -36,12 +36,6 @@ const useAppStore = create((set) => ({
   // Monitor toggle
   showMonitor: false,
   setShowMonitor: (val) => set({ showMonitor: val }),
-  
-  // App Version
-  appVersion: '0.2.0',
-  setAppVersion: (ver) => set({ appVersion: ver }),
-  isSpinningUpdate: false,
-  setIsSpinningUpdate: (val) => set({ isSpinningUpdate: val }),
 
   // FPS Limit (20=low-power, 60, 0=unlimited)
   fpsLimit: 20,

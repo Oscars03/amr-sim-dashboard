@@ -21,8 +21,6 @@ describe('useAppStore', () => {
     expect(state.mapStatus).toBe('idle')
     expect(state.isWaitingOdom).toBe(false)
     expect(state.showMonitor).toBe(false)
-    expect(state.appVersion).toBe('0.2.0')
-    expect(state.isSpinningUpdate).toBe(false)
     expect(state.fpsLimit).toBe(20)
   })
 
@@ -38,8 +36,6 @@ describe('useAppStore', () => {
     ['setMapStatus', 'mapStatus', 'loading'],
     ['setIsWaitingOdom', 'isWaitingOdom', true],
     ['setShowMonitor', 'showMonitor', true],
-    ['setAppVersion', 'appVersion', '1.0.0'],
-    ['setIsSpinningUpdate', 'isSpinningUpdate', true],
     ['setFpsLimit', 'fpsLimit', 60],
   ])('%s updates only its own key', (setterName, key, value) => {
     const before = useAppStore.getState()
