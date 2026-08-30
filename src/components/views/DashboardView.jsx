@@ -3297,7 +3297,10 @@ export default function DashboardView() {
                   )}
 
                   {/* ── SETUP ────────────────── */}
-                  {activeTab === 'setup' && (
+                  {/* Kept mounted on every tab: SimSelector's init effect fetches
+                      the robot/world lists and auto-launches the sim, so gating
+                      it on the tab meant nothing launched until you opened Setup. */}
+                  <div style={{ display: activeTab === 'setup' ? 'block' : 'none' }}>
                     <SimSelector
                       ref={simSelectorRef}
                       onSwitch={handleSwitch}
@@ -3306,7 +3309,7 @@ export default function DashboardView() {
                       isWaitingOdom={isWaitingOdom}
                       poseRef={poseRef}
                     />
-                  )}
+                  </div>
 
                   {/* ── DRIVE ─────────────────── */}
                   {/* Kept mounted on every tab so keyboard teleop keeps working
