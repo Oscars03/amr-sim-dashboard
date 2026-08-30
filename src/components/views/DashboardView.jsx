@@ -55,7 +55,7 @@ function getFollowPan(pose, mapData, width, height, view) {
 // ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component
 // ─────────────────────────────────────────────────────────────────────────────
-const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, steeringRef, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive }, ref) {
+const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, steeringRef, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive, onFollowChange }, ref) {
   const canvasRef = useRef(null);
   const drawRef = useRef(null);
   const fpsLimit = useAppStore((s) => s.fpsLimit);
@@ -66,6 +66,20 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   const [followRobot, setFollowRobot] = useState(false);
+  // Smoothed follow camera, in canvas pixels. Null means "no history yet", which
+  // makes the next frame snap instead of sliding in from wherever it left off.
+  const camRef = useRef(null);
+
+  // Single source of truth for the toolbar's highlight.
+  //
+  // The button used to flip its own boolean alongside calling toggleFollow(),
+  // so anything that turned follow off in here -- resetView, a middle-drag pan --
+  // left the button still lit while the camera had stopped following. Report the
+  // real state instead of asking the caller to mirror it.
+  useEffect(() => {
+    onFollowChange?.(followRobot);
+    if (!followRobot) camRef.current = null;
+  }, [followRobot, onFollowChange]);
 
   // /odom (20 Hz) and /joint_states write their refs and call this instead of
   // setting React state, so a moving robot never reconciles the view tree.
@@ -75,20 +89,21 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       setFollowRobot(false);
       setView({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
     },
+    // Zoom and rotate leave follow alone. The follow branch of draw() applies
+    // view.zoom and view.rotation itself, so there is nothing to conflict with,
+    // and the scroll wheel never cancelled follow -- so the toolbar buttons and
+    // the wheel used to disagree about what zooming means. Only panning
+    // genuinely conflicts, because follow owns the translation.
     zoomIn: () => {
-      setFollowRobot(false);
       setView((v) => ({ ...v, zoom: Math.min(v.zoom * 1.25, 10) }));
     },
     zoomOut: () => {
-      setFollowRobot(false);
       setView((v) => ({ ...v, zoom: Math.max(v.zoom / 1.25, 0.1) }));
     },
     rotateLeft: () => {
-      setFollowRobot(false);
       setView((v) => ({ ...v, rotation: v.rotation - Math.PI / 12 }));
     },
     rotateRight: () => {
-      setFollowRobot(false);
       setView((v) => ({ ...v, rotation: v.rotation + Math.PI / 12 }));
     },
     toggleFollow: () => {
@@ -242,8 +257,32 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     if (followRobot && pose && pose.x !== "-") {
       const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
       const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
-      const rx = width - offsetX - (worldY - origin_y) * scale;
-      const ry = height - offsetY - (worldX - origin_x) * scale;
+      const targetRx = width - offsetX - (worldY - origin_y) * scale;
+      const targetRy = height - offsetY - (worldX - origin_x) * scale;
+
+      // Follow smoothly rather than snapping.
+      //
+      // The canvas draws at 60 fps but /odom arrives at 20 Hz, so pinning the
+      // camera to the latest pose held the view still for three frames and then
+      // jumped -- stepping while following, even with the FPS counter on 60.
+      //
+      // Exponential smoothing at 0.25 per frame is roughly an 80 ms time
+      // constant: longer than a frame, shorter than the 50 ms between poses, so
+      // the camera keeps up with the robot instead of trailing it.
+      const cam = camRef.current;
+      const dist = cam ? Math.hypot(targetRx - cam.rx, targetRy - cam.ry) : Infinity;
+      // Snap on a large jump. /reset_pose teleports the robot between runs, and
+      // sliding the camera across the map for that is worse than a cut.
+      if (!cam || dist > 250) {
+        camRef.current = { rx: targetRx, ry: targetRy };
+      } else {
+        const a = 0.25;
+        camRef.current = {
+          rx: cam.rx + (targetRx - cam.rx) * a,
+          ry: cam.ry + (targetRy - cam.ry) * a,
+        };
+      }
+      const { rx, ry } = camRef.current;
 
       ctx.translate(width / 2, height / 2);
       ctx.scale(view.zoom, view.zoom);
@@ -3095,6 +3134,7 @@ export default function DashboardView() {
               effectStartTime={effectStartTime}
               effectEndTime={effectEndTime}
               collisionActive={collisionActive}
+              onFollowChange={setIsFollowingRobot}
             />
 
             {/* HUD top-left: World name + Reset Pose */}
@@ -3262,10 +3302,7 @@ export default function DashboardView() {
 
                 {/* Follow Robot Toggle */}
                 <button
-                  onClick={() => {
-                    worldMapRef.current?.toggleFollow();
-                    setIsFollowingRobot(prev => !prev);
-                  }}
+                  onClick={() => worldMapRef.current?.toggleFollow()}
                   title="Follow Robot: auto-center viewport on moving robot"
                   style={{
                     padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 6,
