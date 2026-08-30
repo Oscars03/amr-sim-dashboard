@@ -665,12 +665,62 @@ export function normaliseMap(raw) {
 // ─────────────────────────────────────────────────────────────────────────────
 // buildTransform (X Vertical / Y Horizontal)
 // ─────────────────────────────────────────────────────────────────────────────
-export function buildTransform(mapInfo, canvasW, canvasH) {
+// Pixels per metre at view.zoom === 1.
+//
+// The base scale used to be fit-to-world: Math.min(canvasW/mh, canvasH/mw)*0.9.
+// That made the same robot a different size in every world -- tiny on F4_2F
+// (32.8 x 64.2 m), mid-sized on Nav_01 (20 x 20 m), large on Square Room -- which
+// is misleading when the point of having several worlds is to compare behaviour
+// across them. A metre is now a metre everywhere and the user zooms.
+//
+// 25 is chosen so Nav_01, the most-used world, looks about as it did before.
+export const PX_PER_METRE = 25;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// easePose
+// ─────────────────────────────────────────────────────────────────────────────
+// /odom arrives at 20 Hz; the canvas draws at up to 60. Pinning the robot to the
+// latest sample renders it in 20 Hz steps -- a smooth map with a stuttering
+// robot. Ease the drawn pose toward the newest sample instead, once per frame.
+//
+// Frame-rate independent: alpha is derived from the real gap between frames and
+// a ~60 ms time constant, so the trail behind a moving robot is the same whether
+// the canvas is running at 60 or 45. Heading is eased the short way round.
+// A jump past `snapDist` metres (a /reset_pose teleport between runs) cuts
+// instead of sliding the robot across the map.
+export function easePose(prev, target, dtMs, tauMs = 60, snapDist = 1) {
+  if (
+    !prev ||
+    !Number.isFinite(dtMs) ||
+    Math.hypot(target.x - prev.x, target.y - prev.y) > snapDist
+  ) {
+    return { x: target.x, y: target.y, th: target.th };
+  }
+  const a = 1 - Math.exp(-Math.max(0, dtMs) / tauMs);
+  const dth = Math.atan2(
+    Math.sin(target.th - prev.th),
+    Math.cos(target.th - prev.th),
+  );
+  return {
+    x: prev.x + (target.x - prev.x) * a,
+    y: prev.y + (target.y - prev.y) * a,
+    th: prev.th + dth * a,
+  };
+}
+
+export function buildTransform(mapInfo, canvasW, canvasH, pxPerMetre = PX_PER_METRE) {
   const { origin_x, origin_y, width: mw, height: mh } = mapInfo;
 
-  const scale = Math.min(canvasW / mh, canvasH / mw) * 0.9;
-  const offsetX = (canvasW - mh * scale) / 2;
-  const offsetY = (canvasH - mw * scale) / 2;
+  // room.json and office.json carry an empty map_info, so mw/mh are undefined.
+  // Under the old fit calculation that produced NaN and the world was drawn at
+  // whatever the NaN path happened to give. Fall back to a 20 m square, which is
+  // what Nav_01 declares, rather than propagating NaN into every coordinate.
+  const W = Number.isFinite(mw) ? mw : 20;
+  const H = Number.isFinite(mh) ? mh : 20;
+
+  const scale = pxPerMetre;
+  const offsetX = (canvasW - H * scale) / 2;
+  const offsetY = (canvasH - W * scale) / 2;
 
   return {
     scale,

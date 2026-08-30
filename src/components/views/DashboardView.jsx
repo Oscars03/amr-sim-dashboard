@@ -32,8 +32,12 @@ const IDLE_CHECK_MS = 60 * 1000;
 const IDLE_MOVE_EPS_M = 0.02;   // metres
 const IDLE_MOVE_EPS_DEG = 1.0;  // degrees
 
-import { parseURDF, drawRobot, normaliseMap, buildTransform } from '../../utils/robot';
+import { parseURDF, drawRobot, normaliseMap, buildTransform, easePose } from '../../utils/robot';
+import { makeFrameGate } from '../../utils/frameGate';
 
+// Pan that reproduces the current follow view, for handing over when follow is
+// released. Pass the same eased pose the follow camera draws from (not the raw
+// /odom pose) so the view doesn't jump at the moment the user grabs it.
 function getFollowPan(pose, mapData, width, height, view) {
   if (!pose || pose.x === "-" || !mapData?.map_info) return { panX: view.panX, panY: view.panY };
   const { scale, offsetX, offsetY } = buildTransform(mapData.map_info, width, height);
@@ -55,7 +59,7 @@ function getFollowPan(pose, mapData, width, height, view) {
 // ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component
 // ─────────────────────────────────────────────────────────────────────────────
-const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, steeringRef, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive }, ref) {
+const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, steeringRef, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive, onFollowChange, onFpsSample }, ref) {
   const canvasRef = useRef(null);
   const drawRef = useRef(null);
   const fpsLimit = useAppStore((s) => s.fpsLimit);
@@ -66,6 +70,22 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   const [followRobot, setFollowRobot] = useState(false);
+  // Robot pose actually drawn: eased toward the 20 Hz /odom sample once per
+  // frame (easePose) so a 60 fps canvas doesn't step the robot at 20 Hz. World
+  // space -- zoom/pan/resize don't disturb it -- and shared by the robot marker
+  // and the follow camera so the two never disagree. Null = no sample yet.
+  const renderPoseRef = useRef(null);
+  const lastDrawTsRef = useRef(0);
+
+  // Single source of truth for the toolbar's highlight.
+  //
+  // The button used to flip its own boolean alongside calling toggleFollow(),
+  // so anything that turned follow off in here -- resetView, a middle-drag pan --
+  // left the button still lit while the camera had stopped following. Report the
+  // real state instead of asking the caller to mirror it.
+  useEffect(() => {
+    onFollowChange?.(followRobot);
+  }, [followRobot, onFollowChange]);
 
   // /odom (20 Hz) and /joint_states write their refs and call this instead of
   // setting React state, so a moving robot never reconciles the view tree.
@@ -75,20 +95,21 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       setFollowRobot(false);
       setView({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
     },
+    // Zoom and rotate leave follow alone. The follow branch of draw() applies
+    // view.zoom and view.rotation itself, so there is nothing to conflict with,
+    // and the scroll wheel never cancelled follow -- so the toolbar buttons and
+    // the wheel used to disagree about what zooming means. Only panning
+    // genuinely conflicts, because follow owns the translation.
     zoomIn: () => {
-      setFollowRobot(false);
       setView((v) => ({ ...v, zoom: Math.min(v.zoom * 1.25, 10) }));
     },
     zoomOut: () => {
-      setFollowRobot(false);
       setView((v) => ({ ...v, zoom: Math.max(v.zoom / 1.25, 0.1) }));
     },
     rotateLeft: () => {
-      setFollowRobot(false);
       setView((v) => ({ ...v, rotation: v.rotation - Math.PI / 12 }));
     },
     rotateRight: () => {
-      setFollowRobot(false);
       setView((v) => ({ ...v, rotation: v.rotation + Math.PI / 12 }));
     },
     toggleFollow: () => {
@@ -96,28 +117,55 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     },
   }), []);
 
+  const fpsCounterRef = useRef({ frames: 0, t0: 0 });
+
+  // One rAF loop for every mode, paced against the frame clock.
+  //
+  // The capped modes used setInterval(1000/fps): unaligned with vsync, so a
+  // callback that missed a boundary showed up on the next one and frame spacing
+  // alternated 16.7/33.3 ms -- judder that reads as a slow simulator.
+  // requestAnimationFrame is already vsync-aligned; makeFrameGate() decides
+  // which ticks to draw on. Its pacing (2 ms slack, overshoot carried rather
+  // than snapped to now) is what stops a "20" cap reading 14 and a "60" reading
+  // 48 -- see frameGate.js.
   useEffect(() => {
-    if (fpsLimit === 0) {
-      // Unlimited: pure rAF
-      let frame;
-      const loop = () => {
-        frame = requestAnimationFrame(loop);
-        needsRedrawRef.current = false;
-        if (drawRef.current) drawRef.current();
-      };
+    let frame;
+    const shouldDraw = makeFrameGate(fpsLimit);
+    const loop = (now) => {
       frame = requestAnimationFrame(loop);
-      return () => cancelAnimationFrame(frame);
-    } else {
-      // Capped FPS: setInterval fires exactly N times/s, no wasted rAF callbacks
-      const timer = setInterval(() => {
-        const lowPowerMode = fpsLimit === 20;
-        if (lowPowerMode && !needsRedrawRef.current && !effectActiveRef.current && !collisionActiveRef.current) return;
-        needsRedrawRef.current = false;
-        if (drawRef.current) drawRef.current();
-      }, 1000 / fpsLimit);
-      return () => clearInterval(timer);
-    }
+      if (!shouldDraw(now)) return;
+      // Every mode skips a frame with nothing to show. A parked robot streams
+      // /odom at 20 Hz but never trips markDirty, so redrawing the identical
+      // canvas 60-144x/s just heats the machine (measured: 28% CPU at "60", 68%
+      // at unlimited, for a stationary robot). Motion still draws every frame --
+      // /odom marks dirty and easePose holds the flag until the marker settles;
+      // so do the running effect/collision animations.
+      if (!needsRedrawRef.current && !effectActiveRef.current && !collisionActiveRef.current) return;
+      needsRedrawRef.current = false;
+      if (drawRef.current) drawRef.current();
+      fpsCounterRef.current.frames += 1;
+    };
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
   }, [fpsLimit]);
+
+  // Measured draw rate, so the readout reports what is happening rather than
+  // what was asked for. Sampled once a second off the same counter the loop
+  // increments; a ref plus one setState per second keeps it off the draw path.
+  const [measuredFps, setMeasuredFps] = useState(0);
+  useEffect(() => {
+    fpsCounterRef.current.t0 = performance.now();
+    const iv = setInterval(() => {
+      const c = fpsCounterRef.current;
+      const now = performance.now();
+      const dt = (now - c.t0) / 1000;
+      if (dt > 0) setMeasuredFps(Math.round(c.frames / dt));
+      c.frames = 0;
+      c.t0 = now;
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+  useEffect(() => { onFpsSample?.(measuredFps); }, [measuredFps, onFpsSample]);
 
   // Mark dirty whenever a visual input that lives in React changes. Pose and
   // steering angle are refs now -- they signal redraw via markDirty().
@@ -148,6 +196,9 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       };
       setCursor("ew-resize");
     } else if (e.button === 1) {
+      // Chromium starts its autoscroll widget on a middle press unless the
+      // event is cancelled, which fights the pan drag.
+      e.preventDefault();
       dragRef.current = {
         isMiddle: true,
         isLeft: false,
@@ -167,7 +218,7 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     } else if (dragRef.current.isMiddle) {
       if (followRobot) {
         setFollowRobot(false);
-        const { panX, panY } = getFollowPan(poseRef.current, mapData, width, height, view);
+        const { panX, panY } = getFollowPan(renderPoseRef.current, mapData, width, height, view);
         setView((v) => ({ ...v, panX, panY }));
       }
       const dx = e.clientX - dragRef.current.lastX;
@@ -238,13 +289,38 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     );
     const { origin_x, origin_y, width: mw, height: mh } = mapData.map_info;
 
-    ctx.save();
-    if (followRobot && pose && pose.x !== "-") {
-      const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
-      const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
-      const rx = width - offsetX - (worldY - origin_y) * scale;
-      const ry = height - offsetY - (worldX - origin_x) * scale;
+    // Ease the drawn robot pose toward the latest /odom sample once per frame,
+    // so a 60 fps canvas doesn't render a 20 Hz robot in steps (a smooth map
+    // with a stuttering robot). Shared by the marker and the follow camera so
+    // the two stay in sync.
+    let render = null;
+    if (pose && pose.x !== "-") {
+      const nowTs = performance.now();
+      const dtMs = lastDrawTsRef.current ? nowTs - lastDrawTsRef.current : NaN;
+      lastDrawTsRef.current = nowTs;
+      const tx = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
+      const ty = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
+      const tth = ((typeof pose.theta === "string" ? parseFloat(pose.theta) : pose.theta) * Math.PI) / 180;
+      render = easePose(renderPoseRef.current, { x: tx, y: ty, th: tth }, dtMs);
+      renderPoseRef.current = render;
+      // The 20 fps low-power loop only draws on a dirty frame, but easing needs a
+      // few frames to catch up after the last pose change -- keep it awake until
+      // the marker has actually settled, or it stops a pixel short.
+      const dth = Math.atan2(Math.sin(tth - render.th), Math.cos(tth - render.th));
+      if (Math.hypot(tx - render.x, ty - render.y) > 2e-3 || Math.abs(dth) > 2e-3) {
+        needsRedrawRef.current = true;
+      }
+    } else {
+      renderPoseRef.current = null;
+      lastDrawTsRef.current = 0;
+    }
 
+    ctx.save();
+    if (followRobot && render) {
+      // Camera centres on the eased pose -- no separate smoothing, easePose
+      // already did it (and its snap-on-teleport covers /reset_pose between runs).
+      const rx = width - offsetX - (render.y - origin_y) * scale;
+      const ry = height - offsetY - (render.x - origin_x) * scale;
       ctx.translate(width / 2, height / 2);
       ctx.scale(view.zoom, view.zoom);
       ctx.rotate(view.rotation);
@@ -365,10 +441,10 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       }
     });
 
-    if (pose && pose.x !== "-") {
-      const worldX = typeof pose.x === 'string' ? parseFloat(pose.x) : pose.x;
-      const worldY = typeof pose.y === 'string' ? parseFloat(pose.y) : pose.y;
-      const thetaRad = typeof pose.theta === 'string' ? (parseFloat(pose.theta) * Math.PI) / 180 : (pose.theta * Math.PI) / 180;
+    if (render) {
+      const worldX = render.x;
+      const worldY = render.y;
+      const thetaRad = render.th;
       // Use precise sub-pixel coordinates to prevent lateral judder when moving diagonally
       const rx = width - offsetX - (worldY - origin_y) * scale;
       const ry = height - offsetY - (worldX - origin_x) * scale;
@@ -517,56 +593,6 @@ const StopSquareSvg = () => (
     <rect x="4" y="4" width="16" height="16" rx="3" />
   </svg>
 );
-
-// ─── SparkLine ────────────────────────────────────────────────────────────────
-// 10-second ring buffer sampled from poseRef at 150ms. Pure SVG polyline.
-// UI-only — does NOT add ROS topics. Zero React state churn (uses ref + RAF).
-const SPARK_PTS = 60; // 60 × 150ms = 9s window
-function SparkLine({ poseRef, field, isAngle, color = '#22d3ee', height = 32 }) {
-  const svgRef = useRef(null);
-  const buf = useRef(Array(SPARK_PTS).fill(null));
-  const prev = useRef(null);
-
-  useEffect(() => {
-    let frame;
-    const tick = () => {
-      const p = poseRef.current;
-      if (p !== prev.current) {
-        prev.current = p;
-        let raw = p?.[field];
-        if (typeof raw === 'number') {
-          if (isAngle) raw = raw * 180 / Math.PI; // convert to degrees for display
-          buf.current.push(raw);
-          if (buf.current.length > SPARK_PTS) buf.current.shift();
-        }
-      }
-      const pts = buf.current.filter(v => v !== null);
-      if (pts.length >= 2 && svgRef.current) {
-        const mn = Math.min(...pts), mx = Math.max(...pts);
-        const range = mx - mn || 1;
-        const w = svgRef.current.clientWidth || 260;
-        const h = height;
-        const points = pts.map((v, i) => {
-          const x = (i / (SPARK_PTS - 1)) * w;
-          const y = h - ((v - mn) / range) * (h - 4) - 2;
-          return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
-        const poly = svgRef.current.querySelector('polyline');
-        if (poly) poly.setAttribute('points', points);
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [poseRef, field, isAngle, height]);
-
-  return (
-    <svg ref={svgRef} width="100%" height={height} style={{ display: 'block', overflow: 'visible' }}>
-      <polyline points="" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
-    </svg>
-  );
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // KeyboardController
@@ -1226,7 +1252,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CustomDropdown  — defined OUTSIDE SimSelector so it never remounts
 // ─────────────────────────────────────────────────────────────────────────────
-function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
+function CustomDropdown({ label, value, onChange, options, onDelete, isDark, align = "left" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -1278,7 +1304,10 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
             background: open ? (isDark ? "#1e2633" : "#f0f9ff") : inputBg,
             border: `1.5px solid ${open ? accent : border}`,
             boxShadow: open ? `0 0 0 3px ${accent}33` : "none",
-            borderRadius: open ? "10px 10px 0 0" : "10px",
+            // Stays fully rounded when open. The panel is no longer the same
+            // width as the trigger, so squaring these corners to "join" it left
+            // a seam that only drew attention to the mismatch.
+            borderRadius: "10px",
             color: textMain,
             fontSize: "14px",
             fontWeight: 700,
@@ -1324,12 +1353,29 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
             style={{
               position: "absolute",
               top: "100%",
-              left: 0,
-              right: 0,
+              // Anchored on one edge, not both. `left: 0; right: 0` locked the
+              // panel to the trigger's width, and the trigger is half a narrow
+              // sidebar column -- so "Square Room" and "amr_lite" arrived as
+              // "Squar..." and "amr...". A dropdown panel is allowed to be wider
+              // than the control that opens it.
+              //
+              // Which edge is anchored decides which way it grows: the Robot
+              // column is on the left so it grows right, the World column is on
+              // the right so it grows left. Growing the wrong way just moves the
+              // clipping to the sidebar edge.
+              ...(align === "right" ? { right: 0, left: "auto" } : { left: 0, right: "auto" }),
+              minWidth: "100%",
+              width: "max-content",
+              maxWidth: "min(320px, 90vw)",
               background: isDark ? "#161c25" : "#ffffff",
               border: `1.5px solid ${accent}`,
-              borderTop: "none",
-              borderRadius: "0 0 10px 10px",
+              // A complete rounded card offset from the trigger, rather than a
+              // bottom-half glued to it. Once the panel can be wider than the
+              // trigger the glued look cannot line up on both edges, and a seam
+              // that nearly meets reads as a bug; a floating menu reads as
+              // intended. The shadow does the work of showing it is above.
+              borderRadius: "10px",
+              marginTop: "6px",
               boxShadow: isDark
                 ? "0 12px 30px rgba(0,0,0,0.7)"
                 : "0 12px 30px rgba(0,0,0,0.15)",
@@ -1409,7 +1455,12 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
                           </svg>
                         )}
                       </div>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {/* title so a name past the 320px cap is still readable
+                          on hover rather than only ever "Squar...". */}
+                      <span
+                        title={opt.label}
+                        style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      >
                         {opt.label}
                       </span>
                     </div>
@@ -1736,6 +1787,9 @@ const SimSelector = forwardRef(function SimSelector(
           value={selWorld}
           onChange={setSelWorld}
           onDelete={handleDeleteWorld}
+          // World sits in the right-hand column, so its panel grows leftward;
+          // anchored on the left it would widen off the edge of the sidebar.
+          align="right"
           options={worldList.map((w) => ({
             value: w.name,
             label: w.mapName || w.name.replace(/\.json$/i, ""),
@@ -1746,10 +1800,13 @@ const SimSelector = forwardRef(function SimSelector(
       {/* ── Spawn Pose Config ── */}
       <div
         style={{
-          padding: "0 0 14px",
+          // Pushed down and given room to breathe: the sidebar is tall and
+          // mostly empty below this, so the space is free and the block was
+          // crowding the dropdowns above it.
+          padding: "18px 0 14px",
           display: "flex",
           flexDirection: "column",
-          gap: "6px",
+          gap: "10px",
         }}
       >
         <div
@@ -1795,29 +1852,16 @@ const SimSelector = forwardRef(function SimSelector(
               </svg>
               Use Current
             </button>
-            <button
-              type="button"
-              onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
-              title="Reset spawn coordinates to (0, 0, 0°)"
-              style={{
-                background: "transparent", border: "none",
-                color: "var(--c-accent)", fontSize: "12px", fontWeight: 700,
-                cursor: "pointer", padding: "2px 4px", borderRadius: "4px",
-                display: "flex", alignItems: "center", gap: "4px",
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
-              </svg>
-              Reset
-            </button>
           </div>
         </div>
 
         <div
           style={{
+            // One field per row. Squeezed onto a single line the three inputs
+            // were narrow enough that a two-decimal value crowded its unit, and
+            // the sidebar has vertical space going unused below this block.
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "1fr",
             gap: "8px",
           }}
         >
@@ -1909,10 +1953,9 @@ const SimSelector = forwardRef(function SimSelector(
             <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>m</span>
           </div>
 
-          {/* Yaw Input — full width on its own row */}
+          {/* Yaw Input — third column, alongside X and Y */}
           <div
             style={{
-              gridColumn: "1 / -1",
               display: "flex",
               alignItems: "center",
               background: isDark ? "#161c25" : "#f8fafc",
@@ -1953,6 +1996,28 @@ const SimSelector = forwardRef(function SimSelector(
             />
             <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>°</span>
           </div>
+        </div>
+
+        {/* Reset sits under the fields it clears, right-aligned so it lands
+            below Yaw. It was next to "Use Current" in the header, where the two
+            read as a pair despite doing opposite things. */}
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
+            title="Reset spawn coordinates to (0, 0, 0°)"
+            style={{
+              background: "transparent", border: "none",
+              color: "var(--c-accent)", fontSize: "12px", fontWeight: 700,
+              cursor: "pointer", padding: "2px 4px", borderRadius: "4px",
+              display: "flex", alignItems: "center", gap: "4px",
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+            </svg>
+            Reset
+          </button>
         </div>
       </div>
 
@@ -2794,6 +2859,10 @@ export default function DashboardView() {
   // RTF ref for status bar — updated at 1 Hz inside WorldMap, lifted via callback
   const rtfRef = useRef('1.00');
   const [statusRtf, setStatusRtf] = useState('1.00');
+  // Frames actually drawn per second, reported by WorldMap. The readout used
+  // to show only the requested cap, which said nothing about whether the
+  // renderer was keeping up.
+  const [actualFps, setActualFps] = useState(0);
   // 1 Hz RTF pull for status bar (avoids 20Hz setState)
   useEffect(() => {
     const iv = setInterval(() => {
@@ -3056,6 +3125,8 @@ export default function DashboardView() {
               effectStartTime={effectStartTime}
               effectEndTime={effectEndTime}
               collisionActive={collisionActive}
+              onFollowChange={setIsFollowingRobot}
+              onFpsSample={setActualFps}
             />
 
             {/* HUD top-left: World name + Reset Pose */}
@@ -3223,17 +3294,22 @@ export default function DashboardView() {
 
                 {/* Follow Robot Toggle */}
                 <button
-                  onClick={() => {
-                    worldMapRef.current?.toggleFollow();
-                    setIsFollowingRobot(prev => !prev);
-                  }}
-                  title="Follow Robot: auto-center viewport on moving robot"
+                  onClick={() => worldMapRef.current?.toggleFollow()}
+                  // Without a map there is no WorldMap mounted, so the ref is
+                  // null and toggleFollow() is a no-op -- the button looked live
+                  // and did nothing. Say so instead.
+                  disabled={!mapData}
+                  title={mapData
+                    ? "Follow Robot: auto-center viewport on moving robot"
+                    : "Follow Robot: unavailable until a world is loaded"}
                   style={{
                     padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 6,
                     borderRadius: 'var(--r-md)', border: isFollowingRobot ? '1px solid var(--c-accent)' : '1px solid transparent',
                     background: isFollowingRobot ? 'var(--c-accent-bg)' : 'transparent',
-                    color: isFollowingRobot ? 'var(--c-accent)' : 'var(--c-text-1)',
-                    cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                    color: !mapData ? 'var(--c-text-3)' : (isFollowingRobot ? 'var(--c-accent)' : 'var(--c-text-1)'),
+                    cursor: mapData ? 'pointer' : 'not-allowed',
+                    opacity: mapData ? 1 : 0.5,
+                    fontWeight: 700, fontSize: 12,
                     fontFamily: 'var(--font-ui)',
                     transition: 'all 0.15s',
                   }}
@@ -3305,34 +3381,25 @@ export default function DashboardView() {
                   {/* ── TELEMETRY ────────────── */}
                   {activeTab === 'telemetry' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {/* X card + sparkline */}
+                      {/* X card */}
                       <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>X</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px' }}>
+                          <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>X</span>
                           <PoseSingle poseRef={poseRef} field="x" unit="m" />
                         </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="x" color="#22d3ee" height={28} />
-                        </div>
                       </div>
-                      {/* Y card + sparkline */}
+                      {/* Y card */}
                       <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>Y</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px' }}>
+                          <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>Y</span>
                           <PoseSingle poseRef={poseRef} field="y" unit="m" />
                         </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="y" color="#34d399" height={28} />
-                        </div>
                       </div>
-                      {/* Angle card + sparkline */}
+                      {/* Angle card */}
                       <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>ANGLE</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px' }}>
+                          <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>ANGLE</span>
                           <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle />
-                        </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="theta" isAngle color="#fbbf24" height={28} />
                         </div>
                       </div>
                       {/* Collision chip */}
@@ -3521,7 +3588,7 @@ export default function DashboardView() {
           {/* FPS toggle */}
           <button
             onClick={() => { if (fpsLimit === 20) setFpsLimit(60); else if (fpsLimit === 60) setFpsLimit(0); else setFpsLimit(20); }}
-            title="Toggle FPS limit"
+            title={`Measured ${actualFps} fps against a ${fpsLimit === 0 ? "no" : fpsLimit + " fps"} cap. Click to cycle 20 / 60 / unlimited.`}
             style={{
               display: 'flex', alignItems: 'center', gap: 4, padding: '0 10px',
               height: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
@@ -3531,7 +3598,9 @@ export default function DashboardView() {
             onMouseEnter={e => e.currentTarget.style.background = 'var(--c-panel-2)'}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
-            {fpsLimit === 0 ? 'FPS ∞' : `FPS ${fpsLimit}`}
+            {fpsLimit === 0
+              ? `FPS ${actualFps} / ∞`
+              : `FPS ${actualFps} / ${fpsLimit}`}
           </button>
 
           <div style={{ width: 1, height: 14, background: 'var(--c-border)', margin: '0 2px' }} />
