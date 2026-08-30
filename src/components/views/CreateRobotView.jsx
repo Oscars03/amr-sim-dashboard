@@ -374,7 +374,7 @@ export default function CreateRobotView({ onCreated }) {
 
   const SECTIONS = [
     { key: 'identity',  icon: '🤖', label: 'Identity' },
-    { key: 'geometry',  icon: '📦', label: 'Body' },
+    { key: 'geometry',  icon: '📐', label: 'Body' },
     { key: 'wheels',    icon: '⚙️', label: 'Wheels' },
     { key: 'sensors',   icon: '📡', label: 'Sensor' },
   ];
