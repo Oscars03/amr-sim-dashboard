@@ -34,14 +34,18 @@ const IDLE_MOVE_EPS_DEG = 1.0;  // degrees
 
 import { parseURDF, drawRobot, normaliseMap, buildTransform } from '../../utils/robot';
 
-function getFollowPan(pose, mapData, width, height, view) {
+// Pan that reproduces the current follow view, for handing over when follow is
+// released. `cam` is the smoothed camera actually on screen; without it this
+// computes the pan for the raw pose, and since the camera lags the pose by a
+// frame or two the view jumps at the moment the user grabs it.
+function getFollowPan(pose, mapData, width, height, view, cam) {
   if (!pose || pose.x === "-" || !mapData?.map_info) return { panX: view.panX, panY: view.panY };
   const { scale, offsetX, offsetY } = buildTransform(mapData.map_info, width, height);
   const { origin_x, origin_y } = mapData.map_info;
   const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
   const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
-  const rx = width - offsetX - (worldY - origin_y) * scale;
-  const ry = height - offsetY - (worldX - origin_x) * scale;
+  const rx = cam ? cam.rx : width - offsetX - (worldY - origin_y) * scale;
+  const ry = cam ? cam.ry : height - offsetY - (worldX - origin_x) * scale;
   const dx = rx - width / 2;
   const dy = ry - height / 2;
   const cos = Math.cos(view.rotation);
@@ -163,6 +167,9 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       };
       setCursor("ew-resize");
     } else if (e.button === 1) {
+      // Chromium starts its autoscroll widget on a middle press unless the
+      // event is cancelled, which fights the pan drag.
+      e.preventDefault();
       dragRef.current = {
         isMiddle: true,
         isLeft: false,
@@ -182,7 +189,7 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     } else if (dragRef.current.isMiddle) {
       if (followRobot) {
         setFollowRobot(false);
-        const { panX, panY } = getFollowPan(poseRef.current, mapData, width, height, view);
+        const { panX, panY } = getFollowPan(poseRef.current, mapData, width, height, view, camRef.current);
         setView((v) => ({ ...v, panX, panY }));
       }
       const dx = e.clientX - dragRef.current.lastX;
