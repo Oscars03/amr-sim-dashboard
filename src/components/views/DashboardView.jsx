@@ -33,6 +33,7 @@ const IDLE_MOVE_EPS_M = 0.02;   // metres
 const IDLE_MOVE_EPS_DEG = 1.0;  // degrees
 
 import { parseURDF, drawRobot, normaliseMap, buildTransform, easePose } from '../../utils/robot';
+import { makeFrameGate } from '../../utils/frameGate';
 
 // Pan that reproduces the current follow view, for handing over when follow is
 // released. Pass the same eased pose the follow camera draws from (not the raw
@@ -116,28 +117,23 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     },
   }), []);
 
-  const fpsCounterRef = useRef({ frames: 0, t0: performance.now() });
+  const fpsCounterRef = useRef({ frames: 0, t0: 0 });
 
   // One rAF loop for every mode, paced against the frame clock.
   //
-  // The capped modes used setInterval(1000/fps). That does not deliver the rate
-  // it names: the timer is unaligned with vsync and its callbacks land wherever
-  // they land, so a "60" that misses a vsync boundary is presented on the next
-  // one and the frame spacing alternates 16.7/33.3 ms -- judder that reads as a
-  // slow simulator rather than a mis-timed one. requestAnimationFrame is already
-  // vsync-aligned; gating it on elapsed time gives a cap that actually holds.
-  //
-  // The 0.5 ms tolerance matters: a 60 Hz display reports ~16.66 ms between
-  // frames against a 16.667 ms target, so an exact comparison would reject every
-  // other frame and settle at 30.
+  // The capped modes used setInterval(1000/fps): unaligned with vsync, so a
+  // callback that missed a boundary showed up on the next one and frame spacing
+  // alternated 16.7/33.3 ms -- judder that reads as a slow simulator.
+  // requestAnimationFrame is already vsync-aligned; makeFrameGate() decides
+  // which ticks to draw on. Its pacing (2 ms slack, overshoot carried rather
+  // than snapped to now) is what stops a "20" cap reading 14 and a "60" reading
+  // 48 -- see frameGate.js.
   useEffect(() => {
     let frame;
-    let last = -Infinity;
-    const minDelta = fpsLimit > 0 ? 1000 / fpsLimit - 0.5 : 0;
+    const shouldDraw = makeFrameGate(fpsLimit);
     const loop = (now) => {
       frame = requestAnimationFrame(loop);
-      if (now - last < minDelta) return;
-      last = now;
+      if (!shouldDraw(now)) return;
       // Only the 20 fps mode skips idle frames; 60 and unlimited redraw every
       // tick, which is what makes motion smooth at the cost of CPU.
       const lowPowerMode = fpsLimit === 20;
@@ -155,6 +151,7 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
   // increments; a ref plus one setState per second keeps it off the draw path.
   const [measuredFps, setMeasuredFps] = useState(0);
   useEffect(() => {
+    fpsCounterRef.current.t0 = performance.now();
     const iv = setInterval(() => {
       const c = fpsCounterRef.current;
       const now = performance.now();

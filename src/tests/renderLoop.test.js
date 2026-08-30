@@ -1,91 +1,98 @@
 /**
- * Tests for render loop FPS logic (pure JS, no DOM/React needed)
- * Extracts the interval/rAF decision logic and tests it in isolation.
+ * Tests for the render-loop pacing (src/utils/frameGate.js).
+ *
+ * makeFrameGate is pure, so instead of mocking rAF we feed it a synthetic
+ * frame clock -- including a jittery / sub-60 one, which is where the old
+ * inline `last = now` gate fell apart (a "20" cap rendered ~14, "60" ~48).
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { makeFrameGate } from '../utils/frameGate';
 
-// --- Logic under test (mirrors DashboardView.jsx render loop) ---
-function createRenderLoop(fpsLimit, onDraw, needsRedrawFn, effectActiveFn) {
-  if (fpsLimit === 0) {
-    // Unlimited — use rAF (mocked)
-    let frame;
-    const loop = () => {
-      frame = requestAnimationFrame(loop);
-      onDraw();
-    };
-    frame = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frame);
-  } else {
-    const timer = setInterval(() => {
-      const lowPower = fpsLimit === 20;
-      if (lowPower && !needsRedrawFn() && !effectActiveFn()) return;
-      onDraw();
-    }, 1000 / fpsLimit);
-    return () => clearInterval(timer);
+// Run a gate against a frame clock for `seconds`, return the measured FPS.
+function measure(fps, clock, seconds = 4) {
+  const shouldDraw = makeFrameGate(fps);
+  let now;
+  let draws = 0;
+  const end = seconds * 1000;
+  while ((now = clock()) < end) {
+    if (shouldDraw(now)) draws++;
   }
+  return draws / seconds;
 }
-// ---------------------------------------------------------------
 
-describe('render loop — setInterval capped FPS', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+// Deterministic pseudo-random so the jitter is reproducible across runs.
+function mulberry32(seed) {
+  return () => {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-  it('20fps fires draw ~20 times per second', () => {
-    const draw = vi.fn();
-    const cleanup = createRenderLoop(20, draw, () => true, () => false);
-    vi.advanceTimersByTime(1000);
-    cleanup();
-    // setInterval at 50ms → 20 ticks in 1000ms
-    expect(draw).toHaveBeenCalledTimes(20);
-  });
+function clockFactory({ base, jitter = 0, dropProb = 0, seed = 1 }) {
+  const rnd = mulberry32(seed);
+  let t = 0;
+  return () => {
+    let dt = base + (rnd() * 2 - 1) * jitter;
+    if (rnd() < dropProb) dt += base; // a missed vsync
+    t += dt;
+    return t;
+  };
+}
 
-  it('60fps fires draw ~60 times per second', () => {
-    const draw = vi.fn();
-    const cleanup = createRenderLoop(60, draw, () => true, () => false);
-    vi.advanceTimersByTime(1000);
-    cleanup();
-    // allow ±3 for fake-timer boundary ticks
-    expect(draw.mock.calls.length).toBeGreaterThanOrEqual(57);
-    expect(draw.mock.calls.length).toBeLessThanOrEqual(63);
-  });
+const HZ60 = 1000 / 60;
+const HZ144 = 1000 / 144;
 
-  it('20fps lowPower skips draw when not dirty and no effect', () => {
-    const draw = vi.fn();
-    // needsRedraw=false, effectActive=false → should skip every tick
-    const cleanup = createRenderLoop(20, draw, () => false, () => false);
-    vi.advanceTimersByTime(1000);
-    cleanup();
-    expect(draw).toHaveBeenCalledTimes(0);
+describe('makeFrameGate — unlimited', () => {
+  it('fps <= 0 draws on every tick', () => {
+    expect(measure(0, clockFactory({ base: HZ60 }))).toBeCloseTo(60, 0);
+    expect(measure(0, clockFactory({ base: HZ144 }))).toBeGreaterThan(140);
   });
 
-  it('20fps lowPower draws when effectActive=true even if not dirty', () => {
-    const draw = vi.fn();
-    const cleanup = createRenderLoop(20, draw, () => false, () => true);
-    vi.advanceTimersByTime(1000);
-    cleanup();
-    expect(draw).toHaveBeenCalledTimes(20);
+  it('first tick always draws', () => {
+    const g20 = makeFrameGate(20);
+    expect(g20(1234.5)).toBe(true);
+  });
+});
+
+describe('makeFrameGate — clean 60 Hz clock', () => {
+  it('20 cap holds ~20', () => {
+    expect(measure(20, clockFactory({ base: HZ60 }))).toBeCloseTo(20, 0);
+  });
+  it('60 cap holds ~60', () => {
+    expect(measure(60, clockFactory({ base: HZ60 }))).toBeGreaterThanOrEqual(58);
+  });
+});
+
+describe('makeFrameGate — jittery / loaded clock (the regression)', () => {
+  // base 17.5 ms + 2 ms jitter + 6% dropped vsync ≈ a busy Electron renderer.
+  const busy = () => clockFactory({ base: 17.5, jitter: 2, dropProb: 0.06, seed: 7 });
+
+  it('20 cap stays near 20, not the old ~14', () => {
+    const fps = measure(20, busy());
+    expect(fps).toBeGreaterThan(18.5);
+    expect(fps).toBeLessThan(21.5);
   });
 
-  it('cleanup stops interval — no draw after cleanup', () => {
-    const draw = vi.fn();
-    const cleanup = createRenderLoop(20, draw, () => true, () => false);
-    vi.advanceTimersByTime(500);
-    cleanup();
-    vi.advanceTimersByTime(500); // should not fire after cleanup
-    expect(draw).toHaveBeenCalledTimes(10); // only first 500ms
+  it('60 cap tracks the clock, not the old ~48', () => {
+    // clock can only deliver ~55/s; the gate must not throw more away.
+    const fps = measure(60, busy());
+    expect(fps).toBeGreaterThan(50);
   });
+});
 
-  it('60fps draws more than 20fps in same window', () => {
-    const draw20 = vi.fn();
-    const draw60 = vi.fn();
-    const c1 = createRenderLoop(20, draw20, () => true, () => false);
-    const c2 = createRenderLoop(60, draw60, () => true, () => false);
-    vi.advanceTimersByTime(1000);
-    c1(); c2();
-    expect(draw60.mock.calls.length).toBeGreaterThan(draw20.mock.calls.length);
+describe('makeFrameGate — high-refresh clock still caps', () => {
+  it('60 cap on a 144 Hz clock renders ~60, not ~144', () => {
+    const fps = measure(60, clockFactory({ base: HZ144, jitter: 0.5, seed: 3 }));
+    expect(fps).toBeGreaterThan(56);
+    expect(fps).toBeLessThan(66);
+  });
+  it('20 cap on a 144 Hz clock renders ~20', () => {
+    // Worst phase alignment lets the 2 ms slack run the cap a hair fast; ~20.8
+    // on a 144 Hz grid is fine for a low-power cap. What matters: not 144, not 14.
+    const fps = measure(20, clockFactory({ base: HZ144, seed: 3 }));
+    expect(fps).toBeGreaterThan(19);
+    expect(fps).toBeLessThan(22);
   });
 });
