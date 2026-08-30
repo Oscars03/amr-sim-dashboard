@@ -1,19 +1,37 @@
 #!/bin/bash
 set -e
 
+# Always operate from the repo root, wherever this is invoked from.
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 APP_NAME="irish-amr-simulator"
-# Track package.json so this never drifts (was pinned at 1.0.0 through the 0.2.x
-# releases). Run from the repo root.
-VERSION="$(node -p "require('./package.json').version")"
-ARCH="amd64"
+
+# Version + architecture are asked every run. Defaults: package.json version and
+# amd64. Non-interactive callers can set VERSION= / ARCH= in the environment.
+DEFAULT_VERSION="$(node -p "require('./package.json').version" 2>/dev/null || echo 0.0.0)"
+if [ -t 0 ]; then
+  read -rp "Package version [${VERSION:-$DEFAULT_VERSION}]: " _ans
+  VERSION="${_ans:-${VERSION:-$DEFAULT_VERSION}}"
+  read -rp "Architecture (amd64/arm64) [${ARCH:-amd64}]: " _ans
+  ARCH="${_ans:-${ARCH:-amd64}}"
+fi
+VERSION="${VERSION:-$DEFAULT_VERSION}"
+ARCH="${ARCH:-amd64}"
+
+case "$ARCH" in
+  amd64) EB_ARCH="--x64" ;;
+  arm64) EB_ARCH="--arm64" ;;
+  *) echo "❌ Unsupported architecture: $ARCH (use amd64 or arm64)"; exit 1 ;;
+esac
+
 DEB_DIR="/tmp/${APP_NAME}_${VERSION}_${ARCH}"
 
-echo "🚀 Building Unified .deb for IRiSH AMR Simulator..."
+echo "🚀 Building unified .deb for IRiSH AMR Simulator — v${VERSION} ${ARCH}"
 
 # 1. Build the Electron App
 echo "📦 Building Electron Dashboard..."
 npm run build
-npx electron-builder --linux dir
+npx electron-builder --linux dir $EB_ARCH
 
 # 2. Setup Staging Directory
 echo "📁 Setting up Debian Staging Directory..."
@@ -84,8 +102,10 @@ chmod +x $DEB_DIR/DEBIAN/postinst
 
 # 5. Copy Electron App
 echo "📂 Copying Electron App..."
-# Electron builder 'dir' output goes to release/linux-unpacked
-cp -r release/linux-unpacked/* $DEB_DIR/opt/$APP_NAME/dashboard/
+# electron-builder 'dir' output: release/linux-unpacked (x64) or
+# release/linux-arm64-unpacked (arm64).
+if [ "$ARCH" = "arm64" ]; then UNPACKED="release/linux-arm64-unpacked"; else UNPACKED="release/linux-unpacked"; fi
+cp -r "$UNPACKED"/* $DEB_DIR/opt/$APP_NAME/dashboard/
 
 # 6. Copy ROS 2 Workspace Source
 echo "🤖 Copying ROS 2 Workspace..."
