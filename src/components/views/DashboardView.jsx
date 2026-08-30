@@ -3303,13 +3303,21 @@ export default function DashboardView() {
                 {/* Follow Robot Toggle */}
                 <button
                   onClick={() => worldMapRef.current?.toggleFollow()}
-                  title="Follow Robot: auto-center viewport on moving robot"
+                  // Without a map there is no WorldMap mounted, so the ref is
+                  // null and toggleFollow() is a no-op -- the button looked live
+                  // and did nothing. Say so instead.
+                  disabled={!mapData}
+                  title={mapData
+                    ? "Follow Robot: auto-center viewport on moving robot"
+                    : "Follow Robot: unavailable until a world is loaded"}
                   style={{
                     padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 6,
                     borderRadius: 'var(--r-md)', border: isFollowingRobot ? '1px solid var(--c-accent)' : '1px solid transparent',
                     background: isFollowingRobot ? 'var(--c-accent-bg)' : 'transparent',
-                    color: isFollowingRobot ? 'var(--c-accent)' : 'var(--c-text-1)',
-                    cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                    color: !mapData ? 'var(--c-text-3)' : (isFollowingRobot ? 'var(--c-accent)' : 'var(--c-text-1)'),
+                    cursor: mapData ? 'pointer' : 'not-allowed',
+                    opacity: mapData ? 1 : 0.5,
+                    fontWeight: 700, fontSize: 12,
                     fontFamily: 'var(--font-ui)',
                     transition: 'all 0.15s',
                   }}
