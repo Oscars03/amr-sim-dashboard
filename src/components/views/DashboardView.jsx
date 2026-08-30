@@ -519,51 +519,94 @@ const StopSquareSvg = () => (
 );
 
 // ─── SparkLine ────────────────────────────────────────────────────────────────
-// 10-second ring buffer sampled from poseRef at 150ms. Pure SVG polyline.
-// UI-only — does NOT add ROS topics. Zero React state churn (uses ref + RAF).
-const SPARK_PTS = 60; // 60 × 150ms = 9s window
-function SparkLine({ poseRef, field, isAngle, color = '#22d3ee', height = 32 }) {
-  const svgRef = useRef(null);
-  const buf = useRef(Array(SPARK_PTS).fill(null));
-  const prev = useRef(null);
+// 10-second ring buffer sampled from poseRef at 100ms. Canvas with baseline and glowing gradient.
+// UI-only — does NOT add ROS topics. Zero React state churn.
+const SPARK_PTS = 50;
+function SparkLine({ poseRef, field, isAngle, color = '#22d3ee', height = 34 }) {
+  const canvasRef = useRef(null);
+  const buf = useRef(Array(SPARK_PTS).fill(0));
 
   useEffect(() => {
-    let frame;
-    const tick = () => {
+    const iv = setInterval(() => {
       const p = poseRef.current;
-      if (p !== prev.current) {
-        prev.current = p;
-        let raw = p?.[field];
-        if (typeof raw === 'number') {
-          if (isAngle) raw = raw * 180 / Math.PI; // convert to degrees for display
-          buf.current.push(raw);
-          if (buf.current.length > SPARK_PTS) buf.current.shift();
-        }
+      let raw = p?.[field];
+      if (typeof raw !== 'number') raw = 0;
+      if (isAngle) raw = (raw * 180) / Math.PI;
+      buf.current.push(raw);
+      if (buf.current.length > SPARK_PTS) buf.current.shift();
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const pts = buf.current;
+      let mn = Math.min(...pts);
+      let mx = Math.max(...pts);
+      if (Math.abs(mx - mn) < 0.05) {
+        mn -= 0.5;
+        mx += 0.5;
       }
-      const pts = buf.current.filter(v => v !== null);
-      if (pts.length >= 2 && svgRef.current) {
-        const mn = Math.min(...pts), mx = Math.max(...pts);
-        const range = mx - mn || 1;
-        const w = svgRef.current.clientWidth || 260;
-        const h = height;
-        const points = pts.map((v, i) => {
-          const x = (i / (SPARK_PTS - 1)) * w;
-          const y = h - ((v - mn) / range) * (h - 4) - 2;
-          return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
-        const poly = svgRef.current.querySelector('polyline');
-        if (poly) poly.setAttribute('points', points);
+      const range = mx - mn;
+
+      // Draw faint baseline grid
+      const zeroY = h - ((0 - mn) / range) * (h - 8) - 4;
+      if (zeroY >= 0 && zeroY <= h) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(0, zeroY);
+        ctx.lineTo(w, zeroY);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [poseRef, field, isAngle, height]);
+
+      // Sparkline stroke
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      pts.forEach((v, i) => {
+        const x = (i / (pts.length - 1)) * w;
+        const y = h - ((v - mn) / range) * (h - 8) - 4;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Subtle gradient fill under curve
+      const lastX = w;
+      const lastY = h - ((pts[pts.length - 1] - mn) / range) * (h - 8) - 4;
+      ctx.lineTo(lastX, h);
+      ctx.lineTo(0, h);
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, color + '40');
+      grad.addColorStop(1, color + '00');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Glowing dot at the latest point
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(lastX - 2, lastY, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }, 100);
+
+    return () => clearInterval(iv);
+  }, [poseRef, field, isAngle, color]);
 
   return (
-    <svg ref={svgRef} width="100%" height={height} style={{ display: 'block', overflow: 'visible' }}>
-      <polyline points="" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
-    </svg>
+    <canvas
+      ref={canvasRef}
+      width={280}
+      height={height}
+      style={{ width: '100%', height, display: 'block' }}
+    />
   );
 }
 
@@ -2166,52 +2209,95 @@ const SimSelector = forwardRef(function SimSelector(
   );
 });
 
+const DEFAULT_MONITOR_TOPICS = [
+  { name: '/cmd_vel', type: 'geometry_msgs/msg/Twist' },
+  { name: '/odom', type: 'nav_msgs/msg/Odometry' },
+  { name: '/scan', type: 'sensor_msgs/msg/LaserScan' },
+  { name: '/map', type: 'nav_msgs/msg/OccupancyGrid' },
+  { name: '/initialpose', type: 'geometry_msgs/msg/PoseWithCovarianceStamped' },
+  { name: '/joint_states', type: 'sensor_msgs/msg/JointState' },
+  { name: '/robot_description', type: 'std_msgs/msg/String' },
+  { name: '/rosout', type: 'rcl_interfaces/msg/Log' },
+];
+
 function TopicMonitor({ ros, isDark }) {
-  const [topics, setTopics] = useState([]);
+  const [topics, setTopics] = useState(DEFAULT_MONITOR_TOPICS);
   const [selTopic, setSelTopic] = useState("");
   const [msgData, setMsgData] = useState(null);
   const subRef = useRef(null);
 
   const refreshTopics = useCallback(() => {
     if (!ros) return;
-    ros.getTopics((result) => {
-      const list = result.topics.map((t, i) => ({
-        name: t,
-        type: result.types[i],
-      }));
-      setTopics(list);
-    });
+    try {
+      ros.getTopics((result, types) => {
+        if (!result) return;
+        let topicList = [];
+        if (Array.isArray(result)) {
+          topicList = result.map((t, i) => ({
+            name: typeof t === 'string' ? t : t?.name || '',
+            type: (types && types[i]) || t?.type || '',
+          }));
+        } else if (result.topics && Array.isArray(result.topics)) {
+          topicList = result.topics.map((t, i) => ({
+            name: t,
+            type: result.types ? result.types[i] : '',
+          }));
+        }
+        topicList = topicList.filter((x) => x.name);
+        if (topicList.length > 0) {
+          const map = new Map();
+          DEFAULT_MONITOR_TOPICS.forEach(d => map.set(d.name, d));
+          topicList.forEach(t => map.set(t.name, t));
+          setTopics(Array.from(map.values()));
+        }
+      }, () => {});
+    } catch (e) {
+      console.warn('refreshTopics error:', e);
+    }
   }, [ros]);
 
   useEffect(() => {
     refreshTopics();
-    const inv = setInterval(refreshTopics, 5000);
+    const inv = setInterval(refreshTopics, 4000);
     return () => clearInterval(inv);
   }, [refreshTopics]);
 
-  // Depend on the resolved message type (a string), not on `topics` -- that
-  // array is rebuilt every 5 s by refreshTopics, and having it in the deps
-  // below tore the subscription down and rebuilt it on every refresh.
+  // Depend on the resolved message type (a string), not on `topics`
   const rawType = topics.find((x) => x.name === selTopic)?.type;
   const selTopicType = Array.isArray(rawType) ? rawType[0] : rawType;
 
   useEffect(() => {
-    if (!selTopic || !ros || !selTopicType) return;
+    if (!selTopic || !ros) return;
 
-    const listener = new ROSLIB.Topic({
-      ros: ros,
-      name: selTopic,
-      messageType: selTopicType,
-    });
+    let activeListener = null;
+    const subscribeWith = (type) => {
+      if (activeListener) activeListener.unsubscribe();
+      activeListener = new ROSLIB.Topic({
+        ros: ros,
+        name: selTopic,
+        messageType: type || '',
+      });
+      activeListener.subscribe((m) => {
+        setMsgData(m);
+      });
+      subRef.current = activeListener;
+    };
 
-    listener.subscribe((m) => {
-      setMsgData(m);
-    });
-    subRef.current = listener;
+    if (selTopicType) {
+      subscribeWith(selTopicType);
+    } else {
+      ros.getTopicType(selTopic, (type) => {
+        subscribeWith(type);
+      }, () => {
+        subscribeWith('');
+      });
+    }
 
     return () => {
-      listener.unsubscribe();
-      if (subRef.current === listener) subRef.current = null;
+      if (activeListener) {
+        activeListener.unsubscribe();
+        if (subRef.current === activeListener) subRef.current = null;
+      }
     };
   }, [selTopic, ros, selTopicType]);
 
@@ -2219,40 +2305,41 @@ function TopicMonitor({ ros, isDark }) {
     wrap: {
       display: "flex",
       flexDirection: "column",
-      gap: "10px",
+      gap: "12px",
     },
     title: {
-      fontSize: "11px",
-      fontWeight: 700,
+      fontSize: "12px",
+      fontWeight: 800,
       textTransform: "uppercase",
-      letterSpacing: "0.8px",
-      color: "var(--c-text-3)",
+      letterSpacing: "1px",
+      color: isDark ? "#ffffff" : "#0f172a",
       fontFamily: "var(--font-ui)",
     },
     select: {
       width: "100%",
       boxSizing: "border-box",
-      padding: "8px 10px",
-      borderRadius: "var(--r-md)",
-      background: "var(--c-panel-2)",
-      color: "var(--c-text-1)",
-      border: "1px solid var(--c-border)",
-      fontSize: "13px",
+      padding: "10px 12px",
+      borderRadius: "10px",
+      background: isDark ? "#161c25" : "#f8fafc",
+      color: isDark ? "#ffffff" : "#0f172a",
+      border: `1.5px solid ${isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.18)"}`,
+      fontSize: "13.5px",
       outline: "none",
       cursor: "pointer",
-      fontWeight: 500,
+      fontWeight: 600,
       colorScheme: isDark ? "dark" : "light",
+      transition: "border 0.2s",
     },
     dataBox: {
-      height: "240px",
+      height: "260px",
       overflowY: "auto",
-      padding: "10px",
-      background: "var(--c-panel-2)",
-      border: "1px solid var(--c-border)",
-      borderRadius: "var(--r-md)",
-      fontSize: "12px",
+      padding: "12px 14px",
+      background: isDark ? "#0b0f14" : "#f8fafc",
+      border: `1.5px solid ${isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)"}`,
+      borderRadius: "12px",
+      fontSize: "12.5px",
       fontFamily: "var(--font-mono)",
-      color: "var(--c-text-2)",
+      color: isDark ? "#e2e8f0" : "#1e293b",
     },
   };
 
@@ -2267,7 +2354,7 @@ function TopicMonitor({ ros, isDark }) {
           setSelTopic(e.target.value);
         }}
       >
-        <option value="" style={{ background: isDark ? "#1a1a1a" : "#ffffff", color: isDark ? "#e0e0e0" : "#333" }}>
+        <option value="" style={{ background: isDark ? "#161c25" : "#ffffff", color: isDark ? "#ffffff" : "#0f172a" }}>
           -- Select a topic --
         </option>
         {(() => {
@@ -2281,14 +2368,14 @@ function TopicMonitor({ ros, isDark }) {
             else if (n.startsWith('/map') || n.startsWith('/cost')) groups.map.push(t);
             else groups.other.push(t);
           });
-          const optStyle = { background: isDark ? "#1a1a1a" : "#ffffff", color: isDark ? "#e0e0e0" : "#333" };
+          const optStyle = { background: isDark ? "#161c25" : "#ffffff", color: isDark ? "#ffffff" : "#0f172a" };
           const renderOpts = list => list.map(t => (
             <option key={t.name} value={t.name} style={optStyle}>{t.name}</option>
           ));
-          return Object.entries({ 'cmd': groups.cmd, 'odom/pose': groups.odom, 'sensor': groups.sensor, 'map': groups.map, 'other': groups.other })
+          return Object.entries({ 'cmd': groups.cmd, 'odom / pose': groups.odom, 'sensor': groups.sensor, 'map': groups.map, 'other': groups.other })
             .filter(([, list]) => list.length > 0)
             .map(([label, list]) => (
-              <optgroup key={label} label={label.toUpperCase()}>
+              <optgroup key={label} label={label.toUpperCase()} style={{ fontWeight: 800, color: 'var(--c-accent)' }}>
                 {renderOpts(list)}
               </optgroup>
             ));
@@ -2297,27 +2384,27 @@ function TopicMonitor({ ros, isDark }) {
       <div style={S.dataBox}>
         {selTopic ? (
           msgData !== null ? (
-            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", color: isDark ? "#38bdf8" : "#0284c7" }}>
               {JSON.stringify(msgData, null, 2)}
             </pre>
           ) : (
-            "Waiting for data..."
+            <span style={{ color: isDark ? "#94a3b8" : "#64748b", fontStyle: "italic" }}>Waiting for data on {selTopic}…</span>
           )
         ) : (
-          /* Empty state — centered SVG + helper text */
+          /* Empty state — centered SVG + clear high-contrast text */
           <div style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             height: '100%', gap: 10, userSelect: 'none',
           }}>
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#334155" : "#cbd5e1"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#38bdf8" : "#0284c7"} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="22 12 16 12 13 15 11 15 8 12 2 12" />
               <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
             </svg>
-            <span style={{ fontSize: 12, fontWeight: 600, color: isDark ? '#475569' : '#94a3b8' }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: isDark ? '#ffffff' : '#0f172a' }}>
               No topic selected
             </span>
-            <span style={{ fontSize: 11, color: isDark ? '#334155' : '#cbd5e1', textAlign: 'center', lineHeight: 1.4 }}>
-              Pick a topic above to<br />inspect messages.
+            <span style={{ fontSize: 12, fontWeight: 500, color: isDark ? '#94a3b8' : '#475569', textAlign: 'center', lineHeight: 1.5 }}>
+              Pick a topic above to<br />inspect real-time ROS 2 messages.
             </span>
           </div>
         )}
@@ -2438,17 +2525,24 @@ const PoseSingle = React.memo(function PoseSingle({ poseRef, field, unit, isAngl
     let prev = null;
     const iv = setInterval(() => {
       if (poseRef.current !== prev) { prev = poseRef.current; setVal(prev); }
-    }, 150);
+    }, 100);
     return () => clearInterval(iv);
   }, [poseRef]);
   const raw = val?.[field];
-  const fmt = typeof raw === 'number' ? (isAngle ? raw.toFixed(1) : raw.toFixed(2)) : '-';
+  const fmt = typeof raw === 'number' ? (isAngle ? raw.toFixed(1) : raw.toFixed(2)) : '0.00';
   const disp = typeof raw === 'number' && isAngle ? `${fmt}°` : fmt;
   if (compact) return (
-    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-accent)' }}>{field.toUpperCase()} <strong style={{ fontWeight: 800 }}>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}</span>
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--c-accent)', fontVariantNumeric: 'tabular-nums' }}>
+      {field.toUpperCase()} <strong style={{ fontWeight: 800 }}>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}
+    </span>
   );
   return (
-    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 24, fontWeight: 800, color: 'var(--c-accent)' }}>{disp}<span style={{ fontSize: 13, marginLeft: 4, color: 'var(--c-text-2)', fontWeight: 600 }}>{isAngle ? '' : unit}</span></span>
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 26, fontWeight: 800, color: 'var(--c-accent)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px' }}>
+      {disp}
+      <span style={{ fontSize: 14, marginLeft: 4, color: 'var(--c-text-2)', fontWeight: 700 }}>
+        {isAngle ? '' : unit}
+      </span>
+    </span>
   );
 });
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3288,63 +3382,64 @@ export default function DashboardView() {
                 opacity: inspOpen ? 1 : 0, pointerEvents: inspOpen ? 'auto' : 'none',
                 transition: 'opacity 180ms ease-out',
               }}>
-                {/* Tab header — slim overline (11px); rail already shows context */}
+                {/* Tab header — clear title */}
                 <div style={{
-                  padding: '6px 16px 5px', fontFamily: 'var(--font-ui)', fontSize: 10,
-                  fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase',
-                  color: 'var(--c-text-3)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
+                  padding: '10px 16px 8px', fontFamily: 'var(--font-ui)', fontSize: 12,
+                  fontWeight: 800, letterSpacing: '1.2px', textTransform: 'uppercase',
+                  color: 'var(--c-accent)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between'
                 }}>
-                  {activeTab}
+                  <span>{activeTab}</span>
                 </div>
 
                 {/* Scrollable content */}
-                <div className="scrollable" style={{ flex: 1, overflow: 'hidden auto', padding: '12px 16px' }}>
+                <div className="scrollable" style={{ flex: 1, overflow: 'hidden auto', padding: '14px 16px' }}>
 
                   {/* ── TELEMETRY ────────────── */}
                   {activeTab === 'telemetry' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {/* X card + sparkline */}
-                      <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>X</span>
+                      <div style={{ borderRadius: 14, overflow: 'hidden', background: isDark ? '#161c25' : '#ffffff', border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px 6px' }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: isDark ? '#ffffff' : '#0f172a' }}>X</span>
                           <PoseSingle poseRef={poseRef} field="x" unit="m" />
                         </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="x" color="#22d3ee" height={28} />
+                        <div style={{ padding: '0 10px 8px' }}>
+                          <SparkLine poseRef={poseRef} field="x" color="#22d3ee" height={32} />
                         </div>
                       </div>
                       {/* Y card + sparkline */}
-                      <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>Y</span>
+                      <div style={{ borderRadius: 14, overflow: 'hidden', background: isDark ? '#161c25' : '#ffffff', border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px 6px' }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: isDark ? '#ffffff' : '#0f172a' }}>Y</span>
                           <PoseSingle poseRef={poseRef} field="y" unit="m" />
                         </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="y" color="#34d399" height={28} />
+                        <div style={{ padding: '0 10px 8px' }}>
+                          <SparkLine poseRef={poseRef} field="y" color="#34d399" height={32} />
                         </div>
                       </div>
                       {/* Angle card + sparkline */}
-                      <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>ANGLE</span>
+                      <div style={{ borderRadius: 14, overflow: 'hidden', background: isDark ? '#161c25' : '#ffffff', border: `1.5px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px 6px' }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: isDark ? '#ffffff' : '#0f172a' }}>ANGLE</span>
                           <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle />
                         </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="theta" isAngle color="#fbbf24" height={28} />
+                        <div style={{ padding: '0 10px 8px' }}>
+                          <SparkLine poseRef={poseRef} field="theta" isAngle color="#fbbf24" height={32} />
                         </div>
                       </div>
                       {/* Collision chip */}
                       <div style={{
-                        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
-                        borderRadius: 12, border: `1px solid ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                        borderRadius: 14, border: `1.5px solid ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
                         background: collisionActive ? 'var(--c-danger-bg)' : 'var(--c-success-bg)',
-                        fontSize: 12, fontWeight: 800,
+                        fontSize: 13, fontWeight: 800,
                         color: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
                       }}>
                         <div style={{
-                          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                          width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
                           background: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
-                          boxShadow: `0 0 6px ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
+                          boxShadow: `0 0 8px ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
                         }} />
                         {collisionActive ? 'Collision Detected' : 'Collision OK'}
                       </div>
