@@ -4,11 +4,16 @@ import React, {
   useState,
   useRef,
   useCallback,
+  useMemo,
   forwardRef,
   useImperativeHandle,
 } from "react";
+import { useNavigate } from "react-router-dom";
 import * as ROSLIB from "roslib";
 import UpdateProgressModal from '../ui/UpdateProgressModal';
+import ShortcutModal from '../ui/ShortcutModal';
+import CommandPalette from '../ui/CommandPalette';
+import CoachTour from '../ui/CoachTour';
 
 const HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
 const MAP_SERVER_URL = `http://${HOST}:3001/map`;
@@ -58,10 +63,36 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
   const effectActiveRef = useRef(effectActive);
   const collisionActiveRef = useRef(collisionActive);
 
+  const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
+  const [followRobot, setFollowRobot] = useState(false);
+
   // /odom (20 Hz) and /joint_states write their refs and call this instead of
   // setting React state, so a moving robot never reconciles the view tree.
   useImperativeHandle(ref, () => ({
     markDirty: () => { needsRedrawRef.current = true; },
+    resetView: () => {
+      setFollowRobot(false);
+      setView({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
+    },
+    zoomIn: () => {
+      setFollowRobot(false);
+      setView((v) => ({ ...v, zoom: Math.min(v.zoom * 1.25, 10) }));
+    },
+    zoomOut: () => {
+      setFollowRobot(false);
+      setView((v) => ({ ...v, zoom: Math.max(v.zoom / 1.25, 0.1) }));
+    },
+    rotateLeft: () => {
+      setFollowRobot(false);
+      setView((v) => ({ ...v, rotation: v.rotation - Math.PI / 12 }));
+    },
+    rotateRight: () => {
+      setFollowRobot(false);
+      setView((v) => ({ ...v, rotation: v.rotation + Math.PI / 12 }));
+    },
+    toggleFollow: () => {
+      setFollowRobot((f) => !f);
+    },
   }), []);
 
   useEffect(() => {
@@ -77,7 +108,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       return () => cancelAnimationFrame(frame);
     } else {
       // Capped FPS: setInterval fires exactly N times/s, no wasted rAF callbacks
-      // ponytail: setInterval drifts ~1ms/tick vs rAF's vsync precision; fine for 20/60fps canvas
       const timer = setInterval(() => {
         const lowPowerMode = fpsLimit === 20;
         if (lowPowerMode && !needsRedrawRef.current && !effectActiveRef.current && !collisionActiveRef.current) return;
@@ -87,15 +117,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       return () => clearInterval(timer);
     }
   }, [fpsLimit]);
-
-  const [debugStats, setDebugStats] = useState({ fps: 0, rtf: "1.00" });
-  const frameDeltasRef = useRef([]);
-  const lastFrameTimeRef = useRef(0); // seeded on the first frame
-  const lastUiUpdateRef = useRef(0);
-  const odomSamplesRef = useRef([]);
-
-  const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
-  const [followRobot, setFollowRobot] = useState(false);
 
   // Mark dirty whenever a visual input that lives in React changes. Pose and
   // steering angle are refs now -- they signal redraw via markDirty().
@@ -182,23 +203,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
   }, []);
 
 
-  // RTF (real-time factor) sampling: was a [pose] effect, now sampled in the
-  // draw loop off the pose ref -- one sample per new /odom stamp.
-  const lastSampledStampRef = useRef(null);
-  const sampleRtf = (pose) => {
-    if (!pose || pose.x === "-") return;
-    const stampSec = pose.stampSec ?? null;
-    if (stampSec !== null && stampSec === lastSampledStampRef.current) return;
-    lastSampledStampRef.current = stampSec;
-    const nowWall = performance.now() / 1000;
-    const samples = odomSamplesRef.current;
-    samples.push({
-      sim: stampSec !== null && stampSec > 0 ? stampSec : (samples.length > 0 ? samples[samples.length - 1].sim + 0.05 : nowWall),
-      wall: nowWall,
-    });
-    if (samples.length > 40) samples.shift();
-  };
-
   // Assigned in an effect, not during render: the frame loop only ever reads
   // drawRef.current, so it is enough that this lands before the next tick.
   const draw = () => {
@@ -207,7 +211,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
     const pose = poseRef.current;
     const steeringAngle = steeringRef.current;
-    sampleRtf(pose);
     const ctx = canvas.getContext("2d");
 
     const bgFill = isDark ? "#d3d3d3" : "#222222";
@@ -457,38 +460,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     ctx.font = "bold 12px sans-serif";
     ctx.textAlign = "left";
     ctx.fillText("1 m", bx + barPx + 8, by + 4);
-
-    const now = performance.now();
-    const frameDelta = now - lastFrameTimeRef.current;
-    lastFrameTimeRef.current = now;
-    if (frameDelta > 0 && frameDelta < 1000) {
-      frameDeltasRef.current.push(frameDelta);
-      if (frameDeltasRef.current.length > 60) frameDeltasRef.current.shift();
-    }
-
-    if (now - lastUiUpdateRef.current >= 300) {
-      lastUiUpdateRef.current = now;
-      const deltas = frameDeltasRef.current;
-      const avgDelta = deltas.length > 0 ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0;
-      const calculatedFps = avgDelta > 0 ? Math.round(1000 / avgDelta) : 0;
-
-      const samples = odomSamplesRef.current;
-      let calculatedRtf = 1.0;
-      if (samples.length >= 2) {
-        const first = samples[0];
-        const last = samples[samples.length - 1];
-        const dSim = last.sim - first.sim;
-        const dWall = last.wall - first.wall;
-        if (dWall > 0.05) {
-          calculatedRtf = Math.min(9.99, Math.max(0.0, dSim / dWall));
-        }
-      }
-
-      setDebugStats({
-        fps: calculatedFps,
-        rtf: calculatedRtf.toFixed(2),
-      });
-    }
   };
 
   // No dep array: `draw` closes over view/followRobot/mapData/..., so the loop
@@ -499,34 +470,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <div
-        style={{
-          position: "absolute",
-          top: "16px",
-          left: "16px",
-          fontSize: "11px",
-          fontFamily: "monospace",
-          color: isDark ? "rgba(248, 250, 252, 0.75)" : "rgba(15, 23, 42, 0.75)",
-          background: isDark
-            ? "rgba(15, 23, 42, 0.65)"
-            : "rgba(255, 255, 255, 0.75)",
-          backdropFilter: "blur(6px)",
-          border: isDark
-            ? "1px solid rgba(255, 255, 255, 0.12)"
-            : "1px solid rgba(15, 23, 42, 0.12)",
-          borderRadius: "8px",
-          padding: "5px 9px",
-          pointerEvents: "none",
-          zIndex: 5,
-          display: "flex",
-          flexDirection: "column",
-          gap: "2px",
-          lineHeight: "1.3",
-        }}
-      >
-        <div>FPS: {debugStats.fps}</div>
-        <div>RTF: {debugStats.rtf}</div>
-      </div>
       <canvas
         ref={canvasRef}
         width={width}
@@ -544,185 +487,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
           height: "100%",
         }}
       />
-      <button
-        type="button"
-        onClick={() => {
-          setFollowRobot((prev) => {
-            if (prev) {
-              const { panX, panY } = getFollowPan(poseRef.current, mapData, width, height, view);
-              setView((v) => ({ ...v, panX, panY }));
-            }
-            return !prev;
-          });
-        }}
-        style={{
-          position: "absolute",
-          top: "16px",
-          right: "16px",
-          background: followRobot
-            ? "#2563eb"
-            : isDark
-              ? "rgba(15, 23, 42, 0.88)"
-              : "rgba(255, 255, 255, 0.95)",
-          color: followRobot ? "#ffffff" : isDark ? "#f8fafc" : "#0f172a",
-          border: followRobot
-            ? "1.5px solid #60a5fa"
-            : isDark
-              ? "1.5px solid rgba(255, 255, 255, 0.25)"
-              : "1.5px solid rgba(15, 23, 42, 0.2)",
-          borderRadius: "10px",
-          padding: "8px 14px",
-          fontSize: "13px",
-          fontWeight: 700,
-          cursor: "pointer",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          boxShadow: followRobot
-            ? "0 4px 16px rgba(37, 99, 235, 0.45)"
-            : "0 4px 12px rgba(0, 0, 0, 0.2)",
-          transition: "all 0.2s ease",
-          zIndex: 5,
-        }}
-      >
-        <span style={{ fontSize: "14px" }}>🎯</span>
-        <span style={{ letterSpacing: "0.2px" }}>
-          {followRobot ? "Following Robot" : "Follow Robot"}
-        </span>
-        {followRobot && (
-          <span
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: "#4ade80",
-              boxShadow: "0 0 8px #4ade80",
-            }}
-          />
-        )}
-      </button>
-      <div
-        style={{
-          position: "absolute",
-          bottom: "16px",
-          right: "16px",
-          fontSize: "18px",
-          color: isDark ? "#ffffff" : "#000000",
-          background: isDark
-            ? "rgba(0, 0, 0, 0.5)"
-            : "rgba(255, 255, 255, 0.5)",
-          backdropFilter: "blur(4px)",
-          padding: "12px 20px",
-          borderRadius: "12px",
-          pointerEvents: "none",
-          fontWeight: 600,
-          display: "flex",
-          gap: "24px",
-          alignItems: "center",
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="5" y="2" width="14" height="20" rx="7"></rect>
-            <path d="M5 9h14"></path>
-            <path d="M12 2v7"></path>
-            <path d="M5 9V9A7 7 0 0 1 12 2v7H5z" fill="currentColor"></path>
-          </svg>
-          Rotate
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="5" y="2" width="14" height="20" rx="7"></rect>
-            <path d="M5 9h14"></path>
-            <path d="M12 2v7"></path>
-            <rect
-              x="10.5"
-              y="3"
-              width="3"
-              height="5"
-              rx="1"
-              fill="currentColor"
-            ></rect>
-          </svg>
-          Pan
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="5" y="2" width="14" height="20" rx="7"></rect>
-            <path d="M12 5v4"></path>
-            <path d="M10 7l2-2 2 2"></path>
-            <path d="M10 9l2 2 2-2"></path>
-          </svg>
-          Zoom
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <svg
-            width="30"
-            height="30"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="4" y="8" width="10" height="14" rx="5"></rect>
-            <path d="M4 14h10"></path>
-            <path d="M9 8v6"></path>
-            <path d="M5 5L2 2"></path>
-            <path d="M2 9L0 7"></path>
-            <rect
-              x="12"
-              y="1"
-              width="12"
-              height="9"
-              rx="2"
-              fill="currentColor"
-              stroke="none"
-            ></rect>
-            <text
-              x="13.5"
-              y="7.5"
-              fill={isDark ? "#000" : "#fff"}
-              stroke="none"
-              fontSize="7.5"
-              fontWeight="900"
-              fontFamily="sans-serif"
-            >
-              2X
-            </text>
-          </svg>
-          Reset
-        </span>
-      </div>
     </div>
   );
 }));
@@ -939,17 +703,17 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
     },
     title: {
       fontSize: isShort || isNarrow ? "15px" : "18px",
-      fontWeight: 600,
-      color: isDark ? "#90caf9" : "#1976d2",
+      fontWeight: 700,
+      color: isDark ? "#ffffff" : "#0f172a",
     },
     toggleWrap: {
       display: "flex",
       alignItems: "center",
-      background: isDark ? "#00000044" : "#f0f0f0",
+      background: isDark ? "#161c25" : "#f1f5f9",
       borderRadius: "20px",
       padding: "4px",
       cursor: "pointer",
-      border: `1px solid ${isDark ? "#333333" : "#dddddd"}`,
+      border: `1px solid ${isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.15)"}`,
       userSelect: "none",
     },
     toggleOpt: (active, color) => ({
@@ -961,8 +725,8 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
       fontSize: "13px",
       fontWeight: 700,
       letterSpacing: "0.5px",
-      color: active ? color : isDark ? "#555555" : "#aaaaaa",
-      background: active ? `${color}15` : "transparent",
+      color: active ? color : isDark ? "#94a3b8" : "#475569",
+      background: active ? `${color}20` : "transparent",
       border: active ? `1px solid ${color}` : "1px solid transparent",
       transition: "all 0.2s ease-in-out",
     }),
@@ -987,26 +751,27 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
       justifyContent: "center",
       borderRadius: "10px",
       border: active
-        ? `2px solid ${isDark ? "#90caf9" : "#1976d2"}`
-        : `1px solid ${isDark ? "#ffffff25" : "#e0e0e0"}`,
+        ? `2px solid ${isDark ? "#22d3ee" : "#0284c7"}`
+        : `1.5px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)"}`,
       background: active
         ? isDark
-          ? "#3949ab"
-          : "#e3f2fd"
+          ? "rgba(34, 211, 238, 0.25)"
+          : "#e0f2fe"
         : isDark
-          ? "#ffffff0d"
-          : "#f8f9fa",
+          ? "#161c25"
+          : "#ffffff",
       color: active
         ? isDark
-          ? "#fff"
-          : "#1565c0"
+          ? "#ffffff"
+          : "#0284c7"
         : isDark
-          ? "#9e9ec0"
-          : "#666666",
+          ? "#ffffff"
+          : "#0f172a",
       fontSize: "18px",
-      fontWeight: 600,
+      fontWeight: 700,
       cursor: "pointer",
       userSelect: "none",
+      boxShadow: active ? "0 0 12px rgba(34,211,238,0.4)" : "none",
     }),
 
     // ─── Slider section (redesigned) ───────────────────────────
@@ -1028,7 +793,7 @@ function KeyboardController({ ros, isDark, isNarrow, isShort }) {
       fontWeight: 700,
       letterSpacing: "0.8px",
       textTransform: "uppercase",
-      color: isDark ? "#7d8bab" : "#5a6478",
+      color: isDark ? "#ffffff" : "#0f172a",
     },
     sliderKeyBadge: (variant, color) => ({
       display: "inline-flex",
@@ -1407,11 +1172,11 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  const accent = isDark ? "#90caf9" : "#1976d2";
-  const border = isDark ? "#ffffff12" : "#e8eaed";
-  const inputBg = isDark ? "#1a1a2e" : "#f8f9fa";
-  const textSub = isDark ? "#6b7280" : "#9ca3af";
-  const textMain = isDark ? "#e2e8f0" : "#1a1a2a";
+  const accent = isDark ? "var(--c-accent)" : "var(--c-accent)";
+  const border = isDark ? "rgba(255, 255, 255, 0.16)" : "rgba(0, 0, 0, 0.15)";
+  const inputBg = isDark ? "#161c25" : "#f8fafc";
+  const textSub = isDark ? "#94a3b8" : "#334155";
+  const textMain = isDark ? "#ffffff" : "#0f172a";
 
   useEffect(() => {
     const handler = (e) => {
@@ -1428,7 +1193,7 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
       {/* Label */}
       <div
         style={{
-          fontSize: "10px",
+          fontSize: "11px",
           fontWeight: 700,
           color: textSub,
           textTransform: "uppercase",
@@ -1452,13 +1217,13 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
             alignItems: "center",
             justifyContent: "space-between",
             padding: "10px 12px",
-            background: open ? (isDark ? "#22223a" : "#f0f4ff") : inputBg,
+            background: open ? (isDark ? "#1e2633" : "#f0f9ff") : inputBg,
             border: `1.5px solid ${open ? accent : border}`,
-            boxShadow: open ? `0 0 0 3px ${accent}22` : "none",
+            boxShadow: open ? `0 0 0 3px ${accent}33` : "none",
             borderRadius: open ? "10px 10px 0 0" : "10px",
             color: textMain,
             fontSize: "14px",
-            fontWeight: 600,
+            fontWeight: 700,
             cursor: "pointer",
             userSelect: "none",
             transition: "all 0.15s",
@@ -1503,18 +1268,18 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
               top: "100%",
               left: 0,
               right: 0,
-              background: isDark ? "#1a1a2e" : "#ffffff",
+              background: isDark ? "#161c25" : "#ffffff",
               border: `1.5px solid ${accent}`,
               borderTop: "none",
               borderRadius: "0 0 10px 10px",
               boxShadow: isDark
-                ? "0 8px 24px rgba(0,0,0,0.6)"
-                : "0 8px 24px rgba(0,0,0,0.12)",
+                ? "0 12px 30px rgba(0,0,0,0.7)"
+                : "0 12px 30px rgba(0,0,0,0.15)",
               zIndex: 9999,
               maxHeight: "200px",
               overflowY: "auto",
               scrollbarWidth: "thin",
-              scrollbarColor: `${isDark ? "#333" : "#ccc"} transparent`,
+              scrollbarColor: `${isDark ? "#334155" : "#cbd5e1"} transparent`,
             }}
           >
             {options.length === 0 ? (
@@ -1543,12 +1308,12 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
                     style={{
                       padding: "10px 14px",
                       fontSize: "14px",
-                      fontWeight: isSelected ? 700 : 500,
+                      fontWeight: isSelected ? 700 : 600,
                       color: isSelected ? accent : textMain,
                       background: isSelected
                         ? isDark
-                          ? `${accent}18`
-                          : `${accent}12`
+                          ? "rgba(34, 211, 238, 0.15)"
+                          : "rgba(2, 132, 199, 0.12)"
                         : "transparent",
                       borderBottom: !isLast ? `1px solid ${border}` : "none",
                       borderRadius: isLast ? "0 0 8px 8px" : "0",
@@ -1562,16 +1327,11 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
                     onMouseEnter={(e) => {
                       if (!isSelected)
                         e.currentTarget.style.background = isDark
-                          ? "#ffffff0a"
-                          : "#f5f5f5";
+                          ? "#1e2633"
+                          : "#f1f5f9";
                     }}
                     onMouseLeave={(e) => {
-                      if (!isSelected)
-                        e.currentTarget.style.background = isSelected
-                          ? isDark
-                            ? `${accent}18`
-                            : `${accent}12`
-                          : "transparent";
+                      if (!isSelected) e.currentTarget.style.background = "transparent";
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden", flex: 1 }}>
@@ -1606,18 +1366,18 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
                         style={{
                           background: "none",
                           border: "none",
-                          color: isDark ? "#ef4444" : "#dc2626",
+                          color: isDark ? "#f87171" : "#dc2626",
                           cursor: "pointer",
                           padding: "2px 4px",
                           borderRadius: "4px",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          opacity: 0.7,
+                          opacity: 0.8,
                           transition: "opacity 0.2s",
                         }}
                         onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.8")}
                       >
                         <svg
                           width="14"
@@ -1651,7 +1411,7 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
 // SimSelector  — now uses CustomDropdown as a stable external component
 // ─────────────────────────────────────────────────────────────────────────────
 const SimSelector = forwardRef(function SimSelector(
-  { onSwitch, onStop, isDark, isWaitingOdom },
+  { onSwitch, onStop, isDark, isWaitingOdom, poseRef },
   ref,
 ) {
   const [robotList, setRobotList] = useState([]);
@@ -1952,35 +1712,65 @@ const SimSelector = forwardRef(function SimSelector(
         >
           <span
             style={{
-              fontSize: "10px",
-              fontWeight: 700,
-              color: isDark ? "#6b7280" : "#9ca3af",
+              fontSize: "11px",
+              fontWeight: 800,
+              color: isDark ? "#ffffff" : "#0f172a",
               textTransform: "uppercase",
               letterSpacing: "1.2px",
             }}
           >
             Spawn Pose (Initial)
           </span>
-          <button
-            type="button"
-            onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
-            title="Reset spawn coordinates to (0, 0, 0°)"
-            style={{
-              background: "transparent",
-              border: "none",
-              color: isDark ? "#90caf9" : "#1976d2",
-              fontSize: "11px",
-              fontWeight: 600,
-              cursor: "pointer",
-              padding: "2px 4px",
-              borderRadius: "4px",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            ↺ Reset (0, 0, 0°)
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (poseRef?.current) {
+                  const p = poseRef.current;
+                  const x = typeof p.x === "number" ? parseFloat(p.x.toFixed(2)) : 0;
+                  const y = typeof p.y === "number" ? parseFloat(p.y.toFixed(2)) : 0;
+                  const yaw = typeof p.theta === "number" ? parseFloat((p.theta * 180 / Math.PI).toFixed(1)) : 0;
+                  setSpawnPose({ x, y, yaw });
+                }
+              }}
+              title="Use current live pose of the robot"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--c-text-2)",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: "2px 4px",
+                borderRadius: "4px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              📍 Use Current
+            </button>
+            <button
+              type="button"
+              onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
+              title="Reset spawn coordinates to (0, 0, 0°)"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--c-accent)",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: "2px 4px",
+                borderRadius: "4px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              ↺ Reset
+            </button>
+          </div>
         </div>
 
         <div
@@ -1995,18 +1785,18 @@ const SimSelector = forwardRef(function SimSelector(
             style={{
               display: "flex",
               alignItems: "center",
-              background: isDark ? "#1a1a2e" : "#f8f9fa",
-              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              background: isDark ? "#161c25" : "#f8fafc",
+              border: `1.5px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)"}`,
               borderRadius: "8px",
-              padding: "5px 8px",
+              padding: "6px 8px",
               gap: "4px",
             }}
           >
             <span
               style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                color: isDark ? "#90caf9" : "#1976d2",
+                fontSize: "12px",
+                fontWeight: 800,
+                color: "var(--c-accent)",
               }}
             >
               X:
@@ -2022,14 +1812,14 @@ const SimSelector = forwardRef(function SimSelector(
                 width: "100%",
                 background: "transparent",
                 border: "none",
-                color: isDark ? "#e2e8f0" : "#1a1a2a",
-                fontSize: "12.5px",
-                fontWeight: 600,
+                color: isDark ? "#ffffff" : "#0f172a",
+                fontSize: "13px",
+                fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0.0"
             />
-            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>m</span>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
           </div>
 
           {/* Y Input */}
@@ -2037,18 +1827,18 @@ const SimSelector = forwardRef(function SimSelector(
             style={{
               display: "flex",
               alignItems: "center",
-              background: isDark ? "#1a1a2e" : "#f8f9fa",
-              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              background: isDark ? "#161c25" : "#f8fafc",
+              border: `1.5px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)"}`,
               borderRadius: "8px",
-              padding: "5px 8px",
+              padding: "6px 8px",
               gap: "4px",
             }}
           >
             <span
               style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                color: isDark ? "#90caf9" : "#1976d2",
+                fontSize: "12px",
+                fontWeight: 800,
+                color: "var(--c-accent)",
               }}
             >
               Y:
@@ -2064,14 +1854,14 @@ const SimSelector = forwardRef(function SimSelector(
                 width: "100%",
                 background: "transparent",
                 border: "none",
-                color: isDark ? "#e2e8f0" : "#1a1a2a",
-                fontSize: "12.5px",
-                fontWeight: 600,
+                color: isDark ? "#ffffff" : "#0f172a",
+                fontSize: "13px",
+                fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0.0"
             />
-            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>m</span>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
           </div>
 
           {/* Yaw Input */}
@@ -2079,18 +1869,18 @@ const SimSelector = forwardRef(function SimSelector(
             style={{
               display: "flex",
               alignItems: "center",
-              background: isDark ? "#1a1a2e" : "#f8f9fa",
-              border: `1.5px solid ${isDark ? "#ffffff12" : "#e8eaed"}`,
+              background: isDark ? "#161c25" : "#f8fafc",
+              border: `1.5px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.15)"}`,
               borderRadius: "8px",
-              padding: "5px 8px",
+              padding: "6px 8px",
               gap: "4px",
             }}
           >
             <span
               style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                color: isDark ? "#90caf9" : "#1976d2",
+                fontSize: "12px",
+                fontWeight: 800,
+                color: "var(--c-accent)",
               }}
             >
               Yaw:
@@ -2106,14 +1896,14 @@ const SimSelector = forwardRef(function SimSelector(
                 width: "100%",
                 background: "transparent",
                 border: "none",
-                color: isDark ? "#e2e8f0" : "#1a1a2a",
-                fontSize: "12.5px",
-                fontWeight: 600,
+                color: isDark ? "#ffffff" : "#0f172a",
+                fontSize: "13px",
+                fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0"
             />
-            <span style={{ fontSize: "10px", color: isDark ? "#64748b" : "#94a3b8" }}>°</span>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>°</span>
           </div>
         </div>
       </div>
@@ -2583,98 +2373,28 @@ function NotificationModal({ notification, onClose, isDark }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Odometry number panel. Its own store subscription + memo so the throttled
-// pose updates never re-render DashboardView.
 // ─────────────────────────────────────────────────────────────────────────────
-const PoseReadout = React.memo(function PoseReadout({ poseRef, isDark }) {
-  // Polls the live pose ref a few times a second -- only this small component
-  // re-renders, never the dashboard.
-  // Seeded with the placeholder rather than poseRef.current -- reading a ref
-  // during render is not allowed, and the first poll 150 ms later fills it in.
-  const [pose, setPose] = useState({ x: "-", y: "-", theta: "-" });
-  useEffect(() => {
-    // null, not poseRef.current: the first tick must sync even for a robot
-    // that is already parked and will never change the ref again.
+// PoseSingle — single-field readout used in inspector tabs
+// ─────────────────────────────────────────────────────────────────────────────
+const PoseSingle = React.memo(function PoseSingle({ poseRef, field, unit, isAngle, compact }) {
+  const [val, setVal] = React.useState(null);
+  React.useEffect(() => {
     let prev = null;
     const iv = setInterval(() => {
-      if (poseRef.current !== prev) {
-        prev = poseRef.current;
-        setPose(prev);
-      }
+      if (poseRef.current !== prev) { prev = poseRef.current; setVal(prev); }
     }, 150);
     return () => clearInterval(iv);
   }, [poseRef]);
-  const fmt = (v, d) => (typeof v === "number" ? v.toFixed(d) : v);
-  const items = [
-    { label: "X", value: fmt(pose.x, 2), unit: "[m]" },
-    { label: "Y", value: fmt(pose.y, 2), unit: "[m]" },
-    { label: "Angle", value: pose.theta === "-" ? "-" : `${fmt(pose.theta, 1)}°`, unit: "[degrees]" },
-  ];
+  const raw = val?.[field];
+  const fmt = typeof raw === 'number' ? (isAngle ? raw.toFixed(1) : raw.toFixed(2)) : '-';
+  const disp = typeof raw === 'number' && isAngle ? `${fmt}°` : fmt;
+  if (compact) return (
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-accent)' }}>{field.toUpperCase()} <strong style={{ fontWeight: 800 }}>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}</span>
+  );
   return (
-    <div style={{ display: "flex", gap: "10px", alignItems: "stretch", minWidth: 0 }}>
-      {items.map(({ label, value, unit }) => (
-        <div
-          key={label}
-          style={{
-            background: isDark ? "#ffffff08" : "#f8f9fa",
-            border: `1px solid ${isDark ? "#ffffff10" : "#eeeeee"}`,
-            borderRadius: "10px",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            alignItems: "center",
-            flex: "1 1 0",
-            minWidth: 0,
-            padding: "clamp(10px, 1.5vw, 20px) 5px",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "clamp(11px, 1.2vw, 14px)",
-              fontWeight: 700,
-              color: isDark ? "#9e9ec0" : "#666",
-              textTransform: "uppercase",
-              marginBottom: "8px",
-              letterSpacing: "1px",
-              textAlign: "center",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              maxWidth: "100%",
-            }}
-          >
-            {label}
-          </div>
-          <div
-            style={{
-              fontSize: "clamp(16px, 2.2vw, 32px)",
-              fontWeight: 700,
-              color: isDark ? "#00e5ff" : "#007b83",
-              fontFamily: "monospace",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {value}
-          </div>
-          <div
-            style={{
-              fontSize: "clamp(10px, 1vw, 13px)",
-              fontWeight: 600,
-              color: isDark ? "#7a7a9e" : "#999999",
-              marginTop: "8px",
-              letterSpacing: "0.5px",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {unit}
-          </div>
-        </div>
-      ))}
-    </div>
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 24, fontWeight: 800, color: 'var(--c-accent)' }}>{disp}<span style={{ fontSize: 13, marginLeft: 4, color: 'var(--c-text-2)', fontWeight: 600 }}>{isAngle ? '' : unit}</span></span>
   );
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 // App (Main - No Scroll Layout)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2693,8 +2413,8 @@ export default function DashboardView() {
     activeRobot,
     setActiveRobot,
     rosObj,
-    showMonitor,
     isDark,
+    setIsDark,
     isWaitingOdom,
     setIsWaitingOdom,
   } = useAppStore();
@@ -2702,6 +2422,7 @@ export default function DashboardView() {
   const [appVersion, setAppVersion] = useState("0.0.0");
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showStatusToast, setShowStatusToast] = useState(false);
+  const [isFollowingRobot, setIsFollowingRobot] = useState(false);
   const toastTimerRef = useRef(null);
 
   const [notification, setNotification] = useState(null);
@@ -3012,569 +2733,723 @@ export default function DashboardView() {
 
   const isNarrow = winSize.w < 900; // stack vertically
   const isShort = winSize.h < 600; // compress padding
+  const inspectorCollapsed = winSize.w < 1280;
 
-  const S = {
-    app: {
-      flex: 1,
-      width: "100%",
-      height: "100%",
-      overflow: "hidden",
-      display: "flex",
-      justifyContent: "center",
-      padding: isShort ? "8px" : isNarrow ? "12px" : "20px",
-      boxSizing: "border-box",
-    },
+  // RTF ref for status bar — updated at 1 Hz inside WorldMap, lifted via callback
+  const rtfRef = useRef('1.00');
+  const [statusRtf, setStatusRtf] = useState('1.00');
+  // 1 Hz RTF pull for status bar (avoids 20Hz setState)
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setStatusRtf(rtfRef.current);
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
 
-    wrap: {
-      width: "100%",
-      maxWidth: "1600px",
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-      minHeight: 0,
-      overflow: "hidden",
-    },
+  // Env popover (single merged dot)
+  const [showEnvPopover, setShowEnvPopover] = useState(false);
+  const { rosStatus, envData, fpsLimit, setFpsLimit, setShowEnvModal, showShortcuts, setShowShortcuts } = useAppStore();
+  const rosConnected = rosStatus === 'Connected to ROS2' || rosStatus === 'Connected';
+  const envReady = envData?.allReady;
+  // Merged ROS2+Env state
+  const rosEnvState = rosConnected && envReady ? 'ready'
+    : envReady ? 'offline'
+    : envData ? 'setup'
+    : 'unknown';
+  const rosEnvMeta = {
+    ready:   { color: 'var(--c-success)', label: 'ROS2 Ready' },
+    offline: { color: 'var(--c-danger)',  label: 'ROS2 Offline' },
+    setup:   { color: 'var(--c-warn)',    label: 'ROS2 Setup' },
+    unknown: { color: 'var(--c-text-3)', label: 'ROS2 ...' },
+  }[rosEnvState];
 
-    header: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: isShort ? "8px" : "20px",
-      flexShrink: 0,
-      flexWrap: "wrap", // ← wrap when narrow
-      gap: "8px",
-    },
-
-    titleBox: {
-      display: "flex",
-      alignItems: "center",
-      gap: "12px",
-      flexWrap: "wrap",
-    },
-
-    h1: {
-      fontSize: isNarrow ? "18px" : "24px",
-      fontWeight: 700,
-      margin: 0,
-      color: isDark ? "#fff" : "#111",
-      whiteSpace: "nowrap",
-    },
-
-    statusBox: {
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      background: isDark ? "#121212" : "#ffffff",
-      padding: "6px 12px",
-      borderRadius: "10px",
-      fontSize: isNarrow ? "12px" : "14px",
-      border: `1px solid ${isDark ? "#333" : "#ddd"}`,
-      fontWeight: 500,
-      whiteSpace: "nowrap",
-    },
-
-    dot: (on) => ({
-      width: "10px",
-      height: "10px",
-      borderRadius: "50%",
-      background: on
-        ? isDark
-          ? "#4caf50"
-          : "#388e3c"
-        : isDark
-          ? "#f44336"
-          : "#d32f2f",
-      boxShadow: on ? `0 0 8px ${isDark ? "#4caf50" : "#388e3c"}` : "none",
-      flexShrink: 0,
-    }),
-
-    btnGroup: {
-      display: "flex",
-      gap: "8px",
-      flexWrap: "wrap", // ← wrap buttons when narrow
-    },
-
-    topBtn: {
-      display: "flex",
-      alignItems: "center",
-      gap: "6px",
-      background: isDark ? "#121212" : "#ffffff",
-      border: `1px solid ${isDark ? "#333" : "#ccc"}`,
-      color: isDark ? "#90caf9" : "#1976d2",
-      borderRadius: "10px",
-      padding: isNarrow ? "6px 10px" : "8px 16px",
-      fontSize: isNarrow ? "12px" : "14px",
-      fontWeight: 600,
-      cursor: "pointer",
-      whiteSpace: "nowrap",
-      transition: "all 0.2s",
-    },
-
-    topBtnActive: {
-      display: "flex",
-      alignItems: "center",
-      gap: "6px",
-      background: isDark ? "#1a237e" : "#e3f2fd",
-      border: `1px solid ${isDark ? "#3949ab" : "#90caf9"}`,
-      color: isDark ? "#ffffff" : "#1565c0",
-      borderRadius: "10px",
-      padding: isNarrow ? "6px 10px" : "8px 16px",
-      fontSize: isNarrow ? "12px" : "14px",
-      fontWeight: 600,
-      cursor: "pointer",
-      whiteSpace: "nowrap",
-      transition: "all 0.2s",
-    },
-
-    // ── KEY CHANGE: single column when narrow ────────────────────────────────
-    mainContent: {
-      display: "grid",
-      gridTemplateColumns: isNarrow ? "1fr" : "minmax(0, 2.5fr) minmax(0, 1fr)",
-      gridTemplateRows: "minmax(0, 1fr)",
-      gap: "12px",
-      flex: 1,
-      minHeight: 0,
-      overflow: isNarrow ? "auto" : "hidden", // ← scroll when stacked
-    },
-
-    mapCard: {
-      display: "flex",
-      flexDirection: "column",
-      background: isDark ? "#121212" : "#ffffff",
-      border: `1px solid ${isDark ? "#333333" : "#e0e0e0"}`,
-      borderRadius: "16px",
-      padding: "16px",
-      boxSizing: "border-box",
-      boxShadow: isDark ? "none" : "0 6px 16px rgba(0,0,0,0.04)",
-      minWidth: 0,
-      minHeight: 0,
-      height: isNarrow ? "55vh" : "100%", // ← fixed height when stacked
-    },
-
-    mapHeader: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: "12px",
-      flexShrink: 0,
-      flexWrap: "wrap",
-      gap: "8px",
-    },
-
-    mapCanvasWrap: {
-      flex: 1,
-      minHeight: 0,
-      background: isDark ? "#0d0d1a" : "#e6e9ec",
-      borderRadius: "10px",
-      border: `1px solid ${isDark ? "#ffffff15" : "#cccccc"}`,
-      overflow: "hidden",
-    },
-
-    // ── KEY CHANGE: right panel scrolls instead of clipping ─────────────────
-    rightPanel: {
-      display: "flex",
-      flexDirection: "column",
-      gap: "8px",
-      height: "100%",
-      minHeight: 0,
-      minWidth: 0,
-      overflowY: "auto", // ← KEY: scroll instead of clip
-      overflowX: "hidden",
-      paddingRight: "2px",
-      // Thin scrollbar
-      scrollbarWidth: "thin",
-      scrollbarColor: `${isDark ? "#333" : "#ccc"} transparent`,
-    },
-
-    poseCard: {
-      background: isDark ? "#121212" : "#ffffff",
-      border: `1px solid ${isDark ? "#333333" : "#e0e0e0"}`,
-      borderRadius: "16px",
-      padding: isNarrow ? "8px" : isShort ? "8px" : "12px", // tighter padding
-      display: "flex",
-      flexDirection: "column",
-      flexShrink: 0,
-      boxShadow: isDark ? "none" : "0 6px 16px rgba(0,0,0,0.04)",
-      overflow: "hidden",
-    },
-
-    popupWrap2: {
-      position: "fixed",
-      top: "75px",
-      right: "20px",
-      width: isNarrow ? "calc(100vw - 40px)" : "380px",
-      zIndex: 1000,
-      display: showMonitor ? "block" : "none",
-    },
+  // ── Inspector tab state (persisted in localStorage)
+  const [activeTab, setActiveTab] = useState(() => {
+    try { return localStorage.getItem('inspector-tab') || 'telemetry'; } catch { return 'telemetry'; }
+  });
+  const setTab = (t) => {
+    setActiveTab(t);
+    try { localStorage.setItem('inspector-tab', t); } catch { /* ignore storage errors */ }
   };
+  const [inspOpen, setInspOpen] = useState(() => {
+    try { return localStorage.getItem('inspector-open') !== 'false'; } catch { return true; }
+  });
+  const toggleInsp = () => {
+    setInspOpen(o => {
+      const next = !o;
+      try { localStorage.setItem('inspector-open', String(next)); } catch { /* ignore storage errors */ }
+      return next;
+    });
+  };
+
+  const TAB_ICONS = {
+    telemetry: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      </svg>
+    ),
+    setup: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" />
+      </svg>
+    ),
+    drive: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M15 7.5V2H9v5.5l3 3 3-3z" /><path d="M7.5 9H2v6h5.5l3-3-3-3z" />
+        <path d="M16.5 9l-3 3 3 3H22V9h-5.5z" /><path d="M9 16.5V22h6v-5.5l-3-3-3 3z" />
+      </svg>
+    ),
+    console: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
+    ),
+  };
+
+  const navigate = useNavigate();
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+
+  // Global shortcuts listener for ? and Ctrl+K / Cmd+K
+  useEffect(() => {
+    const handleGlobalKey = (e) => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      const isInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowCommandPalette((prev) => !prev);
+        return;
+      }
+
+      if (e.key === '?' && !isInput) {
+        e.preventDefault();
+        setShowShortcuts((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, [setShowShortcuts]);
+
+  const paletteActions = useMemo(() => [
+    {
+      id: 'reset-pose',
+      label: 'Reset Robot Pose',
+      desc: 'Publish initialpose to reset robot to spawn location',
+      shortcut: 'Alt+R',
+      run: () => {
+        if (!rosObj) return;
+        const { spawnPose: curSpawn } = useAppStore.getState();
+        const sx = Number(curSpawn?.x) || 0;
+        const sy = Number(curSpawn?.y) || 0;
+        const syawDeg = Number(curSpawn?.yaw) || 0;
+        const syawRad = (syawDeg * Math.PI) / 180;
+        const qz = Math.sin(syawRad / 2);
+        const qw = Math.cos(syawRad / 2);
+        const initPoseTopic = new ROSLIB.Topic({
+          ros: rosObj,
+          name: '/initialpose',
+          messageType: 'geometry_msgs/msg/PoseWithCovarianceStamped',
+        });
+        initPoseTopic.publish({
+          header: { frame_id: 'map' },
+          pose: {
+            pose: {
+              position: { x: sx, y: sy, z: 0.0 },
+              orientation: { x: 0.0, y: 0.0, z: qz, w: qw },
+            },
+            covariance: new Array(36).fill(0),
+          },
+        });
+      },
+    },
+    {
+      id: 'tab-telemetry',
+      label: 'Switch to Telemetry Tab',
+      desc: 'View live robot odometry and collision status',
+      run: () => { setTab('telemetry'); if (!inspOpen) setInspOpen(true); },
+    },
+    {
+      id: 'tab-setup',
+      label: 'Switch to Setup Tab',
+      desc: 'Configure robot, map, and spawn coordinates',
+      run: () => { setTab('setup'); if (!inspOpen) setInspOpen(true); },
+    },
+    {
+      id: 'tab-drive',
+      label: 'Switch to Drive Tab',
+      desc: 'Teleoperate robot using 3x3 directional keypad',
+      run: () => { setTab('drive'); if (!inspOpen) setInspOpen(true); },
+    },
+    {
+      id: 'tab-console',
+      label: 'Switch to Console Tab',
+      desc: 'Inspect ROS 2 topics and raw JSON streams',
+      run: () => { setTab('console'); if (!inspOpen) setInspOpen(true); },
+    },
+    {
+      id: 'toggle-theme',
+      label: `Switch to ${isDark ? 'Light' : 'Dark'} Mode`,
+      desc: 'Toggle application color theme',
+      run: () => setIsDark(!isDark),
+    },
+    {
+      id: 'env-check',
+      label: 'Environment Check',
+      desc: 'Check ROS 2, rosbridge_server, and amr_2dsim packages',
+      run: () => setShowEnvModal(true),
+    },
+    {
+      id: 'create-robot',
+      label: 'Create / Edit Robot',
+      desc: 'Open visual URDF robot builder',
+      run: () => navigate('/create-robot'),
+    },
+    {
+      id: 'create-world',
+      label: 'Create / Edit World',
+      desc: 'Open 2D grid world map editor',
+      run: () => navigate('/create-world'),
+    },
+    {
+      id: 'shortcuts',
+      label: 'Keyboard Shortcuts Guide',
+      desc: 'Show all keyboard shortcuts for simulator',
+      shortcut: '?',
+      run: () => setShowShortcuts(true),
+    },
+  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, setShowShortcuts, navigate]);
 
   return (
     <>
-      <style>{`
-        body, html, #root {
-          margin: 0 !important; padding: 0 !important;
-          width: 100% !important; height: 100% !important;
-          background-color: ${isDark ? "#08080c" : "#f0f2f5"} !important;
-          overflow: hidden;
-        }
-        * { box-sizing: border-box; }
+      {/* ── Modals & Palettes ────────────────────────────────────────────── */}
+      <ShortcutModal isOpen={showShortcuts} onClose={() => setShowShortcuts(false)} isDark={isDark} />
+      <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} isDark={isDark} actions={paletteActions} />
+      <CoachTour isDark={isDark} />
+      {/* ── Toasts ──────────────────────────────────────────────────────── */}
+      {showStatusToast && updateInfo && updateInfo.status !== 'downloading' && updateInfo.status !== 'downloaded' && (
+        <div style={{
+          position: 'fixed', top: '64px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', gap: '10px',
+          background: isDark ? '#1b5e20' : '#e8f5e9', color: isDark ? '#81c784' : '#2e7d32',
+          border: '1px solid #4caf50', padding: '8px 18px', borderRadius: '24px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '13px', fontWeight: 600,
+        }}>
+          <span>{updateInfo.status === 'checking' ? 'Checking for updates...' : updateInfo.status === 'available' ? 'Update available!' : updateInfo.status === 'error' ? `Error: ${updateInfo.message}` : updateInfo.message || 'No update available'}</span>
+          <button onClick={() => setShowStatusToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+      )}
+      {showCollisionToast && (
+        <div style={{
+          position: 'fixed', top: '64px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', gap: '10px',
+          background: isDark ? '#b71c1c' : '#ffebee', color: isDark ? '#ffcdd2' : '#c62828',
+          border: `1px solid ${isDark ? '#ef5350' : '#ef9a9a'}`, padding: '8px 18px',
+          borderRadius: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '13px', fontWeight: 600,
+        }}>
+          <span>Collision detected</span>
+          <button onClick={() => setShowCollisionToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+      )}
+      {idleStopped && (
+        <div style={{
+          position: 'fixed', top: '64px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', gap: '10px',
+          background: isDark ? '#3a2c05' : '#fff8e1', color: isDark ? '#ffe082' : '#8d6e00',
+          border: `1px solid ${isDark ? '#ffb300' : '#ffe082'}`, padding: '8px 18px',
+          borderRadius: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '13px', fontWeight: 600,
+        }}>
+          <span>Simulation stopped — idle 1 h. Press Launch to resume.</span>
+        </div>
+      )}
 
-        /* Thin scrollbar for right panel */
-        .right-panel::-webkit-scrollbar       { width: 4px; }
-        .right-panel::-webkit-scrollbar-track { background: transparent; }
-        .right-panel::-webkit-scrollbar-thumb {
-          background: ${isDark ? "#333" : "#ccc"};
-          border-radius: 4px;
-        }
-      `}</style>
+      <UpdateProgressModal updateInfo={updateInfo} appVersion={appVersion} onClose={() => setUpdateInfo(null)} />
+      <NotificationModal notification={notification} onClose={() => setNotification(null)} isDark={isDark} />
 
-      <div style={S.app}>
-        {showStatusToast && updateInfo && updateInfo.status !== 'downloading' && updateInfo.status !== 'downloaded' && (
-          <div
-            style={{
-              position: "fixed",
-              top: "16px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 9999,
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              background:
-                updateInfo.status === "available" ||
-                  updateInfo.status === "downloaded"
-                  ? isDark
-                    ? "#1b5e20"
-                    : "#e8f5e9"
-                  : updateInfo.status === "downloading"
-                    ? isDark
-                      ? "#0d47a1"
-                      : "#e3f2fd"
-                    : updateInfo.status === "error"
-                      ? isDark
-                        ? "#b71c1c"
-                        : "#ffebee"
-                      : isDark
-                        ? "#333"
-                        : "#fff",
-              color:
-                updateInfo.status === "available" ||
-                  updateInfo.status === "downloaded"
-                  ? isDark
-                    ? "#81c784"
-                    : "#2e7d32"
-                  : updateInfo.status === "downloading"
-                    ? isDark
-                      ? "#64b5f6"
-                      : "#1565c0"
-                    : updateInfo.status === "error"
-                      ? isDark
-                        ? "#e57373"
-                        : "#c62828"
-                      : isDark
-                        ? "#ccc"
-                        : "#666",
-              border: `1px solid ${updateInfo.status === "available" ||
-                updateInfo.status === "downloaded"
-                ? "#4caf50"
-                : updateInfo.status === "downloading"
-                  ? "#2196f3"
-                  : isDark
-                    ? "#444"
-                    : "#ddd"
-                }`,
-              padding: "8px 18px",
-              borderRadius: "24px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-              fontSize: "13px",
-              fontWeight: 600,
-            }}
-          >
-            <span>
-              {updateInfo.status === "checking"
-                ? "Checking for updates..."
-                : updateInfo.status === "available"
-                  ? "Update available! Downloading..."
-                  : updateInfo.status === "downloading"
-                    ? `Downloading: ${updateInfo.percent ?? updateInfo.progress ?? 0}%`
-                    : updateInfo.status === "downloaded"
-                      ? "Update ready. Restarting..."
-                      : updateInfo.status === "error"
-                        ? `Error: ${updateInfo.message}`
-                        : updateInfo.message || "No Update Available"}
-            </span>
-            <button
-              onClick={() => setShowStatusToast(false)}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "inherit",
-                cursor: "pointer",
-                padding: 0,
-                marginLeft: "8px",
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
+
+      {/* ── Main shell: canvas | inspector ──────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', width: '100%', height: '100%', minHeight: 0, overflow: 'hidden' }}>
+        {/* Content row */}
+        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+
+          {/* ── Canvas full-bleed ──────────────────────────────────── */}
+          <div style={{ flex: 1, position: 'relative', minWidth: 0, background: isDark ? 'var(--c-canvas)' : 'var(--c-canvas)' }} ref={mapWrapRef}>
+            <WorldMap
+              ref={worldMapRef}
+              mapData={mapData}
+              poseRef={poseRef}
+              steeringRef={steeringRef}
+              urdf={urdf}
+              width={canvasSize.w}
+              height={canvasSize.h}
+              isDark={isDark}
+              effectActive={effectActive}
+              effectStartTime={effectStartTime}
+              effectEndTime={effectEndTime}
+              collisionActive={collisionActive}
+            />
+
+            {/* HUD top-left: World name + Reset Pose */}
+            <div style={{
+              position: 'absolute', top: 12, left: 12,
+              background: isDark ? 'rgba(17,22,29,0.85)' : 'rgba(255,255,255,0.90)',
+              backdropFilter: 'blur(8px)', borderRadius: 'var(--r-lg)',
+              border: '1px solid var(--c-border)', padding: '10px 14px',
+              display: 'flex', flexDirection: 'column', gap: 8, zIndex: 5, minWidth: 140,
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: isDark ? 'var(--c-text-1)' : 'var(--c-text-1)', whiteSpace: 'nowrap' }}>
+                {mapStatus === 'error' ? (activeWorld || 'unknown') : (mapName || 'Loading…')}
+                {mapStatus === 'error' && (
+                  <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-danger)', background: 'var(--c-danger-bg)', borderRadius: 'var(--r-sm)', padding: '1px 6px', border: '1px solid var(--c-danger)', verticalAlign: 'middle' }}>LOAD FAILED</span>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  if (!rosObj) { console.warn('[ResetPose] no rosObj'); return; }
+                  const { spawnPose: curSpawn } = useAppStore.getState();
+                  const sx = Number(curSpawn?.x) || 0;
+                  const sy = Number(curSpawn?.y) || 0;
+                  const syawDeg = Number(curSpawn?.yaw) || 0;
+                  const syawRad = (syawDeg * Math.PI) / 180;
+                  const qz = Math.sin(syawRad / 2);
+                  const qw = Math.cos(syawRad / 2);
+
+                  const initPoseTopic = new ROSLIB.Topic({
+                    ros: rosObj,
+                    name: '/initialpose',
+                    messageType: 'geometry_msgs/msg/PoseWithCovarianceStamped',
+                  });
+                  initPoseTopic.publish({
+                    header: { frame_id: 'map' },
+                    pose: {
+                      pose: {
+                        position: { x: sx, y: sy, z: 0.0 },
+                        orientation: { x: 0.0, y: 0.0, z: qz, w: qw },
+                      },
+                      covariance: new Array(36).fill(0),
+                    },
+                  });
+                }}
+                title="Reset robot to configured spawn pose"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none',
+                  background: 'linear-gradient(135deg, var(--c-danger), #b91c1c)',
+                  color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(239,68,68,0.35)', transition: 'transform 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.04)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
               >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
-        )}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+                </svg>
+                Reset Pose
+              </button>
+            </div>
 
-        {showCollisionToast && (
-          <div
-            style={{
-              position: "fixed",
-              top: "60px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 9999,
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              background: isDark ? "#b71c1c" : "#ffebee",
-              color: isDark ? "#ffcdd2" : "#c62828",
-              border: `1px solid ${isDark ? "#ef5350" : "#ef9a9a"}`,
-              padding: "8px 18px",
-              borderRadius: "24px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-              fontSize: "13px",
-              fontWeight: 600,
-            }}
-          >
-            <span>⚠️ Collision detected</span>
-            <button
-              onClick={() => setShowCollisionToast(false)}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "inherit",
-                cursor: "pointer",
-                padding: 0,
-                marginLeft: "8px",
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {idleStopped && (
-          <div
-            style={{
-              position: "fixed",
-              top: "60px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 9999,
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              background: isDark ? "#3a2c05" : "#fff8e1",
-              color: isDark ? "#ffe082" : "#8d6e00",
-              border: `1px solid ${isDark ? "#ffb300" : "#ffe082"}`,
-              padding: "8px 18px",
-              borderRadius: "24px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-              fontSize: "13px",
-              fontWeight: 600,
-            }}
-          >
-            <span>⏸️ Simulation stopped — robot idle for 1 h. Press Launch to resume.</span>
-          </div>
-        )}
-
-        <UpdateProgressModal
-          updateInfo={updateInfo}
-          appVersion={appVersion}
-          onClose={() => setUpdateInfo(null)}
-        />
-
-        <NotificationModal
-          notification={notification}
-          onClose={() => setNotification(null)}
-          isDark={isDark}
-        />
-
-        {showMonitor && (
-          <div style={S.popupWrap2}>
-            <TopicMonitor ros={rosObj} isDark={isDark} />
-          </div>
-        )}
-
-        <div style={S.wrap}>
-          <div style={S.mainContent}>
-            <div style={S.mapCard}>
-              <div style={S.mapHeader}>
-                <div
+            {/* HUD top-right: Interactive View Tools */}
+            <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, zIndex: 5 }}>
+              <div style={{
+                background: isDark ? 'rgba(17,22,29,0.88)' : 'rgba(255,255,255,0.92)',
+                backdropFilter: 'blur(8px)', borderRadius: 'var(--r-lg)',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'}`,
+                padding: '4px 6px', display: 'flex', alignItems: 'center', gap: 3,
+                boxShadow: 'var(--shadow-sm)',
+              }}>
+                {/* Rotate Left */}
+                <button
+                  onClick={() => { worldMapRef.current?.rotateLeft(); setIsFollowingRobot(false); }}
+                  title="Rotate Left 15° (or Left-click drag)"
                   style={{
-                    fontSize: "18px",
-                    fontWeight: 600,
-                    color: isDark ? "#90caf9" : "#1976d2",
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700,
                   }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  World:{" "}
-                  <span style={{ color: isDark ? "#fff" : "#111" }}>
-                    {mapStatus === "error"
-                      ? (activeWorld || "unknown")
-                      : mapName || "Loading..."}
-                  </span>
-                  {mapStatus === "error" && (
-                    <span
-                      title="The map server could not load this world"
-                      style={{
-                        marginLeft: "8px",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        letterSpacing: "0.5px",
-                        color: "#ef5350",
-                        border: "1px solid #ef535066",
-                        background: "#ef535015",
-                        borderRadius: "6px",
-                        padding: "2px 7px",
-                        verticalAlign: "middle",
-                      }}
-                    >
-                      LOAD FAILED
-                    </span>
-                  )}
-                </div>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="1 4 1 10 7 10" />
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                  </svg>
+                </button>
+
+                {/* Rotate Right */}
+                <button
+                  onClick={() => { worldMapRef.current?.rotateRight(); setIsFollowingRobot(false); }}
+                  title="Rotate Right 15° (or Left-click drag)"
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" />
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                  </svg>
+                </button>
+
+                <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
+
+                {/* Zoom In */}
+                <button
+                  onClick={() => { worldMapRef.current?.zoomIn(); setIsFollowingRobot(false); }}
+                  title="Zoom In (Scroll up)"
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700, fontSize: 16,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+
+                {/* Zoom Out */}
+                <button
+                  onClick={() => { worldMapRef.current?.zoomOut(); setIsFollowingRobot(false); }}
+                  title="Zoom Out (Scroll down)"
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700, fontSize: 16,
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+
+                <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
+
+                {/* Reset View -> Center */}
+                <button
+                  onClick={() => { worldMapRef.current?.resetView(); setIsFollowingRobot(false); }}
+                  title="Center Camera: 100% Zoom & Default Position (Double-click canvas)"
+                  style={{
+                    padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4,
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: 'var(--c-text-1)', cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                    fontFamily: 'var(--font-ui)',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+                  </svg>
+                  <span>Center</span>
+                </button>
+
+                <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
+
+                {/* Follow Robot Toggle */}
                 <button
                   onClick={() => {
-                    if (!rosObj) { console.warn('[ResetPose] no rosObj'); return; }
-                    const { spawnPose: curSpawn } = useAppStore.getState();
-                    const sx = Number(curSpawn?.x) || 0;
-                    const sy = Number(curSpawn?.y) || 0;
-                    const syawDeg = Number(curSpawn?.yaw) || 0;
-                    const syawRad = (syawDeg * Math.PI) / 180;
-                    const qz = Math.sin(syawRad / 2);
-                    const qw = Math.cos(syawRad / 2);
-
-                    const initPoseTopic = new ROSLIB.Topic({
-                      ros: rosObj,
-                      name: '/initialpose',
-                      messageType: 'geometry_msgs/msg/PoseWithCovarianceStamped',
-                    });
-                    initPoseTopic.publish({
-                      header: { frame_id: 'map' },
-                      pose: {
-                        pose: {
-                          position: { x: sx, y: sy, z: 0.0 },
-                          orientation: { x: 0.0, y: 0.0, z: qz, w: qw },
-                        },
-                        covariance: new Array(36).fill(0),
-                      },
-                    });
+                    worldMapRef.current?.toggleFollow();
+                    setIsFollowingRobot(prev => !prev);
                   }}
-                  title="Reset robot to configured spawn pose"
+                  title="Follow Robot: auto-center viewport on moving robot"
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "7px 14px",
-                    background: "linear-gradient(135deg, #ef4444, #b91c1c)",
-                    color: "#fff",
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontWeight: 700,
-                    fontSize: "13px",
-                    letterSpacing: "0.5px",
-                    boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
-                    transition: "all 0.15s ease",
-                    whiteSpace: "nowrap",
+                    padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 6,
+                    borderRadius: 'var(--r-md)', border: isFollowingRobot ? '1px solid var(--c-accent)' : '1px solid transparent',
+                    background: isFollowingRobot ? 'var(--c-accent-bg)' : 'transparent',
+                    color: isFollowingRobot ? 'var(--c-accent)' : 'var(--c-text-1)',
+                    cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                    fontFamily: 'var(--font-ui)',
+                    transition: 'all 0.15s',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.transform = "scale(1.05)"}
-                  onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                    <path d="M3 3v5h5"/>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" /><line x1="22" y1="12" x2="18" y2="12" /><line x1="6" y1="12" x2="2" y2="12" />
+                    <line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" />
                   </svg>
-                  Reset Pose
+                  <span>Follow</span>
                 </button>
               </div>
 
-              <div style={S.mapCanvasWrap} ref={mapWrapRef}>
-                <WorldMap
-                  ref={worldMapRef}
-                  mapData={mapData}
-                  poseRef={poseRef}
-                  steeringRef={steeringRef}
-                  urdf={urdf}
-                  width={canvasSize.w}
-                  height={canvasSize.h}
-                  isDark={isDark}
-                  effectActive={effectActive}
-                  effectStartTime={effectStartTime}
-                  effectEndTime={effectEndTime}
-                  collisionActive={collisionActive}
-                />
+              {/* Mouse Controls Hint */}
+              <div style={{
+                fontSize: 11,
+                color: isDark ? '#cbd5e1' : '#334155',
+                background: isDark ? 'rgba(17,22,29,0.88)' : 'rgba(255,255,255,0.92)',
+                border: `1px solid ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'}`,
+                backdropFilter: 'blur(8px)',
+                borderRadius: 'var(--r-pill)',
+                padding: '3px 10px',
+                fontWeight: 600,
+                fontFamily: 'var(--font-ui)',
+                userSelect: 'none',
+                letterSpacing: '0.2px',
+                boxShadow: 'var(--shadow-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}>
+                <span>🖱️</span>
+                <span>Left: Rotate • Mid: Pan • Scroll: Zoom</span>
               </div>
-            </div>
-
-            <div style={S.rightPanel} className="right-panel">
-              <div style={S.poseCard}>
-                <div
-                  style={{
-                    fontSize: isNarrow ? "13px" : "18px", // ← scales down
-                    fontWeight: 600,
-                    color: isDark ? "#90caf9" : "#1976d2",
-                    marginBottom: isNarrow ? "8px" : "16px", // ← tighter gap
-                    textAlign: "center",
-                  }}
-                >
-                  Odometry
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "6px",
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    letterSpacing: "0.5px",
-                    marginBottom: isNarrow ? "8px" : "16px",
-                    color: collisionActive
-                      ? (isDark ? "#ef5350" : "#c62828")
-                      : (isDark ? "#66bb6a" : "#2e7d32"),
-                  }}
-                >
-                  {collisionActive ? "⚠️ Collision: DETECTED" : "✅ Collision: OK"}
-                </div>
-                <PoseReadout poseRef={poseRef} isDark={isDark} />
-              </div>
-
-              <SimSelector
-                ref={simSelectorRef}
-                onSwitch={handleSwitch}
-                onStop={() => setIsWaitingOdom(false)}
-                isDark={isDark}
-                isWaitingOdom={isWaitingOdom}
-              />
-
-              <KeyboardController ros={rosObj} isDark={isDark} isNarrow={isNarrow} isShort={isShort} />
             </div>
           </div>
+
+          {/* ── Right Inspector ────────────────────────────────────── */}
+          <div style={{
+            width: inspOpen ? (inspectorCollapsed ? 'min(80vw,340px)' : '340px') : '40px',
+            flexShrink: 0, overflow: 'hidden', position: 'relative',
+            transition: 'width 250ms cubic-bezier(0.16, 1, 0.3, 1)',
+            borderLeft: '1px solid var(--c-border)',
+            background: 'var(--c-panel)', zIndex: 10,
+            contain: 'paint',
+          }}>
+            <div style={{
+              position: 'absolute', top: 0, bottom: 0, right: 0, width: 340,
+              display: 'flex', flexDirection: 'row', height: '100%', overflow: 'hidden',
+            }}>
+
+              {/* Tab content */}
+              <div style={{
+                width: 300, flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                opacity: inspOpen ? 1 : 0, pointerEvents: inspOpen ? 'auto' : 'none',
+                transition: 'opacity 180ms ease-out',
+              }}>
+                {/* Tab header */}
+                <div style={{
+                  padding: '12px 16px 8px', fontFamily: 'var(--font-ui)', fontSize: 12,
+                  fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase',
+                  color: 'var(--c-text-1)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <span>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</span>
+                </div>
+
+                {/* Scrollable content */}
+                <div className="scrollable" style={{ flex: 1, overflow: 'hidden auto', padding: '12px 16px' }}>
+
+                  {/* ── TELEMETRY ────────────── */}
+                  {activeTab === 'telemetry' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {/* Odom numbers */}
+                      {[
+                        { label: 'X', key: 'x', unit: 'm' },
+                        { label: 'Y', key: 'y', unit: 'm' },
+                        { label: 'ANGLE', key: 'theta', unit: '°', isAngle: true },
+                      ].map(({ label, key, unit, isAngle }) => (
+                        <div key={label} style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '10px 14px', borderRadius: 'var(--r-md)',
+                          background: isDark ? '#161c25' : '#f8fafc',
+                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
+                        }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--c-text-1)' }}>{label}</span>
+                          <PoseSingle poseRef={poseRef} field={key} unit={unit} isAngle={isAngle} />
+                        </div>
+                      ))}
+
+                      {/* Collision status — only in telemetry */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+                        borderRadius: 'var(--r-md)', border: `1px solid ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
+                        background: collisionActive ? 'var(--c-danger-bg)' : 'var(--c-success-bg)',
+                        fontSize: 13, fontWeight: 800,
+                        color: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
+                      }}>
+                        <div style={{
+                          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                          background: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
+                          boxShadow: `0 0 6px ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
+                        }} />
+                        {collisionActive ? 'Collision Detected' : 'Collision OK'}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── SETUP ────────────────── */}
+                  {activeTab === 'setup' && (
+                    <SimSelector
+                      ref={simSelectorRef}
+                      onSwitch={handleSwitch}
+                      onStop={() => setIsWaitingOdom(false)}
+                      isDark={isDark}
+                      isWaitingOdom={isWaitingOdom}
+                      poseRef={poseRef}
+                    />
+                  )}
+
+                  {/* ── DRIVE ─────────────────── */}
+                  {activeTab === 'drive' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {/* Compact odom strip */}
+                      <div style={{
+                        display: 'flex', gap: 8, padding: '8px 12px',
+                        background: isDark ? '#161c25' : '#f8fafc',
+                        borderRadius: 'var(--r-md)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
+                        fontSize: 12, fontFamily: 'var(--font-mono)',
+                      }}>
+                        <PoseSingle poseRef={poseRef} field="x" unit="m" compact />
+                        <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
+                        <PoseSingle poseRef={poseRef} field="y" unit="m" compact />
+                        <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
+                        <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle compact />
+                      </div>
+                      <KeyboardController ros={rosObj} isDark={isDark} isNarrow={isNarrow} isShort={isShort} />
+                    </div>
+                  )}
+
+                  {/* ── CONSOLE ─────────────── */}
+                  {activeTab === 'console' && (
+                    <TopicMonitor ros={rosObj} isDark={isDark} />
+                  )}
+
+                </div>
+              </div>
+
+              {/* Icon tab rail (always visible on the right edge) */}
+              <div style={{
+                width: 40, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                borderLeft: '1px solid var(--c-border)', padding: '8px 0', gap: 4,
+                background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+              }}>
+                {Object.entries(TAB_ICONS).map(([tab, icon]) => (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      setTab(tab);
+                      if (!inspOpen) setInspOpen(true);
+                    }}
+                    title={tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    style={{
+                      width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
+                      color: (activeTab === tab && inspOpen) ? 'var(--c-accent)' : 'var(--c-text-2)',
+                      background: (activeTab === tab && inspOpen) ? 'var(--c-accent-bg)' : 'transparent',
+                      transition: 'all var(--dur-fast) var(--ease-out)',
+                    }}
+                  >
+                    {icon}
+                  </button>
+                ))}
+                {/* Collapse / Expand toggle at bottom */}
+                <div style={{ flex: 1 }} />
+                <button
+                  onClick={toggleInsp}
+                  title={inspOpen ? 'Collapse inspector' : 'Open inspector'}
+                  style={{
+                    width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
+                    color: 'var(--c-text-2)', background: 'transparent',
+                    transition: 'all var(--dur-fast) var(--ease-out)',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points={inspOpen ? '9 18 15 12 9 6' : '15 18 9 12 15 6'} />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Bottom Status Bar ──────────────────────────────────────── */}
+        <div style={{
+          height: 'var(--status-bar-h, 28px)', flexShrink: 0,
+          display: 'flex', alignItems: 'center',
+          borderTop: '1px solid var(--c-border)',
+          background: isDark ? '#0B0F14' : '#F1F5F9',
+          padding: '0 12px', gap: 0, overflow: 'hidden',
+          fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-2)',
+          position: 'relative', zIndex: 20,
+        }}>
+
+          {/* ROS2 + Env merged dot */}
+          <button
+            onClick={() => setShowEnvPopover(p => !p)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px',
+              height: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'var(--c-text-2)', fontFamily: 'var(--font-mono)', fontSize: 11,
+              transition: 'background var(--dur-fast)',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--c-panel-2)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <div style={{
+              width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+              background: rosEnvMeta.color,
+              animation: rosEnvState === 'ready' ? 'none' : 'pulse-dot 2s ease-in-out infinite',
+            }} />
+            {rosEnvMeta.label}
+          </button>
+
+          {/* Env popover */}
+          {showEnvPopover && (
+            <div style={{
+              position: 'absolute', bottom: '100%', left: 0, marginBottom: 4,
+              background: isDark ? 'var(--c-panel)' : 'var(--c-panel)',
+              border: '1px solid var(--c-border)', borderRadius: 'var(--r-lg)',
+              padding: '12px 16px', minWidth: 240, zIndex: 50,
+              boxShadow: 'var(--shadow-lg)', animation: 'fade-in 0.15s var(--ease-out)',
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--c-text-1)', marginBottom: 8, fontFamily: 'var(--font-ui)' }}>Environment Status</div>
+              {envData ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {[
+                    { key: 'ros2', label: 'ROS 2' },
+                    { key: 'rosbridge', label: 'rosbridge_server' },
+                    { key: 'simulatorPackage', label: 'amr_2dsim' },
+                  ].map(({ key, label }) => (
+                    <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+                      <span style={{ color: 'var(--c-text-2)' }}>{label}</span>
+                      <span style={{ color: envData[key] ? 'var(--c-success)' : 'var(--c-danger)', fontWeight: 700 }}>
+                        {envData[key] ? '✓ OK' : '✗ Missing'}
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 8, borderTop: '1px solid var(--c-border)', paddingTop: 8 }}>
+                    <button onClick={() => { setShowEnvModal(true); setShowEnvPopover(false); }} style={{
+                      fontSize: 11, fontFamily: 'var(--font-ui)', color: 'var(--c-accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600,
+                    }}>Open Environment Check →</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: 'var(--c-text-3)' }}>Checking…</div>
+              )}
+            </div>
+          )}
+
+          <div style={{ width: 1, height: 14, background: 'var(--c-border)', margin: '0 2px' }} />
+
+          {/* FPS toggle */}
+          <button
+            onClick={() => { if (fpsLimit === 20) setFpsLimit(60); else if (fpsLimit === 60) setFpsLimit(0); else setFpsLimit(20); }}
+            title="Toggle FPS limit"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4, padding: '0 10px',
+              height: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'var(--c-text-3)', fontFamily: 'var(--font-mono)', fontSize: 11,
+              transition: 'background var(--dur-fast)',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--c-panel-2)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            {fpsLimit === 0 ? 'FPS ∞' : `FPS ${fpsLimit}`}
+          </button>
+
+          <div style={{ width: 1, height: 14, background: 'var(--c-border)', margin: '0 2px' }} />
+
+          {/* RTF (1 Hz update) */}
+          <span style={{ padding: '0 10px' }}>RTF {statusRtf}</span>
         </div>
       </div>
     </>

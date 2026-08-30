@@ -5,6 +5,9 @@ All notable changes to the IRiSH AMR Simulator Dashboard project will be documen
 ## [Unreleased]
 
 ### Added
+- **UI Redesign**: Complete overhaul of the Dashboard UI based on new wireframes.
+- **Interactive View Toolbar**: Top-right canvas HUD now features clickable icon buttons for Zoom In, Zoom Out, Rotate Left, Rotate Right, Center Camera, and Follow Robot, with mouse control hints.
+- **Use Current Pose**: New button in Setup tab to easily grab the robot's current location as spawn coordinates.
 - **Robot Creator — Actuator Dynamics**: Max Linear Accel, Max Angular Accel (diff-drive) / Max Steering Rate (Ackermann) sliders. Emitted into the generated URDF `<amr_sim_config>` only when non-zero; `0` keeps the simulator's instant response.
 - **Robot Creator — LiDAR Range Noise**: Range Noise σ slider (metres). Emitted as `<laser_noise_stddev>` only when non-zero; `0` keeps the ideal scan.
 - **Idle auto-stop**: if the robot doesn't move for 1 hour the dashboard stops the sim and shows a banner; press Launch to resume. Prevents a dashboard left running overnight from pinning a CPU core on the 20 Hz `/odom` render loop.

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import useAppStore from '../../store/useAppStore';
-import SplitButton from '../common/SplitButton';
 import useIsCompact from '../../hooks/useIsCompact';
 import ImportRosMapModal from './ImportRosMapModal';
 import './CreateWorldView.css';
@@ -32,6 +32,70 @@ function buildTransformEditor(mapInfo, canvasW, canvasH, zoom, pan) {
       wy: origin_y + (canvasW - offsetX - cx + 0.5) / scale,
     }),
   };
+}
+
+function PopupToolButton({ icon, isActive, onClick, options, selectedValue, onSelect, title }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const ref = useRef();
+  const menuRef = useRef();
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e) => {
+      const isInsideMenu = menuRef.current && menuRef.current.contains(e.target);
+      const isInsideBtn = ref.current && ref.current.contains(e.target);
+      if (!isInsideMenu && !isInsideBtn) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const toggleOpen = () => {
+    if (!isOpen && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      setPos({ top: rect.top, right: window.innerWidth - rect.left + 12 });
+    }
+    onClick();
+    setIsOpen(!isOpen);
+  };
+
+  const selectedOpt = options.find(o => String(o.value) === String(selectedValue));
+  // Short label: first word only, max 5 chars
+  const badge = selectedOpt ? selectedOpt.label.split(' ')[0].slice(0, 5) : '';
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button
+        onClick={toggleOpen}
+        className={`btn tool-btn ${isActive ? "active" : ""}`}
+        title={`${title} — ${selectedOpt?.label ?? ''}`}
+        style={{ flexDirection: 'column', gap: '1px', height: '52px' }}
+      >
+        {icon}
+        <span style={{ fontSize: '9px', fontWeight: 700, opacity: 0.8, letterSpacing: '0.02em', lineHeight: 1 }}>{badge}</span>
+      </button>
+
+      {isOpen && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: 'fixed', right: pos.right, top: pos.top, background: 'var(--bg-app, #1a1a1a)', border: '1px solid var(--border-color, #333)', borderRadius: '8px', padding: '6px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '4px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}
+        >
+          {options.map(o => (
+            <button
+              key={o.value}
+              onClick={() => { onSelect(o.value); setIsOpen(false); }}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', background: String(selectedValue) === String(o.value) ? 'var(--accent-blue, #1976d2)' : 'transparent', border: 'none', color: '#fff', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              {o.icon && <span style={{ display: 'flex', alignItems: 'center' }}>{o.icon}</span>}
+              <span style={{ fontSize: '13px', fontWeight: 'bold' }}>{o.label}</span>
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  );
 }
 
 export default function CreateWorldView() {
@@ -606,95 +670,54 @@ export default function CreateWorldView() {
         <div className="toolbar-divider" />
 
         {/* Drawing Tools */}
-        <button onClick={() => setTool("wall")} className={`btn tool-btn ${tool === "wall" ? "active" : ""}`} title="Draw Wall">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="7" x2="5" y2="17"/><line x1="19" y1="7" x2="19" y2="17"/>
-          </svg>
-          <span className="btn-label">Draw Wall</span>
-        </button>
+        <PopupToolButton
+          title="Draw Wall (Thickness)"
+          icon={
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="7" x2="5" y2="17"/><line x1="19" y1="7" x2="19" y2="17"/>
+            </svg>
+          }
+          isActive={tool === "wall"}
+          onClick={() => setTool("wall")}
+          options={[
+            { value: 0.05, label: "Thin Wall (0.05m)" },
+            { value: 0.12, label: "Normal Wall (0.12m)" },
+            { value: 0.25, label: "Thick Wall (0.25m)" }
+          ]}
+          selectedValue={wallThickness}
+          onSelect={(val) => { setWallThickness(val); setTool("wall"); }}
+        />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <select 
-            value={wallThickness} 
-            onChange={(e) => setWallThickness(parseFloat(e.target.value))}
-            className="toolbar-select"
-          >
-            <option value={0.05}>Thin</option>
-            <option value={0.12}>Normal</option>
-            <option value={0.25}>Thick</option>
-          </select>
-          <svg width="24" height="24" viewBox="0 0 24 24" style={{ marginLeft: '2px', flexShrink: 0 }}>
-            <line x1="2" y1="12" x2="22" y2="12" stroke="var(--text-primary)" strokeWidth={wallThickness === 0.05 ? 2 : wallThickness === 0.12 ? 4 : 8} strokeLinecap="round" />
-          </svg>
-        </div>
-
-        <SplitButton
+        <PopupToolButton
+          title="Eraser Mode"
           icon={
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 20H7L3 16l10-10 7 7-3.5 3.5"/><line x1="6" y1="14" x2="10" y2="18"/>
             </svg>
           }
-          label="Eraser"
           isActive={tool === "eraser"}
-          onMainClick={() => setTool("eraser")}
+          onClick={() => setTool("eraser")}
           options={[
             {
               value: "radius",
-              label: "Circle",
+              label: "Circle Radius",
               icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
             },
             {
               value: "box",
-              label: "Box",
+              label: "Box Selection",
               icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
             }
           ]}
-          selectedOption={eraserMode}
-          onOptionSelect={(val) => { setEraserMode(val); setTool("eraser"); }}
+          selectedValue={eraserMode}
+          onSelect={(val) => { setEraserMode(val); setTool("eraser"); }}
         />
-
-        <button onClick={() => setShowImport(true)} className="btn" title="Import a ROS map (.pgm + .yaml)">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          <span className="btn-label">Import ROS Map</span>
-        </button>
 
         <button onClick={() => pushHistory([], [])} className="btn btn-danger" title="Clear All">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
           </svg>
           <span className="btn-label">Clear All</span>
-        </button>
-
-        <div style={{ flex: 1 }} />
-
-        {/* World Name Input */}
-        <div className="toolbar-input-wrap">
-          <span className="btn-label" style={{ fontSize: '15px', fontWeight: 'bold' }}>World:</span>
-          <input
-            value={mapName}
-            onChange={(e) => setMapName(e.target.value)}
-            className="toolbar-input"
-            placeholder="custom_world"
-            style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' }}
-          />
-        </div>
-
-        <div className="toolbar-divider" />
-
-        {/* Actions */}
-        <button onClick={() => saveMap(false)} className="btn btn-save btn-save-outline" title="Save World">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-          </svg>
-          <span className="btn-label">Save World</span>
-        </button>
-        <button onClick={() => saveMap(true)} className="btn btn-save" title="Save & Launch">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-          </svg>
-          <span className="btn-label">Save & Launch</span>
         </button>
       </div>
       
@@ -711,6 +734,35 @@ export default function CreateWorldView() {
           className="map-canvas"
           style={{ cursor }}
         />
+        {/* Floating Save Controls — top-left */}
+        <div style={{ position: 'absolute', top: '16px', left: '16px', background: isDark ? 'rgba(20,20,30,0.85)' : 'rgba(255,255,255,0.85)', padding: '10px 14px', borderRadius: '12px', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`, display: 'flex', alignItems: 'center', gap: '8px', backdropFilter: 'blur(10px)', boxShadow: '0 8px 32px rgba(0,0,0,0.15)', pointerEvents: 'auto' }}>
+          <span style={{ fontSize: '13px', fontWeight: 'bold', color: isDark ? '#fff' : '#000' }}>World:</span>
+          <input
+            value={mapName}
+            onChange={(e) => setMapName(e.target.value)}
+            placeholder="custom_world"
+            style={{ width: '120px', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${isDark ? '#333' : '#ccc'}`, background: isDark ? '#0b0b14' : '#fff', color: isDark ? '#fff' : '#000', outline: 'none', fontSize: '13px', fontWeight: 'bold' }}
+          />
+          <button onClick={() => setShowImport(true)} className="btn" style={{ width: 'auto', padding: '0 10px', height: '32px' }} title="Import ROS Map (.pgm + .yaml)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span style={{ display: 'inline', marginLeft: '6px', fontSize: '12px' }}>Import</span>
+          </button>
+          <button onClick={() => saveMap(false)} className="btn btn-save btn-save-outline" style={{ width: 'auto', padding: '0 12px', height: '32px' }} title="Save World">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+            </svg>
+            <span style={{ display: 'inline', marginLeft: '6px', fontSize: '12px' }}>Save</span>
+          </button>
+          <button onClick={() => saveMap(true)} className="btn btn-save" style={{ width: 'auto', padding: '0 12px', height: '32px' }} title="Save & Launch">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span style={{ display: 'inline', marginLeft: '6px', fontSize: '12px' }}>Launch</span>
+          </button>
+        </div>
+
         {/* HUD Elements */}
         <div style={{ position: 'absolute', bottom: '16px', right: '16px', color: '#fff', background: 'rgba(0,0,0,0.7)', padding: '8px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)' }}>
           <button onClick={() => { setZoom(1); setPan({x:0, y:0}); }} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.4)', color: 'white', borderRadius: '4px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
