@@ -3344,34 +3344,25 @@ export default function DashboardView() {
                   {/* ── TELEMETRY ────────────── */}
                   {activeTab === 'telemetry' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {/* X card + sparkline */}
+                      {/* X card */}
                       <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>X</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px' }}>
+                          <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>X</span>
                           <PoseSingle poseRef={poseRef} field="x" unit="m" />
                         </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="x" color="#22d3ee" height={28} />
-                        </div>
                       </div>
-                      {/* Y card + sparkline */}
+                      {/* Y card */}
                       <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>Y</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px' }}>
+                          <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>Y</span>
                           <PoseSingle poseRef={poseRef} field="y" unit="m" />
                         </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="y" color="#34d399" height={28} />
-                        </div>
                       </div>
-                      {/* Angle card + sparkline */}
+                      {/* Angle card */}
                       <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>ANGLE</span>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px' }}>
+                          <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>ANGLE</span>
                           <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle />
-                        </div>
-                        <div style={{ padding: '0 8px 6px' }}>
-                          <SparkLine poseRef={poseRef} field="theta" isAngle color="#fbbf24" height={28} />
                         </div>
                       </div>
                       {/* Collision chip */}
