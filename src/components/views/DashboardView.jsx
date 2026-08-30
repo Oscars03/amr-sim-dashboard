@@ -3447,24 +3447,6 @@ export default function DashboardView() {
 
           {/* RTF (1 Hz update) */}
           <span style={{ padding: '0 10px' }}>RTF {statusRtf}</span>
-
-          <div style={{ flex: 1 }} />
-
-          {/* Shortcuts Guide / Help Button */}
-          <button
-            onClick={() => setShowShortcuts(true)}
-            title="Keyboard Shortcuts & Guide (?)"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px',
-              height: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
-              color: 'var(--c-text-2)', fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
-              transition: 'background var(--dur-fast)',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--c-panel-2)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            ? Help
-          </button>
         </div>
       </div>
     </>
