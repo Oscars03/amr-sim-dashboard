@@ -803,6 +803,13 @@ function checkEnvironment() {
   const rspShare = `/opt/ros/${distro}/share/robot_state_publisher`;
   const hasRobotStatePublisher = fs.existsSync(rspShare);
 
+  // rosapi backs ros.getTopics()/getServices() in the dashboard (Topic Monitor).
+  // It's a separate package from rosbridge_server -- rosbridge-suite normally
+  // pulls it in, but a partial install (or a stale bundled workspace) can leave
+  // it missing while rosbridge itself still connects fine.
+  const rosapiShare = `/opt/ros/${distro}/share/rosapi`;
+  const hasRosApi = fs.existsSync(rosapiShare);
+
   const hasWsSetup = fs.existsSync(WS_SETUP_BASH);
   const shareDir = getShareDir();
   const hasWorkspace = hasWsSetup && !!shareDir;
@@ -810,6 +817,7 @@ function checkEnvironment() {
   const missingPackages = [];
   if (!hasRosbridge) missingPackages.push(`ros-${distro}-rosbridge-suite`);
   if (!hasRobotStatePublisher) missingPackages.push(`ros-${distro}-robot-state-publisher`);
+  if (!hasRosApi) missingPackages.push(`ros-${distro}-rosapi`);
 
   let recommendedCommand = '';
   if (!hasRos2) {
@@ -821,7 +829,7 @@ function checkEnvironment() {
     recommendedCommand = `cd "${wsDir}" && source /opt/ros/${distro}/setup.bash && colcon build --merge-install`;
   }
 
-  const allReady = hasRos2 && hasRosbridge && hasRobotStatePublisher && hasWorkspace;
+  const allReady = hasRos2 && hasRosbridge && hasRobotStatePublisher && hasRosApi && hasWorkspace;
 
   return {
     allReady,
@@ -844,6 +852,12 @@ function checkEnvironment() {
         path: rspShare,
         ready: hasRobotStatePublisher,
         detail: hasRobotStatePublisher ? 'Robot state & TF publisher ready' : `Package ros-${distro}-robot-state-publisher missing`,
+      },
+      rosApi: {
+        name: 'ROS API',
+        path: rosapiShare,
+        ready: hasRosApi,
+        detail: hasRosApi ? 'Topic/service introspection ready (Topic Monitor)' : `Package ros-${distro}-rosapi missing`,
       },
       workspace: {
         name: 'Simulation Workspace (amr_2dsim)',
