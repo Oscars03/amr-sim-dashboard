@@ -59,7 +59,7 @@ function getFollowPan(pose, mapData, width, height, view, cam) {
 // ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component
 // ─────────────────────────────────────────────────────────────────────────────
-const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, steeringRef, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive, onFollowChange }, ref) {
+const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, steeringRef, urdf, width = 560, height = 560, isDark, effectActive, effectStartTime, effectEndTime, collisionActive, onFollowChange, onFpsSample }, ref) {
   const canvasRef = useRef(null);
   const drawRef = useRef(null);
   const fpsLimit = useAppStore((s) => s.fpsLimit);
@@ -115,28 +115,56 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     },
   }), []);
 
+  const fpsCounterRef = useRef({ frames: 0, t0: performance.now() });
+
+  // One rAF loop for every mode, paced against the frame clock.
+  //
+  // The capped modes used setInterval(1000/fps). That does not deliver the rate
+  // it names: the timer is unaligned with vsync and its callbacks land wherever
+  // they land, so a "60" that misses a vsync boundary is presented on the next
+  // one and the frame spacing alternates 16.7/33.3 ms -- judder that reads as a
+  // slow simulator rather than a mis-timed one. requestAnimationFrame is already
+  // vsync-aligned; gating it on elapsed time gives a cap that actually holds.
+  //
+  // The 0.5 ms tolerance matters: a 60 Hz display reports ~16.66 ms between
+  // frames against a 16.667 ms target, so an exact comparison would reject every
+  // other frame and settle at 30.
   useEffect(() => {
-    if (fpsLimit === 0) {
-      // Unlimited: pure rAF
-      let frame;
-      const loop = () => {
-        frame = requestAnimationFrame(loop);
-        needsRedrawRef.current = false;
-        if (drawRef.current) drawRef.current();
-      };
+    let frame;
+    let last = -Infinity;
+    const minDelta = fpsLimit > 0 ? 1000 / fpsLimit - 0.5 : 0;
+    const loop = (now) => {
       frame = requestAnimationFrame(loop);
-      return () => cancelAnimationFrame(frame);
-    } else {
-      // Capped FPS: setInterval fires exactly N times/s, no wasted rAF callbacks
-      const timer = setInterval(() => {
-        const lowPowerMode = fpsLimit === 20;
-        if (lowPowerMode && !needsRedrawRef.current && !effectActiveRef.current && !collisionActiveRef.current) return;
-        needsRedrawRef.current = false;
-        if (drawRef.current) drawRef.current();
-      }, 1000 / fpsLimit);
-      return () => clearInterval(timer);
-    }
+      if (now - last < minDelta) return;
+      last = now;
+      // Only the 20 fps mode skips idle frames; 60 and unlimited redraw every
+      // tick, which is what makes motion smooth at the cost of CPU.
+      const lowPowerMode = fpsLimit === 20;
+      if (lowPowerMode && !needsRedrawRef.current && !effectActiveRef.current && !collisionActiveRef.current) return;
+      needsRedrawRef.current = false;
+      if (drawRef.current) drawRef.current();
+      fpsCounterRef.current.frames += 1;
+    };
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
   }, [fpsLimit]);
+
+  // Measured draw rate, so the readout reports what is happening rather than
+  // what was asked for. Sampled once a second off the same counter the loop
+  // increments; a ref plus one setState per second keeps it off the draw path.
+  const [measuredFps, setMeasuredFps] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const c = fpsCounterRef.current;
+      const now = performance.now();
+      const dt = (now - c.t0) / 1000;
+      if (dt > 0) setMeasuredFps(Math.round(c.frames / dt));
+      c.frames = 0;
+      c.t0 = now;
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+  useEffect(() => { onFpsSample?.(measuredFps); }, [measuredFps, onFpsSample]);
 
   // Mark dirty whenever a visual input that lives in React changes. Pose and
   // steering angle are refs now -- they signal redraw via markDirty().
@@ -2879,6 +2907,10 @@ export default function DashboardView() {
   // RTF ref for status bar — updated at 1 Hz inside WorldMap, lifted via callback
   const rtfRef = useRef('1.00');
   const [statusRtf, setStatusRtf] = useState('1.00');
+  // Frames actually drawn per second, reported by WorldMap. The readout used
+  // to show only the requested cap, which said nothing about whether the
+  // renderer was keeping up.
+  const [actualFps, setActualFps] = useState(0);
   // 1 Hz RTF pull for status bar (avoids 20Hz setState)
   useEffect(() => {
     const iv = setInterval(() => {
@@ -3142,6 +3174,7 @@ export default function DashboardView() {
               effectEndTime={effectEndTime}
               collisionActive={collisionActive}
               onFollowChange={setIsFollowingRobot}
+              onFpsSample={setActualFps}
             />
 
             {/* HUD top-left: World name + Reset Pose */}
@@ -3603,7 +3636,7 @@ export default function DashboardView() {
           {/* FPS toggle */}
           <button
             onClick={() => { if (fpsLimit === 20) setFpsLimit(60); else if (fpsLimit === 60) setFpsLimit(0); else setFpsLimit(20); }}
-            title="Toggle FPS limit"
+            title={`Measured ${actualFps} fps against a ${fpsLimit === 0 ? "no" : fpsLimit + " fps"} cap. Click to cycle 20 / 60 / unlimited.`}
             style={{
               display: 'flex', alignItems: 'center', gap: 4, padding: '0 10px',
               height: '100%', background: 'transparent', border: 'none', cursor: 'pointer',
@@ -3613,7 +3646,9 @@ export default function DashboardView() {
             onMouseEnter={e => e.currentTarget.style.background = 'var(--c-panel-2)'}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
-            {fpsLimit === 0 ? 'FPS ∞' : `FPS ${fpsLimit}`}
+            {fpsLimit === 0
+              ? `FPS ${actualFps} / ∞`
+              : `FPS ${actualFps} / ${fpsLimit}`}
           </button>
 
           <div style={{ width: 1, height: 14, background: 'var(--c-border)', margin: '0 2px' }} />
