@@ -1761,7 +1761,7 @@ const SimSelector = forwardRef(function SimSelector(
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
+            gridTemplateColumns: "1fr 1fr",
             gap: "8px",
           }}
         >
@@ -1793,8 +1793,10 @@ const SimSelector = forwardRef(function SimSelector(
               onChange={(e) =>
                 setSpawnPose({ ...spawnPose, x: parseFloat(e.target.value) || 0 })
               }
+              className="num-bare"
               style={{
                 width: "100%",
+                minWidth: 0,
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
@@ -1835,8 +1837,10 @@ const SimSelector = forwardRef(function SimSelector(
               onChange={(e) =>
                 setSpawnPose({ ...spawnPose, y: parseFloat(e.target.value) || 0 })
               }
+              className="num-bare"
               style={{
                 width: "100%",
+                minWidth: 0,
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
@@ -1849,9 +1853,10 @@ const SimSelector = forwardRef(function SimSelector(
             <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
           </div>
 
-          {/* Yaw Input */}
+          {/* Yaw Input — full width on its own row */}
           <div
             style={{
+              gridColumn: "1 / -1",
               display: "flex",
               alignItems: "center",
               background: isDark ? "#161c25" : "#f8fafc",
@@ -1877,8 +1882,10 @@ const SimSelector = forwardRef(function SimSelector(
               onChange={(e) =>
                 setSpawnPose({ ...spawnPose, yaw: parseFloat(e.target.value) || 0 })
               }
+              className="num-bare"
               style={{
                 width: "100%",
+                minWidth: 0,
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
@@ -2731,6 +2738,15 @@ export default function DashboardView() {
 
   // Env popover (single merged dot)
   const [showEnvPopover, setShowEnvPopover] = useState(false);
+  const envPopoverRef = useRef(null);
+  useEffect(() => {
+    if (!showEnvPopover) return;
+    const onDown = (e) => {
+      if (!envPopoverRef.current?.contains(e.target)) setShowEnvPopover(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showEnvPopover]);
   const { rosStatus, envData, fpsLimit, setFpsLimit, setShowEnvModal, showShortcuts, setShowShortcuts } = useAppStore();
   const rosConnected = rosStatus === 'Connected to ROS2' || rosStatus === 'Connected';
   const envReady = envData?.allReady;
@@ -3350,12 +3366,15 @@ export default function DashboardView() {
           display: 'flex', alignItems: 'center',
           borderTop: '1px solid var(--c-border)',
           background: isDark ? '#0B0F14' : '#F1F5F9',
-          padding: '0 12px', gap: 0, overflow: 'hidden',
+          // no overflow clip here -- it used to hide the env popover (positioned
+          // bottom:100%, above the bar). Horizontal spill is caught by the shell.
+          padding: '0 12px', gap: 0,
           fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-2)',
           position: 'relative', zIndex: 20,
         }}>
 
           {/* ROS2 + Env merged dot */}
+          <div ref={envPopoverRef} style={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'center' }}>
           <button
             onClick={() => setShowEnvPopover(p => !p)}
             style={{
@@ -3410,6 +3429,7 @@ export default function DashboardView() {
               )}
             </div>
           )}
+          </div>
 
           <div style={{ width: 1, height: 14, background: 'var(--c-border)', margin: '0 2px' }} />
 
