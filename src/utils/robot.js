@@ -665,12 +665,30 @@ export function normaliseMap(raw) {
 // ─────────────────────────────────────────────────────────────────────────────
 // buildTransform (X Vertical / Y Horizontal)
 // ─────────────────────────────────────────────────────────────────────────────
-export function buildTransform(mapInfo, canvasW, canvasH) {
+// Pixels per metre at view.zoom === 1.
+//
+// The base scale used to be fit-to-world: Math.min(canvasW/mh, canvasH/mw)*0.9.
+// That made the same robot a different size in every world -- tiny on F4_2F
+// (32.8 x 64.2 m), mid-sized on Nav_01 (20 x 20 m), large on Square Room -- which
+// is misleading when the point of having several worlds is to compare behaviour
+// across them. A metre is now a metre everywhere and the user zooms.
+//
+// 25 is chosen so Nav_01, the most-used world, looks about as it did before.
+export const PX_PER_METRE = 25;
+
+export function buildTransform(mapInfo, canvasW, canvasH, pxPerMetre = PX_PER_METRE) {
   const { origin_x, origin_y, width: mw, height: mh } = mapInfo;
 
-  const scale = Math.min(canvasW / mh, canvasH / mw) * 0.9;
-  const offsetX = (canvasW - mh * scale) / 2;
-  const offsetY = (canvasH - mw * scale) / 2;
+  // room.json and office.json carry an empty map_info, so mw/mh are undefined.
+  // Under the old fit calculation that produced NaN and the world was drawn at
+  // whatever the NaN path happened to give. Fall back to a 20 m square, which is
+  // what Nav_01 declares, rather than propagating NaN into every coordinate.
+  const W = Number.isFinite(mw) ? mw : 20;
+  const H = Number.isFinite(mh) ? mh : 20;
+
+  const scale = pxPerMetre;
+  const offsetX = (canvasW - H * scale) / 2;
+  const offsetY = (canvasH - W * scale) / 2;
 
   return {
     scale,
