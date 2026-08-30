@@ -511,11 +511,62 @@ const ArrowSvg = ({ angle = 0 }) => (
     <path d="M12 19V5M5 12l7-7 7 7" />
   </svg>
 );
-const CircleSvg = () => (
+// Stop key: square (not a filled circle)
+const StopSquareSvg = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-    <circle cx="12" cy="12" r="10" />
+    <rect x="4" y="4" width="16" height="16" rx="3" />
   </svg>
 );
+
+// ─── SparkLine ────────────────────────────────────────────────────────────────
+// 10-second ring buffer sampled from poseRef at 150ms. Pure SVG polyline.
+// UI-only — does NOT add ROS topics. Zero React state churn (uses ref + RAF).
+const SPARK_PTS = 60; // 60 × 150ms = 9s window
+function SparkLine({ poseRef, field, isAngle, color = '#22d3ee', height = 32 }) {
+  const svgRef = useRef(null);
+  const buf = useRef(Array(SPARK_PTS).fill(null));
+  const prev = useRef(null);
+
+  useEffect(() => {
+    let frame;
+    const tick = () => {
+      const p = poseRef.current;
+      if (p !== prev.current) {
+        prev.current = p;
+        let raw = p?.[field];
+        if (typeof raw === 'number') {
+          if (isAngle) raw = raw * 180 / Math.PI; // convert to degrees for display
+          buf.current.push(raw);
+          if (buf.current.length > SPARK_PTS) buf.current.shift();
+        }
+      }
+      const pts = buf.current.filter(v => v !== null);
+      if (pts.length >= 2 && svgRef.current) {
+        const mn = Math.min(...pts), mx = Math.max(...pts);
+        const range = mx - mn || 1;
+        const w = svgRef.current.clientWidth || 260;
+        const h = height;
+        const points = pts.map((v, i) => {
+          const x = (i / (SPARK_PTS - 1)) * w;
+          const y = h - ((v - mn) / range) * (h - 4) - 2;
+          return `${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+        const poly = svgRef.current.querySelector('polyline');
+        if (poly) poly.setAttribute('points', points);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [poseRef, field, isAngle, height]);
+
+  return (
+    <svg ref={svgRef} width="100%" height={height} style={{ display: 'block', overflow: 'visible' }}>
+      <polyline points="" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+    </svg>
+  );
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // KeyboardController
@@ -777,7 +828,9 @@ function KeyboardController({ ros, isDark, isShort = true }) {
       fontWeight: 700,
       cursor: "pointer",
       userSelect: "none",
-      boxShadow: active ? "0 0 12px rgba(34,211,238,0.4)" : "none",
+      boxShadow: active ? "0 0 12px rgba(34,211,238,0.4), inset 0 0 8px rgba(34,211,238,0.15)" : "none",
+      transform: active ? "scale(0.96)" : "scale(1)",
+      transition: "transform 0.1s ease, box-shadow 0.15s ease, border 0.1s ease",
     }),
 
     // ─── Slider section (redesigned) ───────────────────────────
@@ -985,19 +1038,19 @@ function KeyboardController({ ros, isDark, isShort = true }) {
           style={{
             display: 'flex', alignItems: 'center', gap: '6px',
             padding: '6px 12px', borderRadius: '20px', cursor: 'pointer',
-            fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px',
+            fontSize: '12px', fontWeight: 700, letterSpacing: '0.4px',
             userSelect: 'none', transition: 'all 0.2s', height: '28px',
             background: watchdogEnabled ? '#00e67625' : (isDark ? '#ffffff0d' : '#e0e0e0'),
-            color: watchdogEnabled ? '#00e676' : (isDark ? '#888' : '#666'),
+            color: watchdogEnabled ? '#00e676' : 'var(--c-text-2)',
           }}
         >
           <div style={{
             width: '8px', height: '8px', borderRadius: '50%',
-            background: watchdogEnabled ? '#00e676' : (isDark ? '#555' : '#aaa'),
+            background: watchdogEnabled ? '#00e676' : (isDark ? '#64748b' : '#94a3b8'),
             boxShadow: watchdogEnabled ? '0 0 6px #00e676' : 'none',
             transition: 'all 0.2s',
           }} />
-          WATCHDOG
+          WATCHDOG <span style={{ fontWeight: 800 }}>{watchdogEnabled ? 'ON' : 'OFF'}</span>
         </div>
 
         {/* Web/Terminal toggle */}
@@ -1020,31 +1073,41 @@ function KeyboardController({ ros, isDark, isShort = true }) {
 
       <div style={S.controlBody}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isShort ? '8px' : '16px' }}>
-          {/* Holonomic Toggle */}
+          {/* Holonomic — animated ON/OFF switch */}
           <div
-            onClick={() => {
-              if (!webControl) return;
-              setIsHolonomic(!isHolonomic);
-            }}
+            onClick={() => { if (!webControl) return; setIsHolonomic(!isHolonomic); }}
             title={!webControl ? "Enable UI control first" : "Toggle Holonomic Mode"}
             style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              fontSize: '11px', fontWeight: 800, padding: '6px 14px', borderRadius: '20px',
-              background: isHolonomic ? (isDark ? '#00e67625' : '#e8f5e9') : (isDark ? '#ffffff10' : '#f0f0f0'),
-              color: isHolonomic ? '#00e676' : (isDark ? '#aaaaaa' : '#888888'),
-              border: `1px solid ${isHolonomic ? '#00e67688' : (isDark ? '#444' : '#ddd')}`,
-              userSelect: 'none', transition: 'all 0.2s',
-              cursor: webControl ? 'pointer' : 'not-allowed',
-              opacity: webControl ? 1 : 0.5
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              fontSize: '12px', fontWeight: 800, letterSpacing: '0.4px',
+              userSelect: 'none', cursor: webControl ? 'pointer' : 'not-allowed',
+              opacity: webControl ? 1 : 0.5,
             }}
           >
+            <span style={{ color: isHolonomic ? '#00e676' : 'var(--c-text-2)' }}>
+              HOLONOMIC
+            </span>
+            {/* Track */}
             <div style={{
-              width: '8px', height: '8px', borderRadius: '50%',
-              background: isHolonomic ? '#00e676' : (isDark ? '#666' : '#aaa'),
-              boxShadow: isHolonomic ? '0 0 6px #00e676' : 'none',
-              transition: 'all 0.2s'
-            }} />
-            HOLONOMIC: {isHolonomic ? 'ON' : 'OFF'}
+              width: 36, height: 20, borderRadius: 10, position: 'relative',
+              background: isHolonomic ? '#00e676' : (isDark ? '#334155' : '#cbd5e1'),
+              border: `1px solid ${isHolonomic ? '#00e676' : (isDark ? '#475569' : '#94a3b8')}`,
+              transition: 'background 0.22s ease, border-color 0.22s ease',
+              boxShadow: isHolonomic ? '0 0 8px #00e67655' : 'none',
+              flexShrink: 0,
+            }}>
+              {/* Thumb */}
+              <div style={{
+                position: 'absolute', top: 2, left: isHolonomic ? 18 : 2,
+                width: 14, height: 14, borderRadius: '50%',
+                background: '#fff',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
+                transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+              }} />
+            </div>
+            <span style={{ color: isHolonomic ? '#00e676' : 'var(--c-text-2)', fontWeight: 700 }}>
+              {isHolonomic ? 'ON' : 'OFF'}
+            </span>
           </div>
 
           <div style={S.dpad}>
@@ -1052,7 +1115,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
             {renderVKey("i", <ArrowSvg angle={0} />)}
             {renderVKey("o", <ArrowSvg angle={45} />)}
             {renderVKey("j", <ArrowSvg angle={-90} />)}
-            {renderVKey("k", <CircleSvg />)}
+            {renderVKey("k", <StopSquareSvg />)}
             {renderVKey("l", <ArrowSvg angle={90} />)}
             {renderVKey("m", <ArrowSvg angle={-135} />)}
             {renderVKey(",", <ArrowSvg angle={180} />)}
@@ -1065,7 +1128,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
           display: 'flex', flexDirection: 'column', gap: isShort ? '8px' : '10px',
           alignSelf: 'stretch', width: '100%', minWidth: 0, boxSizing: 'border-box',
         }}>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--c-text-3)', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-text-2)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
             Movement Scale
           </div>
 
@@ -1089,7 +1152,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
               style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
               +<span style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '8px', opacity: 0.5 }}>W</span>
             </button>
-            <span style={{ width: '30px', flexShrink: 0, textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{speed.toFixed(2)}</span>
+            <span style={{ width: '38px', flexShrink: 0, textAlign: 'right', fontSize: '14px', fontWeight: 700, color: 'var(--c-text-1)' }}>{speed.toFixed(2)}</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
@@ -1112,53 +1175,50 @@ function KeyboardController({ ros, isDark, isShort = true }) {
               style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
               +<span style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '8px', opacity: 0.5 }}>E</span>
             </button>
-            <span style={{ width: '30px', flexShrink: 0, textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{turnSpeed.toFixed(2)}</span>
+            <span style={{ width: '38px', flexShrink: 0, textAlign: 'right', fontSize: '14px', fontWeight: 700, color: 'var(--c-text-1)' }}>{turnSpeed.toFixed(2)}</span>
           </div>
         </div>
       </div>
 
+      {/* /cmd_vel live command */}
       <div style={{
-        display: 'flex', justifyContent: 'center', gap: '24px', marginTop: isShort ? '8px' : '12px',
-        background: 'var(--c-panel-2)',
-        padding: '8px 16px', borderRadius: 'var(--r-md)',
-        fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600,
+        marginTop: isShort ? '8px' : '12px',
+        display: 'flex', justifyContent: 'center', gap: '22px',
+        background: 'var(--c-panel-2)', borderRadius: 'var(--r-md)', padding: '8px 14px',
+        fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 700,
+        color: 'var(--c-text-3)',
       }}>
-        <span>
-          X: <span style={{ color: webControl ? (isDark ? "#85B7EB" : "#1a3a8f") : (isDark ? "#555" : "#aaa") }}>
-            {keys["i"] && webControl ? speed.toFixed(2) : keys[","] && webControl ? (-speed).toFixed(2) : "0.00"}
-          </span>
-        </span>
-        <span>
-          Z: <span style={{ color: webControl ? (isDark ? "#85B7EB" : "#1a3a8f") : (isDark ? "#555" : "#aaa") }}>
-            {keys["j"] && webControl ? turnSpeed.toFixed(2) : keys["l"] && webControl ? (-turnSpeed).toFixed(2) : "0.00"}
-          </span>
-        </span>
+        <span>X <span style={{ color: 'var(--c-text-1)' }}>
+          {keys["i"] && webControl ? speed.toFixed(2) : keys[","] && webControl ? (-speed).toFixed(2) : "0.00"}
+        </span></span>
+        <span>Z <span style={{ color: 'var(--c-text-1)' }}>
+          {keys["j"] && webControl ? turnSpeed.toFixed(2) : keys["l"] && webControl ? (-turnSpeed).toFixed(2) : "0.00"}
+        </span></span>
       </div>
 
       <button
         title="Trigger Mission Actuator"
         onClick={triggerActuator}
         style={{
-          width: '100%',
-          boxSizing: 'border-box',
+          width: '100%', boxSizing: 'border-box',
           marginTop: isShort ? '8px' : '12px',
-          padding: isShort ? '8px' : '12px',
+          padding: isShort ? '8px 12px' : '12px',
           background: isDark ? '#2e7d32' : '#4caf50',
-          color: '#fff',
-          border: 'none',
-          borderRadius: '8px',
-          fontWeight: 700,
-          cursor: 'pointer',
-          letterSpacing: '1px',
+          color: '#fff', border: 'none', borderRadius: '8px',
+          fontWeight: 700, cursor: 'pointer', letterSpacing: '1px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           boxShadow: isDark ? '0 0 10px #4caf5033' : '0 4px 6px rgba(0,0,0,0.1)',
-          transition: 'all 0.2s'
+          transition: 'all 0.2s',
         }}
         onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.15)'}
         onMouseOut={(e) => e.currentTarget.style.filter = 'brightness(1)'}
         onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
         onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
       >
-        🚀 ACTUATE EFFECT
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+        ACTUATE EFFECT
       </button>
     </div>
   );
@@ -1173,7 +1233,7 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
   const accent = isDark ? "var(--c-accent)" : "var(--c-accent)";
   const border = isDark ? "rgba(255, 255, 255, 0.16)" : "rgba(0, 0, 0, 0.15)";
   const inputBg = isDark ? "#161c25" : "#f8fafc";
-  const textSub = isDark ? "#94a3b8" : "#334155";
+  const textSub = isDark ? "#cbd5e1" : "#475569";
   const textMain = isDark ? "#ffffff" : "#0f172a";
 
   useEffect(() => {
@@ -1191,11 +1251,11 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
       {/* Label */}
       <div
         style={{
-          fontSize: "11px",
+          fontSize: "12px",
           fontWeight: 700,
           color: textSub,
           textTransform: "uppercase",
-          letterSpacing: "1.2px",
+          letterSpacing: "0.4px",
           marginBottom: "6px",
         }}
       >
@@ -1607,7 +1667,7 @@ const SimSelector = forwardRef(function SimSelector(
           justifyContent: "space-between",
         }}
       >
-        <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "var(--c-text-3)" }}>
+        <span style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px", color: "var(--c-text-2)" }}>
           Simulation Config
         </span>
         <div
@@ -1701,11 +1761,11 @@ const SimSelector = forwardRef(function SimSelector(
         >
           <span
             style={{
-              fontSize: "11px",
+              fontSize: "12px",
               fontWeight: 800,
               color: isDark ? "#ffffff" : "#0f172a",
               textTransform: "uppercase",
-              letterSpacing: "1.2px",
+              letterSpacing: "0.4px",
             }}
           >
             Spawn Pose (Initial)
@@ -1724,40 +1784,32 @@ const SimSelector = forwardRef(function SimSelector(
               }}
               title="Use current live pose of the robot"
               style={{
-                background: "transparent",
-                border: "none",
-                color: "var(--c-text-2)",
-                fontSize: "11px",
-                fontWeight: 700,
-                cursor: "pointer",
-                padding: "2px 4px",
-                borderRadius: "4px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
+                background: "transparent", border: "none",
+                color: "var(--c-text-2)", fontSize: "12px", fontWeight: 700,
+                cursor: "pointer", padding: "2px 4px", borderRadius: "4px",
+                display: "flex", alignItems: "center", gap: "4px",
               }}
             >
-              📍 Use Current
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" /><line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" />
+              </svg>
+              Use Current
             </button>
             <button
               type="button"
               onClick={() => setSpawnPose({ x: 0, y: 0, yaw: 0 })}
               title="Reset spawn coordinates to (0, 0, 0°)"
               style={{
-                background: "transparent",
-                border: "none",
-                color: "var(--c-accent)",
-                fontSize: "11px",
-                fontWeight: 700,
-                cursor: "pointer",
-                padding: "2px 4px",
-                borderRadius: "4px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
+                background: "transparent", border: "none",
+                color: "var(--c-accent)", fontSize: "12px", fontWeight: 700,
+                cursor: "pointer", padding: "2px 4px", borderRadius: "4px",
+                display: "flex", alignItems: "center", gap: "4px",
               }}
             >
-              ↺ Reset
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+              </svg>
+              Reset
             </button>
           </div>
         </div>
@@ -1783,7 +1835,7 @@ const SimSelector = forwardRef(function SimSelector(
           >
             <span
               style={{
-                fontSize: "12px",
+                fontSize: "13px",
                 fontWeight: 800,
                 color: "var(--c-accent)",
               }}
@@ -1804,13 +1856,13 @@ const SimSelector = forwardRef(function SimSelector(
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
-                fontSize: "13px",
+                fontSize: "15px",
                 fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0.0"
             />
-            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>m</span>
           </div>
 
           {/* Y Input */}
@@ -1827,7 +1879,7 @@ const SimSelector = forwardRef(function SimSelector(
           >
             <span
               style={{
-                fontSize: "12px",
+                fontSize: "13px",
                 fontWeight: 800,
                 color: "var(--c-accent)",
               }}
@@ -1848,13 +1900,13 @@ const SimSelector = forwardRef(function SimSelector(
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
-                fontSize: "13px",
+                fontSize: "15px",
                 fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0.0"
             />
-            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>m</span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>m</span>
           </div>
 
           {/* Yaw Input — full width on its own row */}
@@ -1872,7 +1924,7 @@ const SimSelector = forwardRef(function SimSelector(
           >
             <span
               style={{
-                fontSize: "12px",
+                fontSize: "13px",
                 fontWeight: 800,
                 color: "var(--c-accent)",
               }}
@@ -1893,13 +1945,13 @@ const SimSelector = forwardRef(function SimSelector(
                 background: "transparent",
                 border: "none",
                 color: isDark ? "#ffffff" : "#0f172a",
-                fontSize: "13px",
+                fontSize: "15px",
                 fontWeight: 700,
                 outline: "none",
               }}
               placeholder="0"
             />
-            <span style={{ fontSize: "11px", fontWeight: 700, color: isDark ? "#94a3b8" : "#475569" }}>°</span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>°</span>
           </div>
         </div>
       </div>
@@ -1992,6 +2044,7 @@ const SimSelector = forwardRef(function SimSelector(
             }
           }}
           disabled={displayStatus === "idle" || displayStatus === "stopping"}
+          title={displayStatus === "idle" || displayStatus === "stopping" ? "Not running" : "Stop simulation"}
           style={{
             padding: "10px 18px",
             borderRadius: "10px",
@@ -2000,7 +2053,8 @@ const SimSelector = forwardRef(function SimSelector(
             color: isDark ? "#ef9a9a" : "#c62828",
             fontSize: "14px",
             fontWeight: 700,
-            cursor: "pointer",
+            cursor: (displayStatus === "idle" || displayStatus === "stopping") ? "not-allowed" : "pointer",
+            opacity: (displayStatus === "idle" || displayStatus === "stopping") ? 0.4 : 1,
             display: "flex",
             alignItems: "center",
             gap: "6px",
@@ -2169,11 +2223,11 @@ function TopicMonitor({ ros, isDark }) {
       gap: "10px",
     },
     title: {
-      fontSize: "11px",
+      fontSize: "12px",
       fontWeight: 700,
       textTransform: "uppercase",
-      letterSpacing: "0.8px",
-      color: "var(--c-text-3)",
+      letterSpacing: "0.4px",
+      color: "var(--c-text-2)",
       fontFamily: "var(--font-ui)",
     },
     select: {
@@ -2184,10 +2238,10 @@ function TopicMonitor({ ros, isDark }) {
       background: "var(--c-panel-2)",
       color: "var(--c-text-1)",
       border: "1px solid var(--c-border)",
-      fontSize: "13px",
+      fontSize: "14px",
       outline: "none",
       cursor: "pointer",
-      fontWeight: 500,
+      fontWeight: 600,
       colorScheme: isDark ? "dark" : "light",
     },
     dataBox: {
@@ -2197,9 +2251,10 @@ function TopicMonitor({ ros, isDark }) {
       background: "var(--c-panel-2)",
       border: "1px solid var(--c-border)",
       borderRadius: "var(--r-md)",
-      fontSize: "12px",
+      fontSize: "13px",
+      lineHeight: 1.5,
       fontFamily: "var(--font-mono)",
-      color: "var(--c-text-2)",
+      color: "var(--c-text-1)",
     },
   };
 
@@ -2210,51 +2265,63 @@ function TopicMonitor({ ros, isDark }) {
         style={S.select}
         value={selTopic}
         onChange={(e) => {
-          // Clear here rather than in the subscribe effect: the panel should
-          // blank when the user picks a different topic, not on every reconnect.
           setMsgData(null);
           setSelTopic(e.target.value);
         }}
       >
-        <option
-          value=""
-          style={{
-            background: isDark ? "#1a1a1a" : "#ffffff",
-            color: isDark ? "#e0e0e0" : "#333",
-          }}
-        >
+        <option value="" style={{ background: isDark ? "#1a1a1a" : "#ffffff", color: isDark ? "#e0e0e0" : "#333" }}>
           -- Select a topic --
         </option>
-        {topics.map((t) => (
-          <option
-            key={t.name}
-            value={t.name}
-            style={{
-              background: isDark ? "#1a1a1a" : "#ffffff",
-              color: isDark ? "#e0e0e0" : "#333",
-            }}
-          >
-            {t.name}
-          </option>
-        ))}
+        {(() => {
+          // Group topics by type-prefix for cleaner optgroups
+          const groups = { cmd: [], odom: [], sensor: [], map: [], other: [] };
+          topics.forEach(t => {
+            const n = t.name;
+            if (n.startsWith('/cmd')) groups.cmd.push(t);
+            else if (n.startsWith('/odom') || n.includes('odom')) groups.odom.push(t);
+            else if (n.startsWith('/scan') || n.startsWith('/laser') || n.startsWith('/imu') || n.startsWith('/sensor')) groups.sensor.push(t);
+            else if (n.startsWith('/map') || n.startsWith('/cost')) groups.map.push(t);
+            else groups.other.push(t);
+          });
+          const optStyle = { background: isDark ? "#1a1a1a" : "#ffffff", color: isDark ? "#e0e0e0" : "#333" };
+          const renderOpts = list => list.map(t => (
+            <option key={t.name} value={t.name} style={optStyle}>{t.name}</option>
+          ));
+          return Object.entries({ 'cmd': groups.cmd, 'odom/pose': groups.odom, 'sensor': groups.sensor, 'map': groups.map, 'other': groups.other })
+            .filter(([, list]) => list.length > 0)
+            .map(([label, list]) => (
+              <optgroup key={label} label={label.toUpperCase()}>
+                {renderOpts(list)}
+              </optgroup>
+            ));
+        })()}
       </select>
       <div style={S.dataBox}>
         {selTopic ? (
           msgData !== null ? (
-            <pre
-              style={{
-                margin: 0,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-              }}
-            >
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {JSON.stringify(msgData, null, 2)}
             </pre>
           ) : (
             "Waiting for data..."
           )
         ) : (
-          "No topic selected"
+          /* Empty state — centered SVG + helper text */
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            height: '100%', gap: 10, userSelect: 'none',
+          }}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#334155" : "#cbd5e1"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 16 12 13 15 11 15 8 12 2 12" />
+              <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+            </svg>
+            <span style={{ fontSize: 12, fontWeight: 600, color: isDark ? '#475569' : '#94a3b8' }}>
+              No topic selected
+            </span>
+            <span style={{ fontSize: 11, color: isDark ? '#334155' : '#cbd5e1', textAlign: 'center', lineHeight: 1.4 }}>
+              Pick a topic above to<br />inspect messages.
+            </span>
+          </div>
         )}
       </div>
     </div>
@@ -2380,7 +2447,7 @@ const PoseSingle = React.memo(function PoseSingle({ poseRef, field, unit, isAngl
   const fmt = typeof raw === 'number' ? (isAngle ? raw.toFixed(1) : raw.toFixed(2)) : '-';
   const disp = typeof raw === 'number' && isAngle ? `${fmt}°` : fmt;
   if (compact) return (
-    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-accent)' }}>{field.toUpperCase()} <strong style={{ fontWeight: 800 }}>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}</span>
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--c-accent)' }}>{field.toUpperCase()} <strong style={{ fontWeight: 800 }}>{disp}</strong>{unit !== '°' && !isAngle ? unit : ''}</span>
   );
   return (
     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 24, fontWeight: 800, color: 'var(--c-accent)' }}>{disp}<span style={{ fontSize: 13, marginLeft: 4, color: 'var(--c-text-2)', fontWeight: 600 }}>{isAngle ? '' : unit}</span></span>
@@ -3223,14 +3290,13 @@ export default function DashboardView() {
                 opacity: inspOpen ? 1 : 0, pointerEvents: inspOpen ? 'auto' : 'none',
                 transition: 'opacity 180ms ease-out',
               }}>
-                {/* Tab header */}
+                {/* Tab header — slim overline (11px); rail already shows context */}
                 <div style={{
-                  padding: '12px 16px 8px', fontFamily: 'var(--font-ui)', fontSize: 12,
-                  fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase',
-                  color: 'var(--c-text-1)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '6px 16px 5px', fontFamily: 'var(--font-ui)', fontSize: 10,
+                  fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase',
+                  color: 'var(--c-text-3)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
                 }}>
-                  <span>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</span>
+                  {activeTab}
                 </div>
 
                 {/* Scrollable content */}
@@ -3238,30 +3304,43 @@ export default function DashboardView() {
 
                   {/* ── TELEMETRY ────────────── */}
                   {activeTab === 'telemetry' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {/* Odom numbers */}
-                      {[
-                        { label: 'X', key: 'x', unit: 'm' },
-                        { label: 'Y', key: 'y', unit: 'm' },
-                        { label: 'ANGLE', key: 'theta', unit: '°', isAngle: true },
-                      ].map(({ label, key, unit, isAngle }) => (
-                        <div key={label} style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          padding: '10px 14px', borderRadius: 'var(--r-md)',
-                          background: isDark ? '#161c25' : '#f8fafc',
-                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
-                        }}>
-                          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--c-text-1)' }}>{label}</span>
-                          <PoseSingle poseRef={poseRef} field={key} unit={unit} isAngle={isAngle} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {/* X card + sparkline */}
+                      <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>X</span>
+                          <PoseSingle poseRef={poseRef} field="x" unit="m" />
                         </div>
-                      ))}
-
-                      {/* Collision status — only in telemetry */}
+                        <div style={{ padding: '0 8px 6px' }}>
+                          <SparkLine poseRef={poseRef} field="x" color="#22d3ee" height={28} />
+                        </div>
+                      </div>
+                      {/* Y card + sparkline */}
+                      <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>Y</span>
+                          <PoseSingle poseRef={poseRef} field="y" unit="m" />
+                        </div>
+                        <div style={{ padding: '0 8px 6px' }}>
+                          <SparkLine poseRef={poseRef} field="y" color="#34d399" height={28} />
+                        </div>
+                      </div>
+                      {/* Angle card + sparkline */}
+                      <div style={{ borderRadius: 12, overflow: 'hidden', background: isDark ? '#161c25' : '#f8fafc', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 4px' }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--c-text-3)' }}>ANGLE</span>
+                          <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle />
+                        </div>
+                        <div style={{ padding: '0 8px 6px' }}>
+                          <SparkLine poseRef={poseRef} field="theta" isAngle color="#fbbf24" height={28} />
+                        </div>
+                      </div>
+                      {/* Collision chip */}
                       <div style={{
-                        display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-                        borderRadius: 'var(--r-md)', border: `1px solid ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                        borderRadius: 12, border: `1px solid ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
                         background: collisionActive ? 'var(--c-danger-bg)' : 'var(--c-success-bg)',
-                        fontSize: 13, fontWeight: 800,
+                        fontSize: 12, fontWeight: 800,
                         color: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
                       }}>
                         <div style={{
@@ -3295,15 +3374,14 @@ export default function DashboardView() {
                   <div style={{ display: activeTab === 'drive' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
                     {/* Compact odom strip */}
                     <div style={{
-                      display: 'flex', gap: 8, padding: '8px 12px',
-                      background: isDark ? '#161c25' : '#f8fafc',
-                      borderRadius: 'var(--r-md)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
-                      fontSize: 12, fontFamily: 'var(--font-mono)',
+                      fontFamily: 'var(--font-mono)',
+                      background: 'var(--c-panel-2)', borderRadius: 'var(--r-md)', padding: '8px 10px',
+                      display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'center',
                     }}>
                       <PoseSingle poseRef={poseRef} field="x" unit="m" compact />
-                      <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
+                      <span style={{ color: 'var(--c-border-2)' }}>|</span>
                       <PoseSingle poseRef={poseRef} field="y" unit="m" compact />
-                      <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
+                      <span style={{ color: 'var(--c-border-2)' }}>|</span>
                       <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle compact />
                     </div>
                     <KeyboardController ros={rosObj} isDark={isDark} />
