@@ -1,6 +1,7 @@
 import useAppStore from '../../store/useAppStore';
 import React, {
   useEffect,
+  useLayoutEffect,
   useState,
   useRef,
   useCallback,
@@ -468,6 +469,17 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     drawRef.current = draw;
   });
 
+  // Repaint synchronously when the canvas is resized. Changing a canvas'
+  // width/height attribute wipes its bitmap to transparent; without an
+  // immediate redraw the wrapper's dark background shows through for up to
+  // one frame-interval, which reads as a black flash while the inspector
+  // slides open/closed. A layout effect runs before the browser paints.
+  useLayoutEffect(() => {
+    drawRef.current = draw;
+    drawRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [width, height]);
+
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <canvas
@@ -485,6 +497,9 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
           cursor,
           width: "100%",
           height: "100%",
+          // matches the draw()'s bgFill -- if the bitmap is ever momentarily
+          // cleared (canvas resize), this shows instead of the dark wrapper.
+          background: isDark ? "#d3d3d3" : "#222222",
         }}
       />
     </div>
@@ -538,8 +553,12 @@ function KeyboardController({ ros, isDark, isShort = true }) {
   };
 
   useEffect(() => {
+    const typingInField = () => {
+      const t = document.activeElement?.tagName?.toLowerCase();
+      return t === "input" || t === "textarea" || t === "select";
+    };
     const handleKeyDown = (e) => {
-      if (!webControl) return;
+      if (!webControl || typingInField()) return;
 
       if (e.key === "Shift") {
         setIsHolonomic(true);
@@ -573,6 +592,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
     };
 
     const handleKeyUp = (e) => {
+      if (typingInField()) return;
       if (e.key === "Shift") {
         setIsHolonomic(false);
       }
@@ -720,12 +740,13 @@ function KeyboardController({ ros, isDark, isShort = true }) {
       transition: "all 0.2s ease-in-out",
     }),
     controlBody: {
+      // Column-only: this always lives in the ~300px inspector now, so the
+      // dpad and the slider panel stack instead of overflowing side by side.
       display: "flex",
-      flexDirection: "row",
-      flexWrap: "wrap",
+      flexDirection: "column",
       alignItems: "center",
       gap: isShort ? "12px" : "20px",
-      justifyContent: "center",
+      minWidth: 0,
     },
     dpad: {
       display: "grid",
@@ -1050,56 +1071,56 @@ function KeyboardController({ ros, isDark, isShort = true }) {
           background: isDark ? '#ffffff05' : '#f8f9fa',
           border: `1px solid ${isDark ? '#ffffff15' : '#e0e0e0'}`,
           borderRadius: '12px', padding: isShort ? '10px' : '16px',
-          flex: 1
+          alignSelf: 'stretch', width: '100%', minWidth: 0, boxSizing: 'border-box',
         }}>
           <div style={{ fontSize: '12px', fontWeight: 600, color: isDark ? '#aaa' : '#666', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
             Movement Scale
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ width: '40px', fontSize: '13px', fontWeight: 600, color: isDark ? '#ccc' : '#444' }}>Speed</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            <span style={{ width: '34px', flexShrink: 0, fontSize: '13px', fontWeight: 600, color: isDark ? '#ccc' : '#444' }}>Speed</span>
             <button
               title="Decrease Speed (X)"
               onClick={() => webControl && setSpeed(Math.max(0.1, speed - 0.1))}
-              style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
+              style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
               −<span style={{ position: 'absolute', top: '2px', left: '2px', fontSize: '8px', opacity: 0.5 }}>X</span>
             </button>
             <input
               type="range" className="tele-slider" min="0.1" max="2.0" step="0.1"
               value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              style={{ ...S.slider(speed, 0.1, 2.0, isDark ? "#85B7EB" : "#1a3a8f"), flex: 1 }}
+              style={{ ...S.slider(speed, 0.1, 2.0, isDark ? "#85B7EB" : "#1a3a8f"), flex: 1, minWidth: 0 }}
               disabled={!webControl}
             />
             <button
               title="Increase Speed (W)"
               onClick={() => webControl && setSpeed(Math.min(2.0, speed + 0.1))}
-              style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
+              style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
               +<span style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '8px', opacity: 0.5 }}>W</span>
             </button>
-            <span style={{ width: '32px', textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{speed.toFixed(2)}</span>
+            <span style={{ width: '30px', flexShrink: 0, textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{speed.toFixed(2)}</span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ width: '40px', fontSize: '13px', fontWeight: 600, color: isDark ? '#ccc' : '#444' }}>Angle</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            <span style={{ width: '34px', flexShrink: 0, fontSize: '13px', fontWeight: 600, color: isDark ? '#ccc' : '#444' }}>Angle</span>
             <button
               title="Decrease Angle (C)"
               onClick={() => webControl && setTurnSpeed(Math.max(0.1, turnSpeed - 0.1))}
-              style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
+              style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
               −<span style={{ position: 'absolute', top: '2px', left: '2px', fontSize: '8px', opacity: 0.5 }}>C</span>
             </button>
             <input
               type="range" className="tele-slider" min="0.1" max="3.0" step="0.1"
               value={turnSpeed} onChange={(e) => setTurnSpeed(parseFloat(e.target.value))}
-              style={{ ...S.slider(turnSpeed, 0.1, 3.0, isDark ? "#85B7EB" : "#1a3a8f"), flex: 1 }}
+              style={{ ...S.slider(turnSpeed, 0.1, 3.0, isDark ? "#85B7EB" : "#1a3a8f"), flex: 1, minWidth: 0 }}
               disabled={!webControl}
             />
             <button
               title="Increase Angle (E)"
               onClick={() => webControl && setTurnSpeed(Math.min(3.0, turnSpeed + 0.1))}
-              style={{ width: '28px', height: '28px', borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
+              style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px', border: 'none', background: isDark ? '#333' : '#e0e0e0', color: isDark ? '#fff' : '#000', cursor: webControl ? 'pointer' : 'not-allowed', position: 'relative' }}>
               +<span style={{ position: 'absolute', top: '2px', right: '2px', fontSize: '8px', opacity: 0.5 }}>E</span>
             </button>
-            <span style={{ width: '32px', textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{turnSpeed.toFixed(2)}</span>
+            <span style={{ width: '30px', flexShrink: 0, textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isDark ? '#85B7EB' : '#1a3a8f' }}>{turnSpeed.toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -1128,6 +1149,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
         onClick={triggerActuator}
         style={{
           width: '100%',
+          boxSizing: 'border-box',
           marginTop: isShort ? '8px' : '12px',
           padding: isShort ? '8px' : '12px',
           background: isDark ? '#2e7d32' : '#4caf50',
@@ -2525,7 +2547,7 @@ export default function DashboardView() {
             w: entry.contentRect.width,
             h: entry.contentRect.height,
           });
-        }, 16);
+        }, 40);
       }
     });
     if (mapWrapRef.current) observer.observe(mapWrapRef.current);
@@ -3287,24 +3309,24 @@ export default function DashboardView() {
                   )}
 
                   {/* ── DRIVE ─────────────────── */}
-                  {activeTab === 'drive' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {/* Compact odom strip */}
-                      <div style={{
-                        display: 'flex', gap: 8, padding: '8px 12px',
-                        background: isDark ? '#161c25' : '#f8fafc',
-                        borderRadius: 'var(--r-md)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
-                        fontSize: 12, fontFamily: 'var(--font-mono)',
-                      }}>
-                        <PoseSingle poseRef={poseRef} field="x" unit="m" compact />
-                        <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
-                        <PoseSingle poseRef={poseRef} field="y" unit="m" compact />
-                        <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
-                        <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle compact />
-                      </div>
-                      <KeyboardController ros={rosObj} isDark={isDark} />
+                  {/* Kept mounted on every tab so keyboard teleop keeps working
+                      when the inspector is on Setup / Telemetry / Console. */}
+                  <div style={{ display: activeTab === 'drive' ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
+                    {/* Compact odom strip */}
+                    <div style={{
+                      display: 'flex', gap: 8, padding: '8px 12px',
+                      background: isDark ? '#161c25' : '#f8fafc',
+                      borderRadius: 'var(--r-md)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
+                      fontSize: 12, fontFamily: 'var(--font-mono)',
+                    }}>
+                      <PoseSingle poseRef={poseRef} field="x" unit="m" compact />
+                      <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
+                      <PoseSingle poseRef={poseRef} field="y" unit="m" compact />
+                      <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
+                      <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle compact />
                     </div>
-                  )}
+                    <KeyboardController ros={rosObj} isDark={isDark} />
+                  </div>
 
                   {/* ── CONSOLE ─────────────── */}
                   {activeTab === 'console' && (
@@ -3409,15 +3431,19 @@ export default function DashboardView() {
                   {[
                     { key: 'ros2', label: 'ROS 2' },
                     { key: 'rosbridge', label: 'rosbridge_server' },
-                    { key: 'simulatorPackage', label: 'amr_2dsim' },
-                  ].map(({ key, label }) => (
+                    { key: 'robotStatePublisher', label: 'robot_state_publisher' },
+                    { key: 'workspace', label: 'amr_2dsim' },
+                  ].map(({ key, label }) => {
+                    const ok = envData.checks?.[key]?.ready;
+                    return (
                     <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
                       <span style={{ color: 'var(--c-text-2)' }}>{label}</span>
-                      <span style={{ color: envData[key] ? 'var(--c-success)' : 'var(--c-danger)', fontWeight: 700 }}>
-                        {envData[key] ? '✓ OK' : '✗ Missing'}
+                      <span style={{ color: ok ? 'var(--c-success)' : 'var(--c-danger)', fontWeight: 700 }}>
+                        {ok ? '✓ OK' : '✗ Missing'}
                       </span>
                     </div>
-                  ))}
+                    );
+                  })}
                   <div style={{ marginTop: 8, borderTop: '1px solid var(--c-border)', paddingTop: 8 }}>
                     <button onClick={() => { setShowEnvModal(true); setShowEnvPopover(false); }} style={{
                       fontSize: 11, fontFamily: 'var(--font-ui)', color: 'var(--c-accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600,
