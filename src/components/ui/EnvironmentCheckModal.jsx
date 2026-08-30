@@ -102,8 +102,16 @@ export default function EnvironmentCheckModal({
                 </button>
               </div>
               <div className="ecm-code-block">{recommendedCommand}</div>
-              <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                Paste and run this command in your terminal, then click <strong>"Re-check"</strong> below.
+              <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                <span>Paste and run this command in your terminal, then click <strong>"Re-check"</strong> below.</span>
+                <a
+                  href={`https://docs.ros.org/en/${envData?.distro || 'jazzy'}/Installation/Ubuntu-Install-Debs.html`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: '#38bdf8', textDecoration: 'underline', fontSize: '11px' }}
+                >
+                  Official {envData?.distro ? envData.distro.toUpperCase() : 'ROS 2'} Guide ↗
+                </a>
               </div>
             </div>
           )}

@@ -53,4 +53,10 @@ describe('useAppStore', () => {
     useAppStore.getState().setEnvData(mockEnv);
     expect(useAppStore.getState().envData).toEqual(mockEnv);
   });
+
+  it('manages spawnPose state', () => {
+    expect(useAppStore.getState().spawnPose).toEqual({ x: 0, y: 0, yaw: 0 });
+    useAppStore.getState().setSpawnPose({ x: 2.5, y: -1.2, yaw: 45 });
+    expect(useAppStore.getState().spawnPose).toEqual({ x: 2.5, y: -1.2, yaw: 45 });
+  });
 });

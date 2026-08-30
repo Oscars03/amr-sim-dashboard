@@ -52,6 +52,10 @@ const useAppStore = create((set) => ({
   setEnvData: (data) => set({ envData: data }),
   showEnvModal: false,
   setShowEnvModal: (val) => set({ showEnvModal: val }),
+
+  // Spawn Pose Config { x: 0, y: 0, yaw: 0 } (yaw in degrees)
+  spawnPose: { x: 0, y: 0, yaw: 0 },
+  setSpawnPose: (pose) => set({ spawnPose: pose }),
 }));
 
 export default useAppStore;

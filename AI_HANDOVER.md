@@ -30,10 +30,25 @@ Current state is focused on the `release/v0.2.9` milestone and cross-repo DOE au
 ### Unified Debian Packaging
 A unified script `/home/phutanate/simamr_ws/build_packages.sh` packages both frontend and backend into a single `.deb` file for Ubuntu 24.04. When instructed to "build the app", run this script.
 
+## Architecture & Recent Core PRs (Merged to main @ d3a1f0e)
+- **#19 Actuator Dynamics**: `<amr_sim_config>` `max_linear_accel`, `max_angular_accel`, `max_steering_rate`.
+- **#20 LaserScan Gaussian Noise**: `<laser_noise_stddev>` simulation.
+- **#21 Watchdog & Reconnect**: Idle auto-stop watchdog + ROS reconnect memory leak fix.
+- **#22 Render Refactor (CRITICAL RULE)**:
+  - `/odom` arrives at 20 Hz. Pose and steering **MUST NOT** be kept in Zustand or cause React re-renders.
+  - `pose` and `steering` live in **mutable refs** (`poseRef`, `steeringRef`) in `DashboardView.jsx`.
+  - `WorldMap` is wrapped in `React.memo` and updated imperatively via `worldMapRef.current?.markDirty()`.
+  - **DO NOT** reintroduce 20 Hz `setState` in `DashboardView.jsx`.
+- **#23 Canvas & Scale Bar**: Follow Robot repaint fix + canvas save-restore state isolation.
+- **#26 Dead Code & Lint**: Zero lint warnings, static editor frame idle loops, clean simulator node SIGINT shutdown.
+
+## Active Branches & PRs
+- `feat/spawn-pose`: Spawn Pose Config `(X, Y, Yaw)` before launch + `/initialpose` live reset.
+- PR #27 (open, do not touch): `worlds/F4_2F.json` (data only).
+
 ## Agent Specific Rules
 - **Ponytail Rule**: The user enforces a "lazy senior developer" rule. Delete over addition. Minimal code. No abstractions unless explicitly requested. Root cause bug fixes.
+- **Render Performance**: Always use refs and `markDirty()` for high-frequency data streams (e.g., odom, teleop).
 - **Concise Thai Communication**: Communicate in concise Thai with the user. Keep responses extremely compact.
+- **Git Feature Branches**: Always branch off `origin/main` for new features and submit via PR.
 
-## Next Steps for AI
-- Check open PR #16 (`Release v0.2.9`) and ensure builds succeed using `/home/phutanate/simamr_ws/build_packages.sh`.
-- Validate kinematic compatibility with `master-ackerman-thesis` and `nav2-param-visualizer`.
