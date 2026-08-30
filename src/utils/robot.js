@@ -676,6 +676,38 @@ export function normaliseMap(raw) {
 // 25 is chosen so Nav_01, the most-used world, looks about as it did before.
 export const PX_PER_METRE = 25;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// easePose
+// ─────────────────────────────────────────────────────────────────────────────
+// /odom arrives at 20 Hz; the canvas draws at up to 60. Pinning the robot to the
+// latest sample renders it in 20 Hz steps -- a smooth map with a stuttering
+// robot. Ease the drawn pose toward the newest sample instead, once per frame.
+//
+// Frame-rate independent: alpha is derived from the real gap between frames and
+// a ~60 ms time constant, so the trail behind a moving robot is the same whether
+// the canvas is running at 60 or 45. Heading is eased the short way round.
+// A jump past `snapDist` metres (a /reset_pose teleport between runs) cuts
+// instead of sliding the robot across the map.
+export function easePose(prev, target, dtMs, tauMs = 60, snapDist = 1) {
+  if (
+    !prev ||
+    !Number.isFinite(dtMs) ||
+    Math.hypot(target.x - prev.x, target.y - prev.y) > snapDist
+  ) {
+    return { x: target.x, y: target.y, th: target.th };
+  }
+  const a = 1 - Math.exp(-Math.max(0, dtMs) / tauMs);
+  const dth = Math.atan2(
+    Math.sin(target.th - prev.th),
+    Math.cos(target.th - prev.th),
+  );
+  return {
+    x: prev.x + (target.x - prev.x) * a,
+    y: prev.y + (target.y - prev.y) * a,
+    th: prev.th + dth * a,
+  };
+}
+
 export function buildTransform(mapInfo, canvasW, canvasH, pxPerMetre = PX_PER_METRE) {
   const { origin_x, origin_y, width: mw, height: mh } = mapInfo;
 

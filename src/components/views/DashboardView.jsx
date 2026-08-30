@@ -32,20 +32,19 @@ const IDLE_CHECK_MS = 60 * 1000;
 const IDLE_MOVE_EPS_M = 0.02;   // metres
 const IDLE_MOVE_EPS_DEG = 1.0;  // degrees
 
-import { parseURDF, drawRobot, normaliseMap, buildTransform } from '../../utils/robot';
+import { parseURDF, drawRobot, normaliseMap, buildTransform, easePose } from '../../utils/robot';
 
 // Pan that reproduces the current follow view, for handing over when follow is
-// released. `cam` is the smoothed camera actually on screen; without it this
-// computes the pan for the raw pose, and since the camera lags the pose by a
-// frame or two the view jumps at the moment the user grabs it.
-function getFollowPan(pose, mapData, width, height, view, cam) {
+// released. Pass the same eased pose the follow camera draws from (not the raw
+// /odom pose) so the view doesn't jump at the moment the user grabs it.
+function getFollowPan(pose, mapData, width, height, view) {
   if (!pose || pose.x === "-" || !mapData?.map_info) return { panX: view.panX, panY: view.panY };
   const { scale, offsetX, offsetY } = buildTransform(mapData.map_info, width, height);
   const { origin_x, origin_y } = mapData.map_info;
   const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
   const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
-  const rx = cam ? cam.rx : width - offsetX - (worldY - origin_y) * scale;
-  const ry = cam ? cam.ry : height - offsetY - (worldX - origin_x) * scale;
+  const rx = width - offsetX - (worldY - origin_y) * scale;
+  const ry = height - offsetY - (worldX - origin_x) * scale;
   const dx = rx - width / 2;
   const dy = ry - height / 2;
   const cos = Math.cos(view.rotation);
@@ -70,9 +69,12 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   const [followRobot, setFollowRobot] = useState(false);
-  // Smoothed follow camera, in canvas pixels. Null means "no history yet", which
-  // makes the next frame snap instead of sliding in from wherever it left off.
-  const camRef = useRef(null);
+  // Robot pose actually drawn: eased toward the 20 Hz /odom sample once per
+  // frame (easePose) so a 60 fps canvas doesn't step the robot at 20 Hz. World
+  // space -- zoom/pan/resize don't disturb it -- and shared by the robot marker
+  // and the follow camera so the two never disagree. Null = no sample yet.
+  const renderPoseRef = useRef(null);
+  const lastDrawTsRef = useRef(0);
 
   // Single source of truth for the toolbar's highlight.
   //
@@ -82,7 +84,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
   // real state instead of asking the caller to mirror it.
   useEffect(() => {
     onFollowChange?.(followRobot);
-    if (!followRobot) camRef.current = null;
   }, [followRobot, onFollowChange]);
 
   // /odom (20 Hz) and /joint_states write their refs and call this instead of
@@ -217,7 +218,7 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     } else if (dragRef.current.isMiddle) {
       if (followRobot) {
         setFollowRobot(false);
-        const { panX, panY } = getFollowPan(poseRef.current, mapData, width, height, view, camRef.current);
+        const { panX, panY } = getFollowPan(renderPoseRef.current, mapData, width, height, view);
         setView((v) => ({ ...v, panX, panY }));
       }
       const dx = e.clientX - dragRef.current.lastX;
@@ -288,37 +289,38 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     );
     const { origin_x, origin_y, width: mw, height: mh } = mapData.map_info;
 
-    ctx.save();
-    if (followRobot && pose && pose.x !== "-") {
-      const worldX = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
-      const worldY = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
-      const targetRx = width - offsetX - (worldY - origin_y) * scale;
-      const targetRy = height - offsetY - (worldX - origin_x) * scale;
-
-      // Follow smoothly rather than snapping.
-      //
-      // The canvas draws at 60 fps but /odom arrives at 20 Hz, so pinning the
-      // camera to the latest pose held the view still for three frames and then
-      // jumped -- stepping while following, even with the FPS counter on 60.
-      //
-      // Exponential smoothing at 0.25 per frame is roughly an 80 ms time
-      // constant: longer than a frame, shorter than the 50 ms between poses, so
-      // the camera keeps up with the robot instead of trailing it.
-      const cam = camRef.current;
-      const dist = cam ? Math.hypot(targetRx - cam.rx, targetRy - cam.ry) : Infinity;
-      // Snap on a large jump. /reset_pose teleports the robot between runs, and
-      // sliding the camera across the map for that is worse than a cut.
-      if (!cam || dist > 250) {
-        camRef.current = { rx: targetRx, ry: targetRy };
-      } else {
-        const a = 0.25;
-        camRef.current = {
-          rx: cam.rx + (targetRx - cam.rx) * a,
-          ry: cam.ry + (targetRy - cam.ry) * a,
-        };
+    // Ease the drawn robot pose toward the latest /odom sample once per frame,
+    // so a 60 fps canvas doesn't render a 20 Hz robot in steps (a smooth map
+    // with a stuttering robot). Shared by the marker and the follow camera so
+    // the two stay in sync.
+    let render = null;
+    if (pose && pose.x !== "-") {
+      const nowTs = performance.now();
+      const dtMs = lastDrawTsRef.current ? nowTs - lastDrawTsRef.current : NaN;
+      lastDrawTsRef.current = nowTs;
+      const tx = typeof pose.x === "string" ? parseFloat(pose.x) : pose.x;
+      const ty = typeof pose.y === "string" ? parseFloat(pose.y) : pose.y;
+      const tth = ((typeof pose.theta === "string" ? parseFloat(pose.theta) : pose.theta) * Math.PI) / 180;
+      render = easePose(renderPoseRef.current, { x: tx, y: ty, th: tth }, dtMs);
+      renderPoseRef.current = render;
+      // The 20 fps low-power loop only draws on a dirty frame, but easing needs a
+      // few frames to catch up after the last pose change -- keep it awake until
+      // the marker has actually settled, or it stops a pixel short.
+      const dth = Math.atan2(Math.sin(tth - render.th), Math.cos(tth - render.th));
+      if (Math.hypot(tx - render.x, ty - render.y) > 2e-3 || Math.abs(dth) > 2e-3) {
+        needsRedrawRef.current = true;
       }
-      const { rx, ry } = camRef.current;
+    } else {
+      renderPoseRef.current = null;
+      lastDrawTsRef.current = 0;
+    }
 
+    ctx.save();
+    if (followRobot && render) {
+      // Camera centres on the eased pose -- no separate smoothing, easePose
+      // already did it (and its snap-on-teleport covers /reset_pose between runs).
+      const rx = width - offsetX - (render.y - origin_y) * scale;
+      const ry = height - offsetY - (render.x - origin_x) * scale;
       ctx.translate(width / 2, height / 2);
       ctx.scale(view.zoom, view.zoom);
       ctx.rotate(view.rotation);
@@ -439,10 +441,10 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
       }
     });
 
-    if (pose && pose.x !== "-") {
-      const worldX = typeof pose.x === 'string' ? parseFloat(pose.x) : pose.x;
-      const worldY = typeof pose.y === 'string' ? parseFloat(pose.y) : pose.y;
-      const thetaRad = typeof pose.theta === 'string' ? (parseFloat(pose.theta) * Math.PI) / 180 : (pose.theta * Math.PI) / 180;
+    if (render) {
+      const worldX = render.x;
+      const worldY = render.y;
+      const thetaRad = render.th;
       // Use precise sub-pixel coordinates to prevent lateral judder when moving diagonally
       const rx = width - offsetX - (worldY - origin_y) * scale;
       const ry = height - offsetY - (worldX - origin_x) * scale;
