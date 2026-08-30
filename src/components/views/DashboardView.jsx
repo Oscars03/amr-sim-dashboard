@@ -1278,7 +1278,10 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark, ali
             background: open ? (isDark ? "#1e2633" : "#f0f9ff") : inputBg,
             border: `1.5px solid ${open ? accent : border}`,
             boxShadow: open ? `0 0 0 3px ${accent}33` : "none",
-            borderRadius: open ? "10px 10px 0 0" : "10px",
+            // Stays fully rounded when open. The panel is no longer the same
+            // width as the trigger, so squaring these corners to "join" it left
+            // a seam that only drew attention to the mismatch.
+            borderRadius: "10px",
             color: textMain,
             fontSize: "14px",
             fontWeight: 700,
@@ -1340,8 +1343,13 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark, ali
               maxWidth: "min(320px, 90vw)",
               background: isDark ? "#161c25" : "#ffffff",
               border: `1.5px solid ${accent}`,
-              borderTop: "none",
-              borderRadius: "0 0 10px 10px",
+              // A complete rounded card offset from the trigger, rather than a
+              // bottom-half glued to it. Once the panel can be wider than the
+              // trigger the glued look cannot line up on both edges, and a seam
+              // that nearly meets reads as a bug; a floating menu reads as
+              // intended. The shadow does the work of showing it is above.
+              borderRadius: "10px",
+              marginTop: "6px",
               boxShadow: isDark
                 ? "0 12px 30px rgba(0,0,0,0.7)"
                 : "0 12px 30px rgba(0,0,0,0.15)",
