@@ -3209,152 +3209,151 @@ export default function DashboardView() {
           <div style={{
             width: inspOpen ? (inspectorCollapsed ? 'min(80vw,340px)' : '340px') : '40px',
             flexShrink: 0, display: 'flex', overflow: 'hidden',
-            transition: 'width var(--dur-slow) var(--ease-out)',
+            transition: 'width 250ms cubic-bezier(0.16, 1, 0.3, 1)',
             borderLeft: '1px solid var(--c-border)',
             background: 'var(--c-panel)', zIndex: 10,
+            contain: 'paint',
           }}>
-            <div style={{ width: inspOpen ? (inspectorCollapsed ? 'min(80vw,340px)' : '340px') : '40px', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', flexShrink: 0 }}>
+            <div style={{ width: 340, display: 'flex', flexDirection: 'row', height: '100%', overflow: 'hidden', flexShrink: 0 }}>
 
-              {/* Tab icons rail (right edge) + content */}
-              <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-
-                {/* Tab content */}
-                {inspOpen && (
-                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                    {/* Tab header */}
-                    <div style={{
-                      padding: '12px 16px 8px', fontFamily: 'var(--font-ui)', fontSize: 12,
-                      fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase',
-                      color: 'var(--c-text-1)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    }}>
-                      <span>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</span>
-                    </div>
-
-                    {/* Scrollable content */}
-                    <div className="scrollable" style={{ flex: 1, overflow: 'hidden auto', padding: '12px 16px' }}>
-
-                      {/* ── TELEMETRY ────────────── */}
-                      {activeTab === 'telemetry' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                          {/* Odom numbers */}
-                          {[
-                            { label: 'X', key: 'x', unit: 'm' },
-                            { label: 'Y', key: 'y', unit: 'm' },
-                            { label: 'ANGLE', key: 'theta', unit: '°', isAngle: true },
-                          ].map(({ label, key, unit, isAngle }) => (
-                            <div key={label} style={{
-                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                              padding: '10px 14px', borderRadius: 'var(--r-md)',
-                              background: isDark ? '#161c25' : '#f8fafc',
-                              border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
-                            }}>
-                              <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--c-text-1)' }}>{label}</span>
-                              <PoseSingle poseRef={poseRef} field={key} unit={unit} isAngle={isAngle} />
-                            </div>
-                          ))}
-
-                          {/* Collision status — only in telemetry */}
-                          <div style={{
-                            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-                            borderRadius: 'var(--r-md)', border: `1px solid ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
-                            background: collisionActive ? 'var(--c-danger-bg)' : 'var(--c-success-bg)',
-                            fontSize: 13, fontWeight: 800,
-                            color: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
-                          }}>
-                            <div style={{
-                              width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                              background: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
-                              boxShadow: `0 0 6px ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
-                            }} />
-                            {collisionActive ? 'Collision Detected' : 'Collision OK'}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* ── SETUP ────────────────── */}
-                      {activeTab === 'setup' && (
-                        <SimSelector
-                          ref={simSelectorRef}
-                          onSwitch={handleSwitch}
-                          onStop={() => setIsWaitingOdom(false)}
-                          isDark={isDark}
-                          isWaitingOdom={isWaitingOdom}
-                          poseRef={poseRef}
-                        />
-                      )}
-
-                      {/* ── DRIVE ─────────────────── */}
-                      {activeTab === 'drive' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                          {/* Compact odom strip */}
-                          <div style={{
-                            display: 'flex', gap: 8, padding: '8px 12px',
-                            background: isDark ? '#161c25' : '#f8fafc',
-                            borderRadius: 'var(--r-md)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
-                            fontSize: 12, fontFamily: 'var(--font-mono)',
-                          }}>
-                            <PoseSingle poseRef={poseRef} field="x" unit="m" compact />
-                            <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
-                            <PoseSingle poseRef={poseRef} field="y" unit="m" compact />
-                            <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
-                            <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle compact />
-                          </div>
-                          <KeyboardController ros={rosObj} isDark={isDark} isNarrow={isNarrow} isShort={isShort} />
-                        </div>
-                      )}
-
-                      {/* ── CONSOLE ─────────────── */}
-                      {activeTab === 'console' && (
-                        <TopicMonitor ros={rosObj} isDark={isDark} />
-                      )}
-
-                    </div>
-                  </div>
-                )}
-
-                {/* Icon tab rail (always visible on the right edge) */}
+              {/* Tab content */}
+              <div style={{
+                width: 300, flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                opacity: inspOpen ? 1 : 0, pointerEvents: inspOpen ? 'auto' : 'none',
+                transition: 'opacity 180ms ease-out',
+              }}>
+                {/* Tab header */}
                 <div style={{
-                  width: 40, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  borderLeft: inspOpen ? '1px solid var(--c-border)' : 'none', padding: '8px 0', gap: 4,
-                  background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+                  padding: '12px 16px 8px', fontFamily: 'var(--font-ui)', fontSize: 12,
+                  fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase',
+                  color: 'var(--c-text-1)', borderBottom: '1px solid var(--c-border)', flexShrink: 0,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 }}>
-                  {Object.entries(TAB_ICONS).map(([tab, icon]) => (
-                    <button
-                      key={tab}
-                      onClick={() => {
-                        setTab(tab);
-                        if (!inspOpen) setInspOpen(true);
-                      }}
-                      title={tab.charAt(0).toUpperCase() + tab.slice(1)}
-                      style={{
-                        width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
-                        color: (activeTab === tab && inspOpen) ? 'var(--c-accent)' : 'var(--c-text-2)',
-                        background: (activeTab === tab && inspOpen) ? 'var(--c-accent-bg)' : 'transparent',
-                        transition: 'all var(--dur-fast) var(--ease-out)',
-                      }}
-                    >
-                      {icon}
-                    </button>
-                  ))}
-                  {/* Collapse / Expand toggle at bottom */}
-                  <div style={{ flex: 1 }} />
+                  <span>{activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</span>
+                </div>
+
+                {/* Scrollable content */}
+                <div className="scrollable" style={{ flex: 1, overflow: 'hidden auto', padding: '12px 16px' }}>
+
+                  {/* ── TELEMETRY ────────────── */}
+                  {activeTab === 'telemetry' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {/* Odom numbers */}
+                      {[
+                        { label: 'X', key: 'x', unit: 'm' },
+                        { label: 'Y', key: 'y', unit: 'm' },
+                        { label: 'ANGLE', key: 'theta', unit: '°', isAngle: true },
+                      ].map(({ label, key, unit, isAngle }) => (
+                        <div key={label} style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          padding: '10px 14px', borderRadius: 'var(--r-md)',
+                          background: isDark ? '#161c25' : '#f8fafc',
+                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
+                        }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--c-text-1)' }}>{label}</span>
+                          <PoseSingle poseRef={poseRef} field={key} unit={unit} isAngle={isAngle} />
+                        </div>
+                      ))}
+
+                      {/* Collision status — only in telemetry */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+                        borderRadius: 'var(--r-md)', border: `1px solid ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
+                        background: collisionActive ? 'var(--c-danger-bg)' : 'var(--c-success-bg)',
+                        fontSize: 13, fontWeight: 800,
+                        color: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
+                      }}>
+                        <div style={{
+                          width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                          background: collisionActive ? 'var(--c-danger)' : 'var(--c-success)',
+                          boxShadow: `0 0 6px ${collisionActive ? 'var(--c-danger)' : 'var(--c-success)'}`,
+                        }} />
+                        {collisionActive ? 'Collision Detected' : 'Collision OK'}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── SETUP ────────────────── */}
+                  {activeTab === 'setup' && (
+                    <SimSelector
+                      ref={simSelectorRef}
+                      onSwitch={handleSwitch}
+                      onStop={() => setIsWaitingOdom(false)}
+                      isDark={isDark}
+                      isWaitingOdom={isWaitingOdom}
+                      poseRef={poseRef}
+                    />
+                  )}
+
+                  {/* ── DRIVE ─────────────────── */}
+                  {activeTab === 'drive' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {/* Compact odom strip */}
+                      <div style={{
+                        display: 'flex', gap: 8, padding: '8px 12px',
+                        background: isDark ? '#161c25' : '#f8fafc',
+                        borderRadius: 'var(--r-md)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)'}`,
+                        fontSize: 12, fontFamily: 'var(--font-mono)',
+                      }}>
+                        <PoseSingle poseRef={poseRef} field="x" unit="m" compact />
+                        <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
+                        <PoseSingle poseRef={poseRef} field="y" unit="m" compact />
+                        <span style={{ color: 'var(--c-border-2)', alignSelf: 'center' }}>|</span>
+                        <PoseSingle poseRef={poseRef} field="theta" unit="°" isAngle compact />
+                      </div>
+                      <KeyboardController ros={rosObj} isDark={isDark} isNarrow={isNarrow} isShort={isShort} />
+                    </div>
+                  )}
+
+                  {/* ── CONSOLE ─────────────── */}
+                  {activeTab === 'console' && (
+                    <TopicMonitor ros={rosObj} isDark={isDark} />
+                  )}
+
+                </div>
+              </div>
+
+              {/* Icon tab rail (always visible on the right edge) */}
+              <div style={{
+                width: 40, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                borderLeft: '1px solid var(--c-border)', padding: '8px 0', gap: 4,
+                background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+              }}>
+                {Object.entries(TAB_ICONS).map(([tab, icon]) => (
                   <button
-                    onClick={toggleInsp}
-                    title={inspOpen ? 'Collapse inspector' : 'Open inspector'}
+                    key={tab}
+                    onClick={() => {
+                      setTab(tab);
+                      if (!inspOpen) setInspOpen(true);
+                    }}
+                    title={tab.charAt(0).toUpperCase() + tab.slice(1)}
                     style={{
                       width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
                       borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
-                      color: 'var(--c-text-2)', background: 'transparent',
+                      color: (activeTab === tab && inspOpen) ? 'var(--c-accent)' : 'var(--c-text-2)',
+                      background: (activeTab === tab && inspOpen) ? 'var(--c-accent-bg)' : 'transparent',
                       transition: 'all var(--dur-fast) var(--ease-out)',
                     }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points={inspOpen ? '9 18 15 12 9 6' : '15 18 9 12 15 6'} />
-                    </svg>
+                    {icon}
                   </button>
-                </div>
+                ))}
+                {/* Collapse / Expand toggle at bottom */}
+                <div style={{ flex: 1 }} />
+                <button
+                  onClick={toggleInsp}
+                  title={inspOpen ? 'Collapse inspector' : 'Open inspector'}
+                  style={{
+                    width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
+                    color: 'var(--c-text-2)', background: 'transparent',
+                    transition: 'all var(--dur-fast) var(--ease-out)',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points={inspOpen ? '9 18 15 12 9 6' : '15 18 9 12 15 6'} />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
