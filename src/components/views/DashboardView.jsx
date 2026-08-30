@@ -1844,8 +1844,11 @@ const SimSelector = forwardRef(function SimSelector(
 
         <div
           style={{
+            // Three columns, not two. X and Y filled a row and left Yaw alone on
+            // a second one, so the panel was two rows tall to hold three short
+            // numbers. They are the same kind of field and belong on one line.
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
             gap: "8px",
           }}
         >
@@ -1937,10 +1940,9 @@ const SimSelector = forwardRef(function SimSelector(
             <span style={{ fontSize: "12px", fontWeight: 700, color: isDark ? "#cbd5e1" : "#475569" }}>m</span>
           </div>
 
-          {/* Yaw Input — full width on its own row */}
+          {/* Yaw Input — third column, alongside X and Y */}
           <div
             style={{
-              gridColumn: "1 / -1",
               display: "flex",
               alignItems: "center",
               background: isDark ? "#161c25" : "#f8fafc",
