@@ -206,6 +206,11 @@ body, html, #root {
 .scrollable::-webkit-scrollbar-thumb { background: var(--c-text-3); border-radius: var(--r-pill); }
 .scrollable::-webkit-scrollbar-thumb:hover { background: var(--c-text-2); }
 
+/* Number inputs styled to look like plain text fields (spawn pose, etc.) */
+.num-bare { -moz-appearance: textfield; appearance: textfield; }
+.num-bare::-webkit-outer-spin-button,
+.num-bare::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
 /* ── Focus ring ────────────────────────────────────────────────────────────── */
 :focus-visible {
   outline: 2px solid var(--c-accent);
