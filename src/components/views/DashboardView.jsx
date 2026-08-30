@@ -3207,13 +3207,16 @@ export default function DashboardView() {
           {/* ── Right Inspector ────────────────────────────────────── */}
           <div style={{
             width: inspOpen ? (inspectorCollapsed ? 'min(80vw,340px)' : '340px') : '40px',
-            flexShrink: 0, display: 'flex', overflow: 'hidden',
+            flexShrink: 0, overflow: 'hidden', position: 'relative',
             transition: 'width 250ms cubic-bezier(0.16, 1, 0.3, 1)',
             borderLeft: '1px solid var(--c-border)',
             background: 'var(--c-panel)', zIndex: 10,
             contain: 'paint',
           }}>
-            <div style={{ width: 340, display: 'flex', flexDirection: 'row', height: '100%', overflow: 'hidden', flexShrink: 0 }}>
+            <div style={{
+              position: 'absolute', top: 0, bottom: 0, right: 0, width: 340,
+              display: 'flex', flexDirection: 'row', height: '100%', overflow: 'hidden',
+            }}>
 
               {/* Tab content */}
               <div style={{
@@ -3363,7 +3366,7 @@ export default function DashboardView() {
           height: 'var(--status-bar-h, 28px)', flexShrink: 0,
           display: 'flex', alignItems: 'center',
           borderTop: '1px solid var(--c-border)',
-          background: isDark ? 'var(--c-bg)' : 'var(--c-panel)',
+          background: isDark ? '#0B0F14' : '#F1F5F9',
           padding: '0 12px', gap: 0, overflow: 'hidden',
           fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--c-text-2)',
           position: 'relative', zIndex: 20,
