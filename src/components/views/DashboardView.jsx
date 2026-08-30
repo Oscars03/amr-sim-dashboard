@@ -1226,7 +1226,7 @@ function KeyboardController({ ros, isDark, isShort = true }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CustomDropdown  — defined OUTSIDE SimSelector so it never remounts
 // ─────────────────────────────────────────────────────────────────────────────
-function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
+function CustomDropdown({ label, value, onChange, options, onDelete, isDark, align = "left" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -1324,8 +1324,20 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
             style={{
               position: "absolute",
               top: "100%",
-              left: 0,
-              right: 0,
+              // Anchored on one edge, not both. `left: 0; right: 0` locked the
+              // panel to the trigger's width, and the trigger is half a narrow
+              // sidebar column -- so "Square Room" and "amr_lite" arrived as
+              // "Squar..." and "amr...". A dropdown panel is allowed to be wider
+              // than the control that opens it.
+              //
+              // Which edge is anchored decides which way it grows: the Robot
+              // column is on the left so it grows right, the World column is on
+              // the right so it grows left. Growing the wrong way just moves the
+              // clipping to the sidebar edge.
+              ...(align === "right" ? { right: 0, left: "auto" } : { left: 0, right: "auto" }),
+              minWidth: "100%",
+              width: "max-content",
+              maxWidth: "min(320px, 90vw)",
               background: isDark ? "#161c25" : "#ffffff",
               border: `1.5px solid ${accent}`,
               borderTop: "none",
@@ -1409,7 +1421,12 @@ function CustomDropdown({ label, value, onChange, options, onDelete, isDark }) {
                           </svg>
                         )}
                       </div>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {/* title so a name past the 320px cap is still readable
+                          on hover rather than only ever "Squar...". */}
+                      <span
+                        title={opt.label}
+                        style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      >
                         {opt.label}
                       </span>
                     </div>
@@ -1736,6 +1753,9 @@ const SimSelector = forwardRef(function SimSelector(
           value={selWorld}
           onChange={setSelWorld}
           onDelete={handleDeleteWorld}
+          // World sits in the right-hand column, so its panel grows leftward;
+          // anchored on the left it would widen off the edge of the sidebar.
+          align="right"
           options={worldList.map((w) => ({
             value: w.name,
             label: w.mapName || w.name.replace(/\.json$/i, ""),
