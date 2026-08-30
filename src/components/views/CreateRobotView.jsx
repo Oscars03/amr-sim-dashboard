@@ -28,32 +28,6 @@ function ParamRow({ label, unit = '', value, onChange, min, max, step = 0.01, in
   );
 }
 
-function SectionHeader({ label, isDark, icon, isOpen, onToggle }) {
-  return (
-    <div
-      onClick={onToggle}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '6px 0',
-        marginTop: '8px',
-        marginBottom: '6px',
-        cursor: 'pointer',
-        userSelect: 'none',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-        <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--color-accent)' }}>{icon} {label}</span>
-        <div style={{ flex: 1, height: '1px', background: isDark ? '#333' : '#e0e0e0' }} />
-      </div>
-      <span style={{ fontSize: '10px', color: 'var(--color-text-sub)', marginLeft: '8px', transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-        ▼
-      </span>
-    </div>
-  );
-}
-
 export default function CreateRobotView({ onCreated }) {
   const navigate = useNavigate();
   const { isDark } = useAppStore();

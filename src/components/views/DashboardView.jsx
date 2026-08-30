@@ -2828,7 +2828,7 @@ export default function DashboardView() {
     };
     window.addEventListener('keydown', handleGlobalKey);
     return () => window.removeEventListener('keydown', handleGlobalKey);
-  }, []);
+  }, [setShowShortcuts]);
 
   const paletteActions = useMemo(() => [
     {
@@ -2917,7 +2917,7 @@ export default function DashboardView() {
       shortcut: '?',
       run: () => setShowShortcuts(true),
     },
-  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, navigate]);
+  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, setShowShortcuts, navigate]);
 
   return (
     <>
