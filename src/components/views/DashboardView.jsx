@@ -1774,10 +1774,13 @@ const SimSelector = forwardRef(function SimSelector(
       {/* ── Spawn Pose Config ── */}
       <div
         style={{
-          padding: "0 0 14px",
+          // Pushed down and given room to breathe: the sidebar is tall and
+          // mostly empty below this, so the space is free and the block was
+          // crowding the dropdowns above it.
+          padding: "18px 0 14px",
           display: "flex",
           flexDirection: "column",
-          gap: "6px",
+          gap: "10px",
         }}
       >
         <div
@@ -1828,11 +1831,11 @@ const SimSelector = forwardRef(function SimSelector(
 
         <div
           style={{
-            // Three columns, not two. X and Y filled a row and left Yaw alone on
-            // a second one, so the panel was two rows tall to hold three short
-            // numbers. They are the same kind of field and belong on one line.
+            // One field per row. Squeezed onto a single line the three inputs
+            // were narrow enough that a two-decimal value crowded its unit, and
+            // the sidebar has vertical space going unused below this block.
             display: "grid",
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            gridTemplateColumns: "1fr",
             gap: "8px",
           }}
         >
