@@ -1,12 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export default function ShortcutModal({ isOpen, onClose, isDark }) {
+  const dialogRef = useRef(null);
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKey);
+    dialogRef.current?.focus();
     return () => window.removeEventListener('keydown', handleKey);
   }, [isOpen, onClose]);
 
@@ -59,6 +62,11 @@ export default function ShortcutModal({ isOpen, onClose, isDark }) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shortcut-modal-title"
+        tabIndex={-1}
         style={{
           width: '560px',
           maxWidth: '100%',
@@ -78,12 +86,13 @@ export default function ShortcutModal({ isOpen, onClose, isDark }) {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-ui)' }}>
+            <h2 id="shortcut-modal-title" style={{ margin: 0, fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-ui)' }}>
               Keyboard Shortcuts
             </h2>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             style={{
               background: 'transparent',
               border: 'none',
