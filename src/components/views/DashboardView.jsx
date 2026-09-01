@@ -57,42 +57,6 @@ function getFollowPan(pose, mapData, width, height, view) {
   };
 }
 
-function playShutterSound() {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const t0 = ctx.currentTime;
-
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = 'triangle';
-    osc1.frequency.setValueAtTime(140, t0);
-    osc1.frequency.exponentialRampToValueAtTime(40, t0 + 0.04);
-    gain1.gain.setValueAtTime(0.35, t0);
-    gain1.gain.exponentialRampToValueAtTime(0.01, t0 + 0.04);
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start(t0);
-    osc1.stop(t0 + 0.04);
-
-    const t1 = t0 + 0.06;
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'square';
-    osc2.frequency.setValueAtTime(90, t1);
-    osc2.frequency.exponentialRampToValueAtTime(30, t1 + 0.05);
-    gain2.gain.setValueAtTime(0.3, t1);
-    gain2.gain.exponentialRampToValueAtTime(0.01, t1 + 0.05);
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.start(t1);
-    osc2.stop(t1 + 0.05);
-  } catch {
-    /* ignore audio autoplay policies or unsupported */
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,7 +71,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   const [followRobot, setFollowRobot] = useState(false);
-  const [shutterKey, setShutterKey] = useState(0);
   // Robot pose actually drawn: eased toward the 20 Hz /odom sample once per
   // frame (easePose) so a 60 fps canvas doesn't step the robot at 20 Hz. World
   // space -- zoom/pan/resize don't disturb it -- and shared by the robot marker
@@ -152,28 +115,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     },
     toggleFollow: () => {
       setFollowRobot((f) => !f);
-    },
-    takeSnapshot: () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return false;
-      playShutterSound();
-      setShutterKey((k) => k + 1);
-      try {
-        const dataUrl = canvas.toDataURL("image/png");
-        const link = document.createElement("a");
-        const now = new Date();
-        const pad = (n) => String(n).padStart(2, "0");
-        const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-        link.download = `amr_sim_${stamp}.png`;
-        link.href = dataUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        return true;
-      } catch (err) {
-        console.error("Failed to take snapshot:", err);
-        return false;
-      }
     },
   }), []);
 
@@ -638,20 +579,6 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
           background: isDark ? "#d3d3d3" : "#222222",
         }}
       />
-      {/* Camera shutter flash effect */}
-      {shutterKey > 0 && (
-        <div
-          key={shutterKey}
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: "8px",
-            pointerEvents: "none",
-            zIndex: 10,
-            animation: "camera-shutter 350ms ease-out forwards",
-          }}
-        />
-      )}
     </div>
   );
 }));
@@ -2629,17 +2556,21 @@ export default function DashboardView() {
   const [showCollisionToast, setShowCollisionToast] = useState(false);
   const collisionToastTimerRef = useRef(null);
 
-  const [showSnapshotToast, setShowSnapshotToast] = useState(false);
-  const snapshotToastTimerRef = useRef(null);
+  const [showTriggerToast, setShowTriggerToast] = useState(false);
+  const triggerToastTimerRef = useRef(null);
 
-  const handleTakeSnapshot = useCallback(() => {
-    const success = worldMapRef.current?.takeSnapshot();
-    if (success) {
-      setShowSnapshotToast(true);
-      if (snapshotToastTimerRef.current) clearTimeout(snapshotToastTimerRef.current);
-      snapshotToastTimerRef.current = setTimeout(() => setShowSnapshotToast(false), 2500);
-    }
-  }, []);
+  const handleTriggerCamera = useCallback(() => {
+    if (!rosObj) return;
+    const triggerTopic = new ROSLIB.Topic({
+      ros: rosObj,
+      name: '/camera/trigger',
+      messageType: 'std_msgs/msg/Empty',
+    });
+    triggerTopic.publish({});
+    setShowTriggerToast(true);
+    if (triggerToastTimerRef.current) clearTimeout(triggerToastTimerRef.current);
+    triggerToastTimerRef.current = setTimeout(() => setShowTriggerToast(false), 2000);
+  }, [rosObj]);
 
   // Live robot state consumed by the canvas at frame rate. NOT React state:
   // /odom and /joint_states arrive at 20 Hz and must not reconcile the view.
@@ -3128,10 +3059,10 @@ export default function DashboardView() {
       run: () => navigate('/create-world'),
     },
     {
-      id: 'take-snapshot',
-      label: 'Take Camera Snapshot',
-      desc: 'Capture and save simulation canvas as PNG image',
-      run: () => handleTakeSnapshot(),
+      id: 'camera-trigger',
+      label: 'Trigger Camera (/camera/trigger)',
+      desc: 'Publish trigger signal to /camera/trigger topic',
+      run: () => handleTriggerCamera(),
     },
     {
       id: 'shortcuts',
@@ -3140,7 +3071,7 @@ export default function DashboardView() {
       shortcut: '?',
       run: () => setShowShortcuts(true),
     },
-  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, setShowShortcuts, navigate, handleTakeSnapshot]);
+  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, setShowShortcuts, navigate, handleTriggerCamera]);
 
   return (
     <>
@@ -3177,7 +3108,7 @@ export default function DashboardView() {
           </button>
         </div>
       )}
-      {showSnapshotToast && (
+      {showTriggerToast && (
         <div style={{
           position: 'fixed', top: '64px', left: '50%', transform: 'translateX(-50%)',
           zIndex: 9999, display: 'flex', alignItems: 'center', gap: '10px',
@@ -3189,8 +3120,8 @@ export default function DashboardView() {
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
           </svg>
-          <span>Snapshot saved</span>
-          <button onClick={() => setShowSnapshotToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
+          <span>Camera Trigger sent (/camera/trigger)</span>
+          <button onClick={() => setShowTriggerToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
@@ -3429,19 +3360,19 @@ export default function DashboardView() {
 
                 <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
 
-                {/* Camera Snapshot / Shutter */}
+                {/* Camera Trigger */}
                 <button
-                  onClick={handleTakeSnapshot}
-                  disabled={!mapData}
-                  title={mapData ? "Camera Snapshot: capture and save PNG image" : "Camera Snapshot: unavailable until a world is loaded"}
+                  onClick={handleTriggerCamera}
+                  disabled={!rosObj}
+                  title={rosObj ? "Trigger Camera: publish to /camera/trigger" : "Trigger Camera: connect to ROS 2 first"}
                   style={{
                     width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
                     borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
-                    color: !mapData ? 'var(--c-text-3)' : 'var(--c-text-1)',
-                    cursor: mapData ? 'pointer' : 'not-allowed',
-                    opacity: mapData ? 1 : 0.5,
+                    color: !rosObj ? 'var(--c-text-3)' : 'var(--c-text-1)',
+                    cursor: rosObj ? 'pointer' : 'not-allowed',
+                    opacity: rosObj ? 1 : 0.5,
                   }}
-                  onMouseEnter={e => { if (mapData) e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'; }}
+                  onMouseEnter={e => { if (rosObj) e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
