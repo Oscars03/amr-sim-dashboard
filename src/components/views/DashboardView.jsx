@@ -71,6 +71,7 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   const [followRobot, setFollowRobot] = useState(false);
+  const [shutterFlash, setShutterFlash] = useState(false);
   // Robot pose actually drawn: eased toward the 20 Hz /odom sample once per
   // frame (easePose) so a 60 fps canvas doesn't step the robot at 20 Hz. World
   // space -- zoom/pan/resize don't disturb it -- and shared by the robot marker
@@ -115,6 +116,28 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     },
     toggleFollow: () => {
       setFollowRobot((f) => !f);
+    },
+    takeSnapshot: () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return false;
+      setShutterFlash(true);
+      setTimeout(() => setShutterFlash(false), 50);
+      try {
+        const dataUrl = canvas.toDataURL("image/png");
+        const link = document.createElement("a");
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        link.download = `amr_sim_${stamp}.png`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return true;
+      } catch (err) {
+        console.error("Failed to take snapshot:", err);
+        return false;
+      }
     },
   }), []);
 
@@ -577,6 +600,19 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
           // matches the draw()'s bgFill -- if the bitmap is ever momentarily
           // cleared (canvas resize), this shows instead of the dark wrapper.
           background: isDark ? "#d3d3d3" : "#222222",
+        }}
+      />
+      {/* Camera shutter flash effect */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: "8px",
+          background: "#ffffff",
+          pointerEvents: "none",
+          opacity: shutterFlash ? 0.75 : 0,
+          transition: shutterFlash ? "none" : "opacity 0.25s ease-out",
+          zIndex: 5,
         }}
       />
     </div>
@@ -2556,6 +2592,18 @@ export default function DashboardView() {
   const [showCollisionToast, setShowCollisionToast] = useState(false);
   const collisionToastTimerRef = useRef(null);
 
+  const [showSnapshotToast, setShowSnapshotToast] = useState(false);
+  const snapshotToastTimerRef = useRef(null);
+
+  const handleTakeSnapshot = useCallback(() => {
+    const success = worldMapRef.current?.takeSnapshot();
+    if (success) {
+      setShowSnapshotToast(true);
+      if (snapshotToastTimerRef.current) clearTimeout(snapshotToastTimerRef.current);
+      snapshotToastTimerRef.current = setTimeout(() => setShowSnapshotToast(false), 2500);
+    }
+  }, []);
+
   // Live robot state consumed by the canvas at frame rate. NOT React state:
   // /odom and /joint_states arrive at 20 Hz and must not reconcile the view.
   const poseRef = useRef({ x: "-", y: "-", theta: "-" });
@@ -3043,13 +3091,19 @@ export default function DashboardView() {
       run: () => navigate('/create-world'),
     },
     {
+      id: 'take-snapshot',
+      label: 'Take Camera Snapshot',
+      desc: 'Capture and save simulation canvas as PNG image',
+      run: () => handleTakeSnapshot(),
+    },
+    {
       id: 'shortcuts',
       label: 'Keyboard Shortcuts Guide',
       desc: 'Show all keyboard shortcuts for simulator',
       shortcut: '?',
       run: () => setShowShortcuts(true),
     },
-  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, setShowShortcuts, navigate]);
+  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, setShowShortcuts, navigate, handleTakeSnapshot]);
 
   return (
     <>
@@ -3082,6 +3136,24 @@ export default function DashboardView() {
         }}>
           <span>Collision detected</span>
           <button onClick={() => setShowCollisionToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+      )}
+      {showSnapshotToast && (
+        <div style={{
+          position: 'fixed', top: '64px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', gap: '10px',
+          background: isDark ? '#0f2942' : '#e0f2fe', color: isDark ? '#38bdf8' : '#0369a1',
+          border: `1px solid ${isDark ? '#0284c7' : '#bae6fd'}`, padding: '8px 18px',
+          borderRadius: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '13px', fontWeight: 600,
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span>Snapshot saved</span>
+          <button onClick={() => setShowSnapshotToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
@@ -3316,6 +3388,29 @@ export default function DashboardView() {
                     <line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" />
                   </svg>
                   <span>Follow</span>
+                </button>
+
+                <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
+
+                {/* Camera Snapshot / Shutter */}
+                <button
+                  onClick={handleTakeSnapshot}
+                  disabled={!mapData}
+                  title={mapData ? "Camera Snapshot: capture and save PNG image" : "Camera Snapshot: unavailable until a world is loaded"}
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: !mapData ? 'var(--c-text-3)' : 'var(--c-text-1)',
+                    cursor: mapData ? 'pointer' : 'not-allowed',
+                    opacity: mapData ? 1 : 0.5,
+                  }}
+                  onMouseEnter={e => { if (mapData) e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
                 </button>
               </div>
 
