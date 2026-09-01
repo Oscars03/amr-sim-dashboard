@@ -2341,7 +2341,7 @@ function TopicMonitor({ ros, isDark }) {
             const n = t.name;
             if (n.startsWith('/cmd')) groups.cmd.push(t);
             else if (n.startsWith('/odom') || n.includes('odom')) groups.odom.push(t);
-            else if (n.startsWith('/scan') || n.startsWith('/laser') || n.startsWith('/imu') || n.startsWith('/sensor')) groups.sensor.push(t);
+            else if (n.startsWith('/scan') || n.startsWith('/laser') || n.startsWith('/imu') || n.startsWith('/sensor') || n.startsWith('/camera')) groups.sensor.push(t);
             else if (n.startsWith('/map') || n.startsWith('/cost')) groups.map.push(t);
             else groups.other.push(t);
           });

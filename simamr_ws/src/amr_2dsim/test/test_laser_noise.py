@@ -19,6 +19,11 @@ def node():
     n.pose = {'x': 0.0, 'y': 0.0, 'theta': 0.0}
     n.laser_offset_x = n.laser_offset_y = n.laser_offset_yaw = 0.0
     n.laser_range_max = 12.0
+    n.laser_num_rays = 360
+    n.laser_angle_min = 0.0
+    n._laser_angle_increment = (2.0 * np.pi) / 360
+    n._laser_angles = np.arange(360, dtype=np.float64) * n._laser_angle_increment
+    n._scan_intensities = [1.0] * 360
     yield n
     n.destroy_node()
     rclpy.shutdown()

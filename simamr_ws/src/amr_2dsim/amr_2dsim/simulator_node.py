@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Twist, TransformStamped, PoseWithCovarianceStamped
-from sensor_msgs.msg import LaserScan, Imu, JointState
+from sensor_msgs.msg import LaserScan, Imu, JointState, Image
 from std_msgs.msg import String, Bool, Float64, Empty
 from std_srvs.srv import Trigger
 from rcl_interfaces.msg import SetParametersResult
@@ -500,7 +500,15 @@ class AmrSimulator(Node):
         self.wheel_vel_pub = self.create_publisher(Twist, '/wheel/vel', 10)
         self.imu_pub = self.create_publisher(Imu, '/imu', 10)
         self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
+        self.camera_pub = self.create_publisher(Image, '/camera/image_raw', 10)
         self.current_steering_angle = 0.0
+
+        # Camera simulation configuration (320x240 @ 10 Hz)
+        self._camera_width = 320
+        self._camera_height = 240
+        self._camera_fov_rad = math.radians(70.0)
+        self._camera_divisor = 2  # 10 Hz on 0.05s physics timer
+        self._camera_tick = 0
 
         self.effect_pub = self.create_publisher(Bool, '/effect_active', 10)
         self.collision_pub = self.create_publisher(Bool, '/collision', 10)
@@ -573,7 +581,8 @@ class AmrSimulator(Node):
         self._reset_robot_state()
 
     def camera_shutter_callback(self, msg):
-        self.get_logger().info("Camera shutter received on /camera/shutter")
+        self.get_logger().info("Camera shutter received on /camera/shutter -> publishing /camera/image_raw")
+        self.publish_camera()
 
     def initial_pose_topic_callback(self, msg):
         px = msg.pose.pose.position.x
@@ -767,11 +776,17 @@ class AmrSimulator(Node):
         self.stamp = self.get_clock().now().to_msg()
 
         self.publish_tf()
-        # Scan at the sensor's own rate, not the physics rate.
+        # Scan and camera at sensor rates
         self._scan_tick += 1
         if self._scan_tick >= self._scan_divisor:
             self._scan_tick = 0
             self.publish_scan()
+
+        self._camera_tick += 1
+        if self._camera_tick >= self._camera_divisor:
+            self._camera_tick = 0
+            self.publish_camera()
+
         self.publish_odom()
         self.publish_collision(collided)
 
@@ -898,6 +913,82 @@ class AmrSimulator(Node):
         scan.ranges = distances.tolist()
         scan.intensities = self._scan_intensities
         self.scan_pub.publish(scan)
+
+    def _render_camera_image(self):
+        w = self._camera_width
+        h = self._camera_height
+        fov = self._camera_fov_rad
+        half_fov = fov / 2.0
+
+        # Angles for each vertical column in the camera FOV
+        rel_angles = np.linspace(-half_fov, half_fov, w, dtype=np.float64)
+        angles = self.pose['theta'] + rel_angles
+        max_r = 25.0
+
+        dx = max_r * np.cos(angles)
+        dy = max_r * np.sin(angles)
+
+        dwy = self.wall_y4 - self.wall_y3
+        dwx = self.wall_x4 - self.wall_x3
+        den = dx[:, None] * dwy - dy[:, None] * dwx
+
+        wx3_lx = self.wall_x3 - self.pose['x']
+        wy3_ly = self.wall_y3 - self.pose['y']
+
+        safe_den = np.where(np.abs(den) > 1e-9, den, 1.0)
+        t_all = np.where(np.abs(den) > 1e-9, (wx3_lx * dwy - wy3_ly * dwx) / safe_den, np.inf)
+        u_all = np.where(np.abs(den) > 1e-9, (wx3_lx * dy[:, None] - wy3_ly * dx[:, None]) / safe_den, np.inf)
+
+        hit = (t_all >= 0.0) & (t_all <= 1.0) & (u_all >= 0.0) & (u_all <= 1.0)
+        t_all[~hit] = np.inf
+
+        t_min = np.min(t_all, axis=1)
+        dist = np.where(np.isinf(t_min), max_r, t_min * max_r)
+
+        # Correct perspective fisheye distortion
+        proj_dist = dist * np.cos(rel_angles)
+        proj_dist = np.maximum(proj_dist, 0.1)
+
+        # Base image buffer: (H, W, 3) RGB
+        img = np.empty((h, w, 3), dtype=np.uint8)
+        # Ceiling: dark slate
+        img[:h // 2, :, :] = [45, 55, 72]
+        # Floor: light surface
+        img[h // 2:, :, :] = [180, 185, 195]
+
+        # Calculate projected wall height per column
+        wall_h = np.clip((h * 1.2 / proj_dist).astype(int), 0, h)
+        y_top = np.clip((h - wall_h) // 2, 0, h)
+        y_bot = np.clip(y_top + wall_h, 0, h)
+
+        # Distance-based lighting intensity
+        intensity = np.clip(240 - proj_dist * 10, 50, 235).astype(np.uint8)
+
+        for col in range(w):
+            yt = y_top[col]
+            yb = y_bot[col]
+            if yb > yt:
+                inten = intensity[col]
+                col_mod = 0.9 if (col % 20 == 0) else 1.0
+                r = int(inten * 0.75 * col_mod)
+                g = int(inten * 0.85 * col_mod)
+                b = int(inten * 0.95 * col_mod)
+                img[yt:yb, col] = [r, g, b]
+
+        return img.tobytes()
+
+    def publish_camera(self):
+        img_bytes = self._render_camera_image()
+        msg = Image()
+        msg.header.stamp = self.stamp
+        msg.header.frame_id = 'camera_link'
+        msg.height = self._camera_height
+        msg.width = self._camera_width
+        msg.encoding = 'rgb8'
+        msg.is_bigendian = 0
+        msg.step = self._camera_width * 3
+        msg.data = img_bytes
+        self.camera_pub.publish(msg)
 
     def publish_odom(self):
         odom = Odometry()
