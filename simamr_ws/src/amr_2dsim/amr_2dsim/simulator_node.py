@@ -920,8 +920,10 @@ class AmrSimulator(Node):
         fov = self._camera_fov_rad
         half_fov = fov / 2.0
 
-        # Angles for each vertical column in the camera FOV
-        rel_angles = np.linspace(-half_fov, half_fov, w, dtype=np.float64)
+        # Angles for each vertical column in the camera FOV:
+        # col 0 (image left) corresponds to +half_fov (robot left),
+        # col W-1 (image right) corresponds to -half_fov (robot right)
+        rel_angles = np.linspace(half_fov, -half_fov, w, dtype=np.float64)
         angles = self.pose['theta'] + rel_angles
         max_r = 25.0
 
