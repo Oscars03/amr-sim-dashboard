@@ -507,7 +507,7 @@ class AmrSimulator(Node):
         self.actuate_srv = self.create_service(Trigger, '/actuate_effect', self.actuate_callback)
         self.reset_pose_srv = self.create_service(Trigger, '/reset_pose', self.reset_pose_callback)
         self.reset_pose_sub = self.create_subscription(Empty, '/reset_pose', self.reset_pose_topic_callback, 10)
-        self.camera_trigger_sub = self.create_subscription(Empty, '/camera/trigger', self.camera_trigger_callback, 10)
+        self.camera_shutter_sub = self.create_subscription(Empty, '/camera/shutter', self.camera_shutter_callback, 10)
         self.initial_pose_sub = self.create_subscription(PoseWithCovarianceStamped, '/initialpose', self.initial_pose_topic_callback, 10)
         self.effect_timer = None
 
@@ -572,8 +572,8 @@ class AmrSimulator(Node):
     def reset_pose_topic_callback(self, msg):
         self._reset_robot_state()
 
-    def camera_trigger_callback(self, msg):
-        self.get_logger().info("Camera trigger received on /camera/trigger")
+    def camera_shutter_callback(self, msg):
+        self.get_logger().info("Camera shutter received on /camera/shutter")
 
     def initial_pose_topic_callback(self, msg):
         px = msg.pose.pose.position.x
