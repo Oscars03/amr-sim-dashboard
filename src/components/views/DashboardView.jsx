@@ -57,6 +57,42 @@ function getFollowPan(pose, mapData, width, height, view) {
   };
 }
 
+function playShutterSound() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const t0 = ctx.currentTime;
+
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'triangle';
+    osc1.frequency.setValueAtTime(140, t0);
+    osc1.frequency.exponentialRampToValueAtTime(40, t0 + 0.04);
+    gain1.gain.setValueAtTime(0.35, t0);
+    gain1.gain.exponentialRampToValueAtTime(0.01, t0 + 0.04);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(t0);
+    osc1.stop(t0 + 0.04);
+
+    const t1 = t0 + 0.06;
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'square';
+    osc2.frequency.setValueAtTime(90, t1);
+    osc2.frequency.exponentialRampToValueAtTime(30, t1 + 0.05);
+    gain2.gain.setValueAtTime(0.3, t1);
+    gain2.gain.exponentialRampToValueAtTime(0.01, t1 + 0.05);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(t1);
+    osc2.stop(t1 + 0.05);
+  } catch {
+    /* ignore audio autoplay policies or unsupported */
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // WorldMap Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,7 +107,7 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
 
   const [view, setView] = useState({ zoom: 1, rotation: 0, panX: 0, panY: 0 });
   const [followRobot, setFollowRobot] = useState(false);
-  const [shutterFlash, setShutterFlash] = useState(false);
+  const [shutterKey, setShutterKey] = useState(0);
   // Robot pose actually drawn: eased toward the 20 Hz /odom sample once per
   // frame (easePose) so a 60 fps canvas doesn't step the robot at 20 Hz. World
   // space -- zoom/pan/resize don't disturb it -- and shared by the robot marker
@@ -120,8 +156,8 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
     takeSnapshot: () => {
       const canvas = canvasRef.current;
       if (!canvas) return false;
-      setShutterFlash(true);
-      setTimeout(() => setShutterFlash(false), 50);
+      playShutterSound();
+      setShutterKey((k) => k + 1);
       try {
         const dataUrl = canvas.toDataURL("image/png");
         const link = document.createElement("a");
@@ -603,18 +639,19 @@ const WorldMap = React.memo(forwardRef(function WorldMap({ mapData, poseRef, ste
         }}
       />
       {/* Camera shutter flash effect */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          borderRadius: "8px",
-          background: "#ffffff",
-          pointerEvents: "none",
-          opacity: shutterFlash ? 0.75 : 0,
-          transition: shutterFlash ? "none" : "opacity 0.25s ease-out",
-          zIndex: 5,
-        }}
-      />
+      {shutterKey > 0 && (
+        <div
+          key={shutterKey}
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "8px",
+            pointerEvents: "none",
+            zIndex: 10,
+            animation: "camera-shutter 350ms ease-out forwards",
+          }}
+        />
+      )}
     </div>
   );
 }));
