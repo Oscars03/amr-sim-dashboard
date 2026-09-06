@@ -33,6 +33,7 @@ const IDLE_MOVE_EPS_M = 0.02;   // metres
 const IDLE_MOVE_EPS_DEG = 1.0;  // degrees
 
 import { parseURDF, drawRobot, normaliseMap, buildTransform, easePose } from '../../utils/robot';
+import { twistFromKeys } from '../../utils/teleop';
 import { makeFrameGate } from '../../utils/frameGate';
 
 // Pan that reproduces the current follow view, for handing over when follow is
@@ -728,35 +729,14 @@ function KeyboardController({ ros, isDark, isShort = true }) {
     const loop = setInterval(() => {
       if (!cmdPubRef.current) return;
 
-      let lx = 0, ly = 0, az = 0;
-      let moving = false;
-
       // Terminal mode is "commanding zero", not "publishing nothing": bailing
       // out here left the last twist latched, so switching to Terminal while
       // the robot was driving kept it driving (forever, with the watchdog off).
       // Falling through sends the 10 stop messages below, then goes quiet so
       // it never fights a teleop node running in a shell.
-      if (webControl) {
-        // Non-Holonomic
-        if (keys["u"]) { lx = speed; az = turnSpeed; moving = true; }
-        if (keys["i"]) { lx = speed; az = 0; moving = true; }
-        if (keys["o"]) { lx = speed; az = -turnSpeed; moving = true; }
-        if (keys["j"]) { lx = 0; az = turnSpeed; moving = true; }
-        if (keys["l"]) { lx = 0; az = -turnSpeed; moving = true; }
-        if (keys["m"]) { lx = -speed; az = -turnSpeed; moving = true; }
-        if (keys[","]) { lx = -speed; az = 0; moving = true; }
-        if (keys["."]) { lx = -speed; az = turnSpeed; moving = true; }
-
-        // Holonomic
-        if (keys["U"]) { lx = speed; ly = speed; moving = true; }
-        if (keys["I"]) { lx = speed; ly = 0; moving = true; }
-        if (keys["O"]) { lx = speed; ly = -speed; moving = true; }
-        if (keys["J"]) { lx = 0; ly = speed; moving = true; }
-        if (keys["L"]) { lx = 0; ly = -speed; moving = true; }
-        if (keys["M"]) { lx = -speed; ly = speed; moving = true; }
-        if (keys["<"]) { lx = -speed; ly = 0; moving = true; }
-        if (keys[">"]) { lx = -speed; ly = -speed; moving = true; }
-      }
+      const { lx, ly, az, moving } = webControl
+        ? twistFromKeys(keys, speed, turnSpeed)
+        : { lx: 0, ly: 0, az: 0, moving: false };
 
       if (moving) {
         zeroCount = 0;
@@ -1004,6 +984,13 @@ function KeyboardController({ ros, isDark, isShort = true }) {
     );
   };
 
+  // Same source as the publisher, so the numbers can never disagree with
+  // what the robot was actually told to do. Y only matters in holonomic
+  // mode -- no non-holonomic key can produce a sideways velocity.
+  const liveTwist = webControl
+    ? twistFromKeys(keys, speed, turnSpeed)
+    : { lx: 0, ly: 0, az: 0, moving: false };
+
   const triggerActuator = () => {
     if (!ros) return;
     const svc = new ROSLIB.Service({
@@ -1215,10 +1202,15 @@ function KeyboardController({ ros, isDark, isShort = true }) {
         color: 'var(--c-text-3)',
       }}>
         <span>X <span style={{ color: 'var(--c-text-1)' }}>
-          {keys["i"] && webControl ? speed.toFixed(2) : keys[","] && webControl ? (-speed).toFixed(2) : "0.00"}
+          {liveTwist.lx.toFixed(2)}
         </span></span>
+        {isHolonomic && (
+          <span>Y <span style={{ color: 'var(--c-text-1)' }}>
+            {liveTwist.ly.toFixed(2)}
+          </span></span>
+        )}
         <span>Z <span style={{ color: 'var(--c-text-1)' }}>
-          {keys["j"] && webControl ? turnSpeed.toFixed(2) : keys["l"] && webControl ? (-turnSpeed).toFixed(2) : "0.00"}
+          {liveTwist.az.toFixed(2)}
         </span></span>
       </div>
 

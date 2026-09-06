@@ -9,6 +9,10 @@ import './CreateWorldView.css';
 const HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : 'localhost';
 const SAVE_MAP_URL = `http://${HOST}:3001/save_map`;
 
+// Undo depth. 100 full snapshots of a large imported map is a few MB at most,
+// and far more history than anyone steps back through.
+const HISTORY_LIMIT = 100;
+
 // Transform helper now accounts for zoom and pan
 function buildTransformEditor(mapInfo, canvasW, canvasH, zoom, pan) {
   const { origin_x, origin_y, width: mw, height: mh } = mapInfo;
@@ -176,8 +180,15 @@ export default function CreateWorldView() {
     const newState = { walls: newWalls, obstacles: newObstacles };
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(newState);
-    setHistory(newHistory);
-    setHistoryIndex(newHistory.length - 1);
+    // Cap the undo stack. Each entry holds a full copy of every wall and
+    // obstacle, so on an imported map (F4_2F is 472 walls) an afternoon of
+    // editing grew this without bound -- the oldest states are also the ones
+    // nobody undoes back to.
+    const trimmed = newHistory.length > HISTORY_LIMIT
+      ? newHistory.slice(newHistory.length - HISTORY_LIMIT)
+      : newHistory;
+    setHistory(trimmed);
+    setHistoryIndex(trimmed.length - 1);
   }, [history, historyIndex]);
 
   /**
