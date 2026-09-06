@@ -418,13 +418,22 @@ function launchRos(shareDir, urdfPath, worldPath, spawnPose = { x: 0, y: 0, yaw:
 // Routes
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Express hands back an array for a repeated query parameter (?file=a&file=b),
+// and a JSON body can carry any type at all. Every caller below then reached
+// straight for .endsWith/.includes, which throws on a non-string and surfaced
+// as an unhandled 500 instead of a 400.
+function asFileName(value, fallback) {
+  if (value === undefined || value === null) return fallback;
+  return typeof value === 'string' ? value : null;
+}
+
 // GET /map
 app.get('/map', (req, res) => {
   const shareDir = getShareDir();
   if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
 
-  const fileName = req.query.file ?? currentState.world;
-  if (!fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..'))
+  const fileName = asFileName(req.query.file, currentState.world);
+  if (!fileName || !fileName.endsWith('.json') || fileName.includes('/') || fileName.includes('..'))
     return res.status(400).json({ error: 'Invalid file name' });
 
   const worldFiles = getWorldFiles(shareDir);
@@ -473,8 +482,9 @@ app.get('/urdf', (req, res) => {
   const shareDir = getShareDir();
   if (!shareDir) return res.status(500).json({ error: 'Cannot resolve ROS package' });
 
-  const fileName = req.query.file ?? currentState.robot;
+  const fileName = asFileName(req.query.file, currentState.robot);
   if (
+    !fileName ||
     (!fileName.endsWith('.urdf') && !fileName.endsWith('.xacro')) ||
     fileName.includes('/') || fileName.includes('..')
   ) return res.status(400).json({ error: 'Invalid file name' });
@@ -900,6 +910,9 @@ app.post('/switch', async (req, res) => {
   if (!robot || !world)
     return res.status(400).json({ error: 'robot and world are required' });
 
+  if (typeof robot !== 'string' || typeof world !== 'string')
+    return res.status(400).json({ error: 'robot and world must be strings' });
+
   if (robot.includes('/') || robot.includes('..') ||
     world.includes('/') || world.includes('..'))
     return res.status(400).json({ error: 'Invalid file name' });
@@ -975,6 +988,9 @@ app.post('/save_map', (req, res) => {
 
   if (!filename || !data)
     return res.status(400).json({ ok: false, message: 'Missing filename or map data.' });
+
+  if (typeof filename !== 'string')
+    return res.status(400).json({ ok: false, message: 'filename must be a string' });
 
   const safeName = path.basename(filename);
   if (!safeName.endsWith('.json'))
