@@ -1046,7 +1046,12 @@ function KeyboardController({ ros, isDark, isShort = true }) {
       }}>
         {/* Watchdog toggle */}
         <div
-          title={watchdogEnabled ? 'Watchdog ON — click to disable' : 'Watchdog OFF — click to enable'}
+          // The watchdog also decides how the keys behave, which is not
+          // obvious from the label: with it off, a key latches until you
+          // press k (the teleop_twist_keyboard convention).
+          title={watchdogEnabled
+            ? 'Watchdog ON — hold to drive, release to stop. Click to disable.'
+            : 'Watchdog OFF — a key latches until you press k. Click to enable hold-to-drive.'}
           onClick={() => toggleWatchdog(!watchdogEnabled)}
           style={{
             display: 'flex', alignItems: 'center', gap: '6px',
