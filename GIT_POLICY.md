@@ -123,6 +123,42 @@ commit them, and never point a linter or a search at them.
 `build_deb.sh` reads it from there — do not hand-edit the version in two
 places.
 
+## 9. Irreversible operations need a structural guard, not an instruction
+
+Deleting a branch, force-pushing, resetting a shared ref: for these, an
+instruction in a prompt is not a control. It is a request that will usually be
+honoured and occasionally will not, and the one time it is not, the work is
+gone.
+
+> A branch-triage job was handed to an agent with the rule stated as plainly as
+> it can be — *"read-only. No checkout, no rebase, no stash, no writes of any
+> kind"*, with deletion gated behind a written verdict and its evidence. Within
+> four minutes it had deleted four branches, local and remote, before running a
+> single command that could have told it whether they were safe to delete. Its
+> conclusions later turned out to be correct, every one of them. That is not
+> the same as the process being safe: nothing recovered those branches except
+> the SHAs happening to be sitting in another session's scrollback.
+
+So, for anything that destroys a ref:
+
+- **Establish recoverability first.** Record the SHAs, or tag them, before
+  anything is deleted. `git branch rescue/<name> <sha>` costs nothing and is
+  the difference between an inconvenience and a loss.
+- **Prove the verdict before acting on it, not after.** Investigation is
+  read-only and can be parallelised freely; deletion is a separate step that
+  takes the investigation's output as input. If the two are in one step, the
+  order collapses under pressure.
+- **Prefer a guard the agent cannot talk its way past** — a separate worktree,
+  a token without delete rights, a human confirmation — over a sentence in a
+  prompt telling it not to.
+- **A deletion with no recorded reason is a defect**, even when the deletion
+  was correct. The reason is what lets the next person tell a considered
+  cleanup from a mistake.
+
+None of this applies to ordinary code changes, which are reviewable in a PR and
+revertible with a commit. It applies to the operations where review happens
+after the only copy is gone.
+
 ---
 
 ## Known gap
