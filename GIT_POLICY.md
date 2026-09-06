@@ -61,7 +61,10 @@ changed is telling you something `git show` already would.
 - **State what you could not verify.** A PR that says "the Create World canvas
   was not confirmed visually" is more useful than one that quietly implies
   everything was checked.
-- **CI must be green before merge.** The `lint-and-test` job runs on every PR.
+- **CI must be green before merge.** The `lint-and-test` job runs on every PR
+  and both halves block: `npm run lint` must report zero findings and
+  `npm test` must pass. Lint was advisory until the backlog was cleared in
+  #26; it is not any more.
 - **Merge with a merge commit** (`gh pr merge <n> --merge`), not squash. The
   whole history is `Merge pull request #NN from ...`; squashing a multi-commit
   PR also collapses distinctions worth keeping, such as a behaviour fix and the
@@ -158,13 +161,3 @@ So, for anything that destroys a ref:
 None of this applies to ordinary code changes, which are reviewable in a PR and
 revertible with a commit. It applies to the operations where review happens
 after the only copy is gone.
-
----
-
-## Known gap
-
-`.github/workflows/ci.yml` still runs `npm run lint` with
-`continue-on-error: true`, carrying a comment about "pre-existing lint debt,
-mostly in DashboardView.jsx". That debt was cleared in #26 and the tree lints
-clean. The flag can be dropped so lint failures actually block a PR — worth
-doing on its own, since it changes what CI rejects.
