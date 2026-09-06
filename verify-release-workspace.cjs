@@ -13,9 +13,15 @@ const path = require('path');
 
 const WS_INSTALL = path.join(__dirname, 'simamr_ws', 'install');
 const SETUP_BASH = path.join(WS_INSTALL, 'setup.bash');
-const LAUNCH_FILE = path.join(
+const LAUNCH_FILE_MERGED = path.join(
+  WS_INSTALL, 'share', 'amr_2dsim', 'launch', 'sim_bringup.launch.py'
+);
+const LAUNCH_FILE_ISOLATED = path.join(
   WS_INSTALL, 'amr_2dsim', 'share', 'amr_2dsim', 'launch', 'sim_bringup.launch.py'
 );
+const LAUNCH_FILE = fs.existsSync(LAUNCH_FILE_MERGED)
+  ? LAUNCH_FILE_MERGED
+  : LAUNCH_FILE_ISOLATED;
 
 function fail(msg) {
   console.error(`\n❌ ${msg}`);

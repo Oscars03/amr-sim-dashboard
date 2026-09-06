@@ -2341,7 +2341,7 @@ function TopicMonitor({ ros, isDark }) {
             const n = t.name;
             if (n.startsWith('/cmd')) groups.cmd.push(t);
             else if (n.startsWith('/odom') || n.includes('odom')) groups.odom.push(t);
-            else if (n.startsWith('/scan') || n.startsWith('/laser') || n.startsWith('/imu') || n.startsWith('/sensor')) groups.sensor.push(t);
+            else if (n.startsWith('/scan') || n.startsWith('/laser') || n.startsWith('/imu') || n.startsWith('/sensor') || n.startsWith('/camera')) groups.sensor.push(t);
             else if (n.startsWith('/map') || n.startsWith('/cost')) groups.map.push(t);
             else groups.other.push(t);
           });
@@ -2555,6 +2555,22 @@ export default function DashboardView() {
   const collisionActiveRef = useRef(false);
   const [showCollisionToast, setShowCollisionToast] = useState(false);
   const collisionToastTimerRef = useRef(null);
+
+  const [showTriggerToast, setShowTriggerToast] = useState(false);
+  const triggerToastTimerRef = useRef(null);
+
+  const handleTriggerCamera = useCallback(() => {
+    if (!rosObj) return;
+    const triggerTopic = new ROSLIB.Topic({
+      ros: rosObj,
+      name: '/camera/shutter',
+      messageType: 'std_msgs/msg/Empty',
+    });
+    triggerTopic.publish({});
+    setShowTriggerToast(true);
+    if (triggerToastTimerRef.current) clearTimeout(triggerToastTimerRef.current);
+    triggerToastTimerRef.current = setTimeout(() => setShowTriggerToast(false), 2000);
+  }, [rosObj]);
 
   // Live robot state consumed by the canvas at frame rate. NOT React state:
   // /odom and /joint_states arrive at 20 Hz and must not reconcile the view.
@@ -3043,13 +3059,19 @@ export default function DashboardView() {
       run: () => navigate('/create-world'),
     },
     {
+      id: 'camera-shutter',
+      label: 'Trigger Camera Shutter (/camera/shutter)',
+      desc: 'Publish trigger signal to /camera/shutter topic',
+      run: () => handleTriggerCamera(),
+    },
+    {
       id: 'shortcuts',
       label: 'Keyboard Shortcuts Guide',
       desc: 'Show all keyboard shortcuts for simulator',
       shortcut: '?',
       run: () => setShowShortcuts(true),
     },
-  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, setShowShortcuts, navigate]);
+  ], [rosObj, inspOpen, isDark, setIsDark, setShowEnvModal, setShowShortcuts, navigate, handleTriggerCamera]);
 
   return (
     <>
@@ -3082,6 +3104,24 @@ export default function DashboardView() {
         }}>
           <span>Collision detected</span>
           <button onClick={() => setShowCollisionToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+      )}
+      {showTriggerToast && (
+        <div style={{
+          position: 'fixed', top: '64px', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, display: 'flex', alignItems: 'center', gap: '10px',
+          background: isDark ? '#0f2942' : '#e0f2fe', color: isDark ? '#38bdf8' : '#0369a1',
+          border: `1px solid ${isDark ? '#0284c7' : '#bae6fd'}`, padding: '8px 18px',
+          borderRadius: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '13px', fontWeight: 600,
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span>Camera Shutter sent (/camera/shutter)</span>
+          <button onClick={() => setShowTriggerToast(false)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
@@ -3316,6 +3356,29 @@ export default function DashboardView() {
                     <line x1="12" y1="6" x2="12" y2="2" /><line x1="12" y1="22" x2="12" y2="18" />
                   </svg>
                   <span>Follow</span>
+                </button>
+
+                <div style={{ width: 1, height: 16, background: 'var(--c-border)', margin: '0 2px' }} />
+
+                {/* Camera Shutter */}
+                <button
+                  onClick={handleTriggerCamera}
+                  disabled={!rosObj}
+                  title={rosObj ? "Camera Shutter: publish to /camera/shutter" : "Camera Shutter: connect to ROS 2 first"}
+                  style={{
+                    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--r-md)', border: 'none', background: 'transparent',
+                    color: !rosObj ? 'var(--c-text-3)' : 'var(--c-text-1)',
+                    cursor: rosObj ? 'pointer' : 'not-allowed',
+                    opacity: rosObj ? 1 : 0.5,
+                  }}
+                  onMouseEnter={e => { if (rosObj) e.currentTarget.style.background = isDark ? '#1e2633' : '#f1f5f9'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
                 </button>
               </div>
 
