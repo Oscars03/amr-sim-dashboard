@@ -801,24 +801,40 @@ app.delete('/api/worlds/:fileName', (req, res) => {
 
 
 // GET /environment-check
+// ponytail: ros2 pkg prefix is the only reliable way to check whether a
+// package is visible to the running ROS 2 environment (apt, workspace overlay,
+// or custom install prefix). The old fs.existsSync('/opt/ros/.../share/pkg')
+// missed workspace-installed packages entirely. We fall back to the filesystem
+// check when the ros2 CLI itself isn't available (no ROS 2 at all).
+function _hasRosPkg(pkg, distro) {
+  const rosSetup = `/opt/ros/${distro}/setup.bash`;
+  try {
+    // Source the ROS 2 environment first so ros2 CLI sees all overlays,
+    // then ask it whether the package is actually resolvable.
+    execSync(
+      `bash -c "source '${rosSetup}' 2>/dev/null; ${WS_SETUP_BASH && fs.existsSync(WS_SETUP_BASH) ? `source '${WS_SETUP_BASH}' 2>/dev/null;` : ''} ros2 pkg prefix ${pkg}"`,
+      { stdio: 'pipe', timeout: 5000 },
+    );
+    return true;
+  } catch {
+    // ros2 CLI unavailable or package not found — fall back to filesystem
+    return fs.existsSync(`/opt/ros/${distro}/share/${pkg}`);
+  }
+}
+
 function checkEnvironment() {
   const distro = rosDistro || 'jazzy';
   const rosSetup = `/opt/ros/${distro}/setup.bash`;
   const rosBin = `/opt/ros/${distro}/bin/ros2`;
   const hasRos2 = fs.existsSync(rosSetup) && fs.existsSync(rosBin);
 
-  const rosbridgeShare = `/opt/ros/${distro}/share/rosbridge_server`;
-  const hasRosbridge = fs.existsSync(rosbridgeShare);
-
-  const rspShare = `/opt/ros/${distro}/share/robot_state_publisher`;
-  const hasRobotStatePublisher = fs.existsSync(rspShare);
-
+  const hasRosbridge = _hasRosPkg('rosbridge_server', distro);
+  const hasRobotStatePublisher = _hasRosPkg('robot_state_publisher', distro);
   // rosapi backs ros.getTopics()/getServices() in the dashboard (Topic Monitor).
   // It's a separate package from rosbridge_server -- rosbridge-suite normally
   // pulls it in, but a partial install (or a stale bundled workspace) can leave
   // it missing while rosbridge itself still connects fine.
-  const rosapiShare = `/opt/ros/${distro}/share/rosapi`;
-  const hasRosApi = fs.existsSync(rosapiShare);
+  const hasRosApi = _hasRosPkg('rosapi', distro);
 
   const hasWsSetup = fs.existsSync(WS_SETUP_BASH);
   const shareDir = getShareDir();
@@ -853,19 +869,16 @@ function checkEnvironment() {
       },
       rosbridge: {
         name: 'ROS Bridge Suite',
-        path: rosbridgeShare,
         ready: hasRosbridge,
         detail: hasRosbridge ? 'WebSocket bridge server ready (port 9090)' : `Package ros-${distro}-rosbridge-suite missing`,
       },
       robotStatePublisher: {
         name: 'Robot State Publisher',
-        path: rspShare,
         ready: hasRobotStatePublisher,
         detail: hasRobotStatePublisher ? 'Robot state & TF publisher ready' : `Package ros-${distro}-robot-state-publisher missing`,
       },
       rosApi: {
         name: 'ROS API',
-        path: rosapiShare,
         ready: hasRosApi,
         detail: hasRosApi ? 'Topic/service introspection ready (Topic Monitor)' : `Package ros-${distro}-rosapi missing`,
       },
