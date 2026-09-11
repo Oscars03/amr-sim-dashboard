@@ -67,6 +67,11 @@ def generate_launch_description():
         print(f'  📍 Spawn : ({init_x:.2f}, {init_y:.2f}, yaw={init_yaw:.3f} rad)')
         print(f'{"="*55}\n')
 
+        if not os.path.exists(urdf_path):
+            raise FileNotFoundError(f"Robot URDF file not found: {urdf_path}")
+        if not os.path.exists(world_path):
+            raise FileNotFoundError(f"Simulation world file not found: {world_path}")
+
         with open(urdf_path, 'r') as f:
             robot_desc = f.read()
 

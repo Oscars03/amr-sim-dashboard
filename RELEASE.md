@@ -46,9 +46,8 @@ baked into the package.
 
 ```bash
 cd simamr_ws
-source /opt/ros/jazzy/setup.bash
 rm -rf build install log
-colcon build --merge-install
+env -u COLCON_PREFIX_PATH -u AMENT_PREFIX_PATH bash -c "source /opt/ros/jazzy/setup.bash && colcon build --merge-install"
 cd ..
 ```
 
