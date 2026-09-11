@@ -27,8 +27,8 @@ function fail(msg) {
   console.error(`\n❌ ${msg}`);
   console.error('\n   Fix:');
   console.error('     cd simamr_ws');
-  console.error('     source /opt/ros/jazzy/setup.bash');
-  console.error('     rm -rf build install log && colcon build --merge-install');
+  console.error('     rm -rf build install log');
+  console.error('     env -u COLCON_PREFIX_PATH -u AMENT_PREFIX_PATH bash -c "source /opt/ros/jazzy/setup.bash && colcon build --merge-install"');
   console.error('     cd ..');
   console.error('\n   See RELEASE.md, "Cutting a release" step 2.\n');
   process.exit(1);
@@ -38,6 +38,15 @@ if (!fs.existsSync(SETUP_BASH)) {
   fail(
     'simamr_ws/install/setup.bash not found -- the packaged AppImage/.deb ' +
     'would ship with no bundled ROS 2 workspace at all.'
+  );
+}
+
+const setupContent = fs.readFileSync(SETUP_BASH, 'utf8');
+if (setupContent.includes('/home/')) {
+  fail(
+    'simamr_ws/install/setup.bash contains hardcoded user paths (/home/...)! ' +
+    'This happens when colcon build inherits other sourced workspaces from the shell. ' +
+    'Rebuild simamr_ws in a clean environment before creating releases.'
   );
 }
 

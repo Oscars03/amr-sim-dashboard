@@ -53,7 +53,7 @@ Maintainer: Phuthanet Phengphan <osears.55@gmail.com>
 Description: IRiSH AMR Simulator
  AMR Simulation Dashboard for autonomous mobile robot navigation.
  Includes both the Electron dashboard and the ROS 2 amr_2dsim package.
-Depends: python3-colcon-common-extensions
+Depends: python3-colcon-common-extensions, python3-numpy
 CTRL_EOF
 
 # 4. Create DEBIAN/postinst
@@ -65,8 +65,18 @@ echo "--------------------------------------------------------"
 echo "🛠️  IRiSH AMR Simulator: Compiling ROS 2 Workspace"
 echo "--------------------------------------------------------"
 
-# Find the installed ROS 2 version's setup.bash (e.g. /opt/ros/jazzy/setup.bash)
-ROS_SETUP=$(ls /opt/ros/*/setup.bash 2>/dev/null | head -n 1)
+# Find the installed ROS 2 version's setup.bash (priority: lyrical -> jazzy -> humble)
+ROS_SETUP=""
+for distro in lyrical jazzy humble; do
+    if [ -f "/opt/ros/$distro/setup.bash" ]; then
+        ROS_SETUP="/opt/ros/$distro/setup.bash"
+        break
+    fi
+done
+
+if [ -z "$ROS_SETUP" ]; then
+    ROS_SETUP=$(ls /opt/ros/*/setup.bash 2>/dev/null | head -n 1)
+fi
 
 if [ -z "$ROS_SETUP" ]; then
     echo "⚠️  WARNING: No ROS 2 installation found in /opt/ros/"
