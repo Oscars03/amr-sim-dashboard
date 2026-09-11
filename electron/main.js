@@ -7,6 +7,19 @@ const { autoUpdater } = pkg
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mapServer, win
+let updateDownloaded = false
+
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+}
 
 app.setName('IRiSH AMR Simulator')
 if (process.platform === 'linux') {
@@ -42,11 +55,11 @@ ipcMain.handle('get-app-version', () => {
 })
 
 ipcMain.handle('restart-app', () => {
-  if (!app.isPackaged) {
-    console.log("Mocking restart...");
-    app.relaunch();
-    app.quit();
-    return;
+  if (!app.isPackaged || !updateDownloaded) {
+    console.log("Restarting app via relaunch...")
+    app.relaunch()
+    app.quit()
+    return
   }
   autoUpdater.quitAndInstall(false, true)
 })
@@ -126,6 +139,7 @@ function checkAutoUpdate() {
   })
 
   autoUpdater.on('update-downloaded', (info) => {
+    updateDownloaded = true
     win?.webContents.send('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.' })
     dialog.showMessageBox({
       type: 'info',
@@ -146,6 +160,21 @@ app.whenReady().then(() => {
   mapServer = fork(path.join(__dirname, '../map-server.cjs'), [], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
   })
+
+  mapServer.on('error', (err) => {
+    console.error('map-server process error:', err)
+    win?.webContents.send('backend-error', { message: err.message })
+  })
+
+  mapServer.on('exit', (code, signal) => {
+    if (!isQuitting) {
+      console.warn(`map-server exited unexpectedly (code: ${code}, signal: ${signal})`)
+      win?.webContents.send('backend-error', {
+        message: `Simulation backend stopped unexpectedly (code: ${code})`
+      })
+    }
+  })
+
   createWindow()
 
   if (!app.isPackaged) {
@@ -175,6 +204,13 @@ app.on('before-quit', (e) => {
     mapServer = null;
     app.quit();
   };
+
+  // If map-server already exited, quit immediately without waiting
+  if (child.exitCode !== null || child.killed) {
+    finish();
+    return;
+  }
+
   const forceTimer = setTimeout(() => {
     console.warn('map-server did not exit in time — killing it');
     try { child.kill('SIGKILL') } catch { /* already gone */ }
