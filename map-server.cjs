@@ -916,8 +916,18 @@ app.get('/status', (req, res) => {
   });
 });
 
+let isSwitching = false;
+
 // POST /switch  { robot: "tango.urdf", world: "room.json", spawnPose: { x: 0, y: 0, yaw: 0 } }
 app.post('/switch', async (req, res) => {
+  if (isSwitching) {
+    return res.status(409).json({
+      ok: false,
+      message: 'Simulation switch already in progress, please wait...',
+      state: currentState,
+    });
+  }
+
   const { robot, world, spawnPose } = req.body ?? {};
 
   if (!robot || !world)
@@ -973,6 +983,7 @@ app.post('/switch', async (req, res) => {
     });
   }
 
+  isSwitching = true;
   currentState.status = 'launching';
   currentState.robot = robot;
   currentState.world = world;
@@ -992,6 +1003,8 @@ app.post('/switch', async (req, res) => {
     console.error('Switch failed:', err.message);
     currentState.status = 'error';
     currentState.error = err.message;
+  } finally {
+    isSwitching = false;
   }
 });
 
@@ -1054,6 +1067,9 @@ app.post('/save_map', (req, res) => {
 
 // POST /stop
 app.post('/stop', async (req, res) => {
+  if (isSwitching) {
+    return res.status(409).json({ ok: false, message: 'Switch in progress, cannot stop yet.' });
+  }
   await killRosProcess();
   currentState.status = 'idle';
   res.json({ ok: true, message: 'ROS stopped' });
@@ -1086,7 +1102,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 // ─────────────────────────────────────────────────────────────────────────────
 // Start
 // ─────────────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════╗');
   console.log('║   AMR Map Server  –  port 3001                       ║');
@@ -1129,6 +1145,15 @@ app.listen(PORT, () => {
   console.log(`        -H "Content-Type: application/json" \\`);
   console.log(`        -d '{"robot":"tango.urdf","world":"room.json"}'`);
   console.log('');
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use by another process.`);
+  } else {
+    console.error('❌ Map server listen error:', err);
+  }
+  process.exit(1);
 });
 
 // SIGTERM จาก Electron (before-quit) ถูกจัดการโดย shutdown() ด้านบนแล้ว —
