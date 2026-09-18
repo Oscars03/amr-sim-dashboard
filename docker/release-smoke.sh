@@ -6,7 +6,7 @@
 #
 #   ./docker/release-smoke.sh                                   # newest .deb in release/
 #   ./docker/release-smoke.sh path/to/irish-amr-sim_X.Y.Z.deb
-#   DISTROS="humble jazzy lyrical" ./docker/release-smoke.sh
+#   DISTROS=jazzy ./docker/release-smoke.sh              # just one
 #
 # Needs docker or podman (podman is rootless and needs no daemon or group
 # membership -- set CONTAINER_ENGINE=podman, or just have it installed).
@@ -15,7 +15,8 @@
 set -uo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-DISTROS="${DISTROS:-humble jazzy}"
+# The three the map server auto-detects (map-server.cjs), so the three we test.
+DISTROS="${DISTROS:-humble jazzy lyrical}"
 
 DEB="${1:-}"
 if [ -z "$DEB" ]; then
