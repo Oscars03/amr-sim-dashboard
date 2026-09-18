@@ -4,9 +4,9 @@
 # 3.12) and is meant to run on all of them -- this is what turns that claim
 # into evidence.
 #
-#   ./docker/release-smoke.sh                                   # newest .deb in release/
-#   ./docker/release-smoke.sh path/to/irish-amr-sim_X.Y.Z.deb
-#   DISTROS=jazzy ./docker/release-smoke.sh              # just one
+#   ./docker/release-smoke.sh                            # every .deb in release/
+#   ./docker/release-smoke.sh path/to/irish-amr-sim_X.Y.Z.deb ...
+#   DISTROS=jazzy ./docker/release-smoke.sh              # just one distro
 #
 # Needs docker or podman (podman is rootless and needs no daemon or group
 # membership -- set CONTAINER_ENGINE=podman, or just have it installed).
@@ -18,23 +18,21 @@ cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # The three the map server auto-detects (map-server.cjs), so the three we test.
 DISTROS="${DISTROS:-humble jazzy lyrical}"
 
-DEB="${1:-}"
-if [ -z "$DEB" ]; then
-  DEB=$(ls -t release/*.deb 2>/dev/null | head -1)
+# A release is one package per architecture, so with no argument take them all:
+# testing whichever happened to be newest is how an arm64 regression ships.
+declare -a DEBS=()
+if [ "$#" -gt 0 ]; then
+  DEBS=("$@")
+else
+  while IFS= read -r f; do DEBS+=("$f"); done < <(ls -t release/*.deb 2>/dev/null)
 fi
-if [ -z "$DEB" ] || [ ! -f "$DEB" ]; then
+if [ "${#DEBS[@]}" -eq 0 ]; then
   echo "❌ no .deb given and none found in release/ -- run npm run dist first" >&2
   exit 2
 fi
-
-# The container architecture has to match the package, or dpkg refuses it with
-# a message that reads like a corrupt download.
-if command -v dpkg-deb >/dev/null 2>&1; then
-  DEB_ARCH=$(dpkg-deb -f "$DEB" Architecture 2>/dev/null)
-else
-  case "$DEB" in *arm64*) DEB_ARCH=arm64 ;; *) DEB_ARCH=amd64 ;; esac
-fi
-PLATFORM="linux/${DEB_ARCH}"
+for deb in "${DEBS[@]}"; do
+  [ -f "$deb" ] || { echo "❌ not a file: $deb" >&2; exit 2; }
+done
 
 ENGINE="${CONTAINER_ENGINE:-}"
 if [ -z "$ENGINE" ]; then
@@ -52,37 +50,47 @@ if [ -z "$ENGINE" ]; then
 fi
 
 echo "engine   : $ENGINE"
-echo "package  : $DEB ($DEB_ARCH)"
-echo "platform : $PLATFORM"
+echo "packages : ${DEBS[*]}"
 echo "distros  : $DISTROS"
 echo
 
 declare -a results=()
 overall=0
 
-for distro in $DISTROS; do
-  image="ros:${distro}-ros-base"
-  [ "$ENGINE" = podman ] && image="docker.io/library/$image"
-  tag="amr-smoke:${distro}-${DEB_ARCH}"
-  echo "───────────────────────────────────────────────"
-  echo "▶ $distro  ($image)"
-  echo "───────────────────────────────────────────────"
-
-  if ! "$ENGINE" build --platform "$PLATFORM" -f docker/Dockerfile.smoke \
-        --build-arg "ROS_IMAGE=$image" --build-arg "DEB_FILE=$DEB" \
-        -t "$tag" . ; then
-    results+=("$distro: BUILD FAILED (image missing, or the .deb would not install)")
-    overall=1
-    continue
-  fi
-
-  if "$ENGINE" run --rm --platform "$PLATFORM" "$tag"; then
-    results+=("$distro: PASS")
+for DEB in "${DEBS[@]}"; do
+  # The container architecture has to match the package, or dpkg refuses it with
+  # a message that reads like a corrupt download.
+  if command -v dpkg-deb >/dev/null 2>&1; then
+    DEB_ARCH=$(dpkg-deb -f "$DEB" Architecture 2>/dev/null)
   else
-    results+=("$distro: FAIL")
-    overall=1
+    case "$DEB" in *arm64*) DEB_ARCH=arm64 ;; *) DEB_ARCH=amd64 ;; esac
   fi
-  echo
+  PLATFORM="linux/${DEB_ARCH}"
+
+  for distro in $DISTROS; do
+    image="ros:${distro}-ros-base"
+    [ "$ENGINE" = podman ] && image="docker.io/library/$image"
+    tag="amr-smoke:${distro}-${DEB_ARCH}"
+    echo "───────────────────────────────────────────────"
+    echo "▶ $distro / $DEB_ARCH  ($image)"
+    echo "───────────────────────────────────────────────"
+
+    if ! "$ENGINE" build --platform "$PLATFORM" -f docker/Dockerfile.smoke \
+          --build-arg "ROS_IMAGE=$image" --build-arg "DEB_FILE=$DEB" \
+          -t "$tag" . ; then
+      results+=("$distro/$DEB_ARCH: BUILD FAILED (image missing, or the .deb would not install)")
+      overall=1
+      continue
+    fi
+
+    if "$ENGINE" run --rm --platform "$PLATFORM" "$tag"; then
+      results+=("$distro/$DEB_ARCH: PASS")
+    else
+      results+=("$distro/$DEB_ARCH: FAIL")
+      overall=1
+    fi
+    echo
+  done
 done
 
 echo "═══ summary ═══"

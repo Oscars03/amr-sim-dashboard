@@ -57,26 +57,38 @@ cd ..
 npm run dist           # electron-vite build && electron-builder
 ```
 
-electron-builder reads `${version}` from `package.json` and writes to `release/`:
+electron-builder reads `${version}` from `package.json` and writes to `release/`.
+`build.linux.target` asks for both architectures, so one run produces all six
+files — x64 is built natively, arm64 is cross-built (the packages are Electron
+plus a pure-Python workspace; nothing is compiled here):
 
 | artifact | notes |
 |---|---|
 | `release/irish-amr-sim_X.Y.Z_jazzy_amd64.deb` | ~100 MB. `Package: irish-amr-simulator`, installs to `/opt/IRiSH AMR Simulator/`. Bundles `simamr_ws/install` (pre-built — target needs no colcon). `Depends:` Electron libs only. |
+| `release/irish-amr-sim_X.Y.Z_jazzy_arm64.deb` | same package, arm64 Electron |
 | `release/irish-amr-sim_X.Y.Z_jazzy_x86_64.AppImage` | ~130 MB |
-| `release/latest-linux.yml` | electron-updater feed (version + sha512 + size). **Ship it alongside the binaries.** |
+| `release/irish-amr-sim_X.Y.Z_jazzy_arm64.AppImage` | ~130 MB |
+| `release/latest-linux.yml` | electron-updater feed for x64 (version + sha512 + size). **Ship it alongside the binaries.** |
+| `release/latest-linux-arm64.yml` | the same for arm64. An arm64 install reads *this* name and nothing else, so leaving it off strands every arm64 user on the version they installed. |
 
 The `_jazzy_` token is fixed in `build.deb.artifactName` / `build.appImage.artifactName`
-in `package.json`.
+in `package.json`. It is a filename, not a constraint — see the OS Compatibility
+table in `README.md`.
+
+> Note the two spellings of the same architecture: `${arch}` renders as `amd64`
+> / `arm64` for deb and `x86_64` / `arm64` for AppImage. Anything that picks an
+> asset by name (the CI matrix, the one-command install in `README.md`) has to
+> know which of the two it is matching.
 
 ### 4. Save the artifacts
 
-Per-version folder, `.deb` + `.AppImage` + `latest-linux.yml`:
+Per-version folder, both `.deb`s + both `.AppImage`s + both feeds:
 
 ```bash
 mkdir -p ~/Downloads/IRiSH-AMR-Sim/vX.Y.Z
-cp release/irish-amr-sim_X.Y.Z_jazzy_amd64.deb \
-   release/irish-amr-sim_X.Y.Z_jazzy_x86_64.AppImage \
-   release/latest-linux.yml \
+cp release/irish-amr-sim_X.Y.Z_jazzy_*.deb \
+   release/irish-amr-sim_X.Y.Z_jazzy_*.AppImage \
+   release/latest-linux.yml release/latest-linux-arm64.yml \
    ~/Downloads/IRiSH-AMR-Sim/vX.Y.Z/
 ```
 
@@ -87,7 +99,7 @@ to whatever distro the user has. Nothing in the build proves that works —
 `docker/release-smoke.sh` does:
 
 ```bash
-./docker/release-smoke.sh                      # newest .deb in release/
+./docker/release-smoke.sh                      # every .deb in release/
 DISTROS="humble jazzy" ./docker/release-smoke.sh path/to/x.deb
 ```
 
@@ -119,18 +131,21 @@ gh workflow run release-smoke.yml -f tag=vX.Y.Z
 gh run watch
 ```
 
-`.github/workflows/release-smoke.yml` runs one job per distro inside
-`ros:<distro>-ros-base`, downloads the `.deb` from that release, installs it and
-runs `docker/smoke.sh`. It needs the `.deb` to be on the release — which it is
-from v0.4.0 onward.
+`.github/workflows/release-smoke.yml` runs one job per distro *and
+architecture* — six — inside `ros:<distro>-ros-base`, downloads that
+architecture's `.deb` from the release, installs it and runs `docker/smoke.sh`.
+The arm64 half runs on `ubuntu-24.04-arm` rather than under qemu, so it tests
+the artifact rather than an emulator. It needs the `.deb` to be on the release —
+amd64 from v0.4.0 onward, arm64 from v0.4.2.
 
 ### 6. Publish to GitHub
 
-**Upload both binaries plus the updater feed.** `latest-linux.yml` as written by
-`npm run dist` lists the AppImage *and* the `.deb`; ship it unmodified. Both
-artifacts must be on the release or auto-update breaks for whichever one is
-missing: electron-updater reads `resources/package-type` from the installed app
-and then looks for exactly that extension in the feed (`DebUpdater` →
+**Upload all four binaries plus both updater feeds.** Each feed as written by
+`npm run dist` lists that architecture's AppImage *and* `.deb`; ship them
+unmodified. Every artifact a feed names must be on the release or auto-update
+breaks for whoever installed that one: electron-updater reads
+`resources/package-type` from the installed app and then looks for exactly that
+extension in the feed for its own architecture (`DebUpdater` →
 `findFile(files, "deb", …)`), so a feed entry with no matching asset is a
 download failure, not a fallback.
 
@@ -139,8 +154,11 @@ gh release create vX.Y.Z --generate-notes --latest \
   --title "irish-amr-sim Release vX.Y.Z"
 gh release upload vX.Y.Z \
   release/irish-amr-sim_X.Y.Z_jazzy_x86_64.AppImage \
+  release/irish-amr-sim_X.Y.Z_jazzy_arm64.AppImage \
   release/irish-amr-sim_X.Y.Z_jazzy_amd64.deb \
-  release/latest-linux.yml
+  release/irish-amr-sim_X.Y.Z_jazzy_arm64.deb \
+  release/latest-linux.yml \
+  release/latest-linux-arm64.yml
 ```
 
 > Up to and including v0.3.0 the release was AppImage-only and the `.deb` block
@@ -172,7 +190,8 @@ VERSION=0.3.0 ARCH=arm64 ./build_deb.sh   # or non-interactively
 ```
 
 - Prompts for **version** (default: `package.json`) and **architecture**
-  (`amd64` / `arm64`) every run.
+  (`amd64` / `arm64`) every run. The tagged releases now ship arm64 too, so this
+  is only for machines that want `colcon` to build the workspace on the target.
 - Bundles `simamr_ws/src` (source) and runs `colcon build` from the package's
   `postinst`, so the target needs ROS 2 + `python3-colcon-common-extensions`.
 - Output: `./irish-amr-simulator_<version>_<arch>.deb`, installs to
