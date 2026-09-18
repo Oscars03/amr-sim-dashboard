@@ -78,6 +78,15 @@ let rosProcess = null;
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Quote a path for a bash -c string. The .deb installs the app under
+// `/opt/IRiSH AMR Simulator/` -- a path with spaces -- so every path that gets
+// interpolated into a shell command has to survive word splitting. Unquoted, the
+// launch died on `bash: /opt/IRiSH: No such file or directory`. The AppImage
+// mounts at `/tmp/.mount_irish-XXXXXX`, which has no spaces, which is why this
+// only ever showed up on a package install.
+const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+
 function getShareDir() {
   const installPrefix = path.dirname(WS_SETUP_BASH);
   const directShare = path.join(installPrefix, 'share', 'amr_2dsim');
@@ -333,11 +342,11 @@ function launchRos(shareDir, urdfPath, worldPath, spawnPose = { x: 0, y: 0, yaw:
   const shellCmd =
     `export AMENT_PREFIX_PATH="${installPrefix}:\${AMENT_PREFIX_PATH:-}" && ` +
     pyExport +
-    `source ${ROS_SETUP_BASH} && ` +
-    `source ${WS_SETUP_BASH} && ` +
+    `source ${shq(ROS_SETUP_BASH)} && ` +
+    `source ${shq(WS_SETUP_BASH)} && ` +
     `ros2 launch amr_2dsim sim_bringup.launch.py ` +
-    `urdf_file:=${urdfPath} ` +
-    `world_file:=${worldPath} ` +
+    `urdf_file:=${shq(urdfPath)} ` +
+    `world_file:=${shq(worldPath)} ` +
     `initial_x:=${spawnX} ` +
     `initial_y:=${spawnY} ` +
     `initial_yaw:=${spawnYawRad}`;
