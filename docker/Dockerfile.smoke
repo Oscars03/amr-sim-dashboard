@@ -1,0 +1,37 @@
+# Smoke-test image: a clean ROS 2 install, the release .deb, nothing else.
+#
+#   docker build -f docker/Dockerfile.smoke \
+#     --build-arg ROS_IMAGE=ros:humble-ros-base \
+#     --build-arg DEB_FILE=release/irish-amr-sim_0.4.0_jazzy_amd64.deb \
+#     -t amr-smoke:humble .
+#
+# Build context is the repo root. docker/release-smoke.sh drives this across
+# distros; this file is deliberately dumb so a failure points at the package,
+# not at the harness.
+ARG ROS_IMAGE=ros:jazzy-ros-base
+FROM ${ROS_IMAGE}
+
+ARG DEB_FILE
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+# What the launch file needs beyond ros-base: rosbridge_server + rosapi, numpy
+# for the physics loop, procps because the smoke script reads process groups.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      "ros-${ROS_DISTRO}-rosbridge-suite" \
+      python3-numpy \
+      procps \
+ && rm -rf /var/lib/apt/lists/*
+
+# dpkg -i first so a missing dependency surfaces as itself; apt-get -f install
+# then resolves it the way a user's machine would.
+COPY ${DEB_FILE} /tmp/app.deb
+RUN apt-get update \
+ && (dpkg -i /tmp/app.deb || apt-get install -y -f --no-install-recommends) \
+ && dpkg -s irish-amr-simulator >/dev/null \
+ && rm -f /tmp/app.deb \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY docker/smoke.sh /usr/local/bin/smoke.sh
+ENTRYPOINT ["/usr/local/bin/smoke.sh"]
