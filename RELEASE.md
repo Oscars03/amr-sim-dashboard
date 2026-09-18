@@ -80,7 +80,30 @@ cp release/irish-amr-sim_X.Y.Z_jazzy_amd64.deb \
    ~/Downloads/IRiSH-AMR-Sim/vX.Y.Z/
 ```
 
-### 5. Commit + tag
+### 5. Publish to GitHub
+
+**Upload both binaries plus the updater feed.** `latest-linux.yml` as written by
+`npm run dist` lists the AppImage *and* the `.deb`; ship it unmodified. Both
+artifacts must be on the release or auto-update breaks for whichever one is
+missing: electron-updater reads `resources/package-type` from the installed app
+and then looks for exactly that extension in the feed (`DebUpdater` →
+`findFile(files, "deb", …)`), so a feed entry with no matching asset is a
+download failure, not a fallback.
+
+```bash
+gh release create vX.Y.Z --generate-notes --latest \
+  --title "irish-amr-sim Release vX.Y.Z"
+gh release upload vX.Y.Z \
+  release/irish-amr-sim_X.Y.Z_jazzy_x86_64.AppImage \
+  release/irish-amr-sim_X.Y.Z_jazzy_amd64.deb \
+  release/latest-linux.yml
+```
+
+> Up to and including v0.3.0 the release was AppImage-only and the `.deb` block
+> was trimmed out of the feed by hand. That left every `.deb` install unable to
+> update itself. Do not trim it any more.
+
+### 6. Commit + tag
 
 ```bash
 git add package.json simamr_ws/src/amr_2dsim/package.xml CHANGELOG.md
