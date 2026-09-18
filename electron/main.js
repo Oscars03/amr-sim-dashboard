@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { fork } from 'child_process'
+import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import pkg from 'electron-updater'
@@ -8,11 +9,29 @@ const { autoUpdater } = pkg
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mapServer, win
 let updateDownloaded = false
+let downloadedVersion = null
 let installRequested = false
+
+// A .deb lives in /opt and is installed through dpkg, so the update has to run
+// as root and Linux asks for the password. The AppImage replaces itself and
+// never asks. electron-updater picks its installer from the same file.
+function isDebInstall() {
+  try {
+    return fs.readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim() === 'deb'
+  } catch {
+    return false
+  }
+}
+
+// The updater can emit after the window is gone (an install failing inside
+// its quit handler), and webContents.send on a destroyed window throws.
+function sendToWin(channel, payload) {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+}
 
 // electron-updater resets its own "already installing" flag when a second
 // quitAndInstall is refused, so its quit handler then runs `pkexec dpkg -i`
-// again. The Update Ready dialog and the in-app Restart button can both fire.
+// again. A double click on Restart now is enough to trigger that.
 function installUpdate() {
   if (installRequested) return
   installRequested = true
@@ -84,9 +103,9 @@ ipcMain.handle('start-download', () => {
       percent += 2;
       if (percent >= 100) {
         clearInterval(devDownloadInterval);
-        win?.webContents.send('update-status', { status: 'downloaded', version: '0.3.0', message: 'Update ready.' });
+        sendToWin('update-status', { status: 'downloaded', version: '0.3.0', message: 'Update ready.' });
       } else {
-        win?.webContents.send('update-status', {
+        sendToWin('update-status', {
           status: 'downloading',
           percent: percent,
           progress: percent,
@@ -102,9 +121,9 @@ ipcMain.handle('start-download', () => {
 ipcMain.handle('check-for-updates', async () => {
   if (!app.isPackaged) {
     // Mock update flow: send checking, then send available (waits for start-download)
-    win?.webContents.send('update-status', { status: 'checking', message: 'Checking for updates...' })
+    sendToWin('update-status', { status: 'checking', message: 'Checking for updates...' })
     setTimeout(() => {
-      win?.webContents.send('update-status', { status: 'available', version: '0.3.0', message: 'New version v0.3.0 is available!' })
+      sendToWin('update-status', { status: 'available', version: '0.3.0', message: 'New version v0.3.0 is available!' })
     }, 1000);
     return { status: 'dev', message: 'Auto-update is mocked in Development mode.' }
   }
@@ -112,35 +131,64 @@ ipcMain.handle('check-for-updates', async () => {
     const result = await autoUpdater.checkForUpdates()
     return { status: 'checking', result }
   } catch (err) {
-    win?.webContents.send('update-status', { status: 'error', message: err.message })
+    sendToWin('update-status', { status: 'error', message: err.message })
     return { status: 'error', message: err.message }
   }
 })
 
 function checkAutoUpdate() {
   autoUpdater.autoDownload = false
+  // Keep the updater's log on disk: an app relaunched by an update writes its
+  // console to /dev/null, and pkexec's stderr is the only clue when it fails.
+  const logFile = path.join(app.getPath('userData'), 'updater.log')
+  const toFile = (level, args) => {
+    try {
+      fs.appendFileSync(logFile, `${new Date().toISOString()} ${level} ${args.map(String).join(' ')}\n`)
+    } catch { /* logging must never break the update */ }
+  }
+  autoUpdater.logger = {
+    info: (...a) => { console.log(...a); toFile('INFO', a) },
+    warn: (...a) => { console.warn(...a); toFile('WARN', a) },
+    error: (...a) => { console.error(...a); toFile('ERROR', a) },
+    debug: () => {},
+  }
+  toFile('INFO', [`start v${app.getVersion()} pid=${process.pid} ppid=${process.ppid} stdinTTY=${Boolean(process.stdin.isTTY)}`])
+  // Rehearse an update against a local feed before publishing a release:
+  // AMR_UPDATE_FEED=http://localhost:8765 serves latest-linux.yml + artifacts.
+  if (process.env.AMR_UPDATE_FEED) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.AMR_UPDATE_FEED })
+  }
 
   autoUpdater.on('checking-for-update', () => {
-    win?.webContents.send('update-status', { status: 'checking', message: 'Checking for updates...' })
+    sendToWin('update-status', { status: 'checking', message: 'Checking for updates...' })
   })
 
   autoUpdater.on('update-available', (info) => {
-    win?.webContents.send('update-status', { status: 'available', version: info.version, message: `New version v${info.version} is available!` })
+    sendToWin('update-status', { status: 'available', version: info.version, message: `New version v${info.version} is available!` })
     // The front-end custom UI now displays a confirmation popup and calls start-download
   })
 
   autoUpdater.on('update-not-available', () => {
-    win?.webContents.send('update-status', { status: 'not-available', message: 'App is up to date.' })
+    sendToWin('update-status', { status: 'not-available', message: 'App is up to date.' })
   })
 
   autoUpdater.on('error', (err) => {
     if (err.message.includes('404')) return;
-    win?.webContents.send('update-status', { status: 'error', message: err.message })
+    // The install failed or the password prompt was cancelled: the app keeps
+    // running, so put the Restart button back instead of leaving it stuck.
+    if (installRequested) {
+      installRequested = false
+      sendToWin('update-status', {
+        status: 'downloaded', version: downloadedVersion, needsPassword: isDebInstall(), installError: err.message
+      })
+      return
+    }
+    sendToWin('update-status', { status: 'error', message: err.message })
   })
 
   autoUpdater.on('download-progress', (progressObj) => {
     const percent = Math.floor(progressObj?.percent || 0)
-    win?.webContents.send('update-status', {
+    sendToWin('update-status', {
       status: 'downloading',
       percent: percent,
       progress: percent,
@@ -150,17 +198,11 @@ function checkAutoUpdate() {
 
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloaded = true
-    win?.webContents.send('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.' })
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Update Ready',
-      message: 'The update has been downloaded. Restart the app to apply the changes.',
-      buttons: ['Restart', 'Later']
-    }).then((result) => {
-      if (result.response === 0) {
-        installUpdate()
-      }
-    })
+    downloadedVersion = info.version
+    const needsPassword = isDebInstall()
+    // The in-app update modal is the only restart prompt; a native dialog on
+    // top of it asked the same question twice.
+    sendToWin('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.', needsPassword })
   })
 
   autoUpdater.checkForUpdatesAndNotify()
@@ -173,13 +215,13 @@ app.whenReady().then(() => {
 
   mapServer.on('error', (err) => {
     console.error('map-server process error:', err)
-    win?.webContents.send('backend-error', { message: err.message })
+    sendToWin('backend-error', { message: err.message })
   })
 
   mapServer.on('exit', (code, signal) => {
     if (!isQuitting) {
       console.warn(`map-server exited unexpectedly (code: ${code}, signal: ${signal})`)
-      win?.webContents.send('backend-error', {
+      sendToWin('backend-error', {
         message: `Simulation backend stopped unexpectedly (code: ${code})`
       })
     }
