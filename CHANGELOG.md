@@ -4,6 +4,19 @@ All notable changes to the IRiSH AMR Simulator Dashboard project will be documen
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-18
+
+### Fixed
+- **`.deb` was missing two Electron libraries**: neither `libasound2` nor `libgbm1` appeared in the package's `Depends`, so `dpkg -i` succeeded and the app then failed to start on any machine without a desktop environment — Ubuntu Server being exactly where a robot runs. Declared now as `libasound2t64 | libasound2` (spanning the 24.04 t64 rename) and `libgbm1`.
+
+### Added
+- **Cross-distro smoke test**: `docker/smoke.sh` installs the release `.deb` on a clean ROS 2 container and checks the bundled workspace resolves under that distro's ament index, `amr_2dsim.simulator_node` imports under that distro's Python, the Electron binary has no unresolved libraries, `/odom` `/scan` `/camera/image_raw` `/joint_states` all publish, and rosbridge answers on :9090. `docker/release-smoke.sh` drives it across distros (docker or podman); `.github/workflows/release-smoke.yml` runs the same checks on GitHub's runners for humble, jazzy and lyrical, automatically on every published release.
+- First run of it proved the artifact is distro-portable as claimed: the workspace built on Jazzy with Python 3.12 runs unmodified on Humble with Python 3.10.
+
+### Changed
+- **README**: one-command install for Ubuntu, what auto-update covers per install method, and the libraries a minimal or server install needs (including `libfuse2`, which the AppImage runtime dlopens and no current Ubuntu ships by default).
+- **Releases now carry the `.deb` alongside the AppImage**, with `latest-linux.yml` listing both, so a `.deb` install can update itself instead of finding an update it cannot download.
+
 ## [0.4.0] - 2026-09-18
 
 ### Added
