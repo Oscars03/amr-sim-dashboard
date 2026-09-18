@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { fork } from 'child_process'
 import fs from 'fs'
 import path from 'path'
@@ -21,9 +21,6 @@ function isDebInstall() {
     return false
   }
 }
-const PASSWORD_NOTE =
-  'Linux will ask for your password to install it. This app was installed as a .deb package ' +
-  'into /opt, which only an administrator can change, so the update needs admin rights once.'
 
 // The updater can emit after the window is gone (an install failing inside
 // its quit handler), and webContents.send on a destroyed window throws.
@@ -33,7 +30,7 @@ function sendToWin(channel, payload) {
 
 // electron-updater resets its own "already installing" flag when a second
 // quitAndInstall is refused, so its quit handler then runs `pkexec dpkg -i`
-// again. The Update Ready dialog and the in-app Restart button can both fire.
+// again. A double click on Restart now is enough to trigger that.
 function installUpdate() {
   if (installRequested) return
   installRequested = true
@@ -177,18 +174,9 @@ function checkAutoUpdate() {
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloaded = true
     const needsPassword = isDebInstall()
+    // The in-app update modal is the only restart prompt; a native dialog on
+    // top of it asked the same question twice.
     sendToWin('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.', needsPassword })
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Update Ready',
-      message: 'The update has been downloaded. Restart the app to apply the changes.',
-      detail: needsPassword ? PASSWORD_NOTE : undefined,
-      buttons: ['Restart', 'Later']
-    }).then((result) => {
-      if (result.response === 0) {
-        installUpdate()
-      }
-    })
   })
 
   autoUpdater.checkForUpdatesAndNotify()
