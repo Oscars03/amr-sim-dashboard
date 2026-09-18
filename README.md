@@ -218,4 +218,4 @@ dashboard จะหยุดส่ง twist ของตัวเองแต่
 
 ---
 
-<sub>นักพัฒนา: ขั้นตอน build จากซอร์ส, dev server และการ cut release อยู่ใน `RELEASE.md` และ `CLAUDE.md`</sub>
+<sub>นักพัฒนา: ขั้นตอน build จากซอร์ส, dev server และการ cut release อยู่ใน `RELEASE.md`</sub>
