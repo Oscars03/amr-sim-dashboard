@@ -138,6 +138,21 @@ ipcMain.handle('check-for-updates', async () => {
 
 function checkAutoUpdate() {
   autoUpdater.autoDownload = false
+  // Keep the updater's log on disk: an app relaunched by an update writes its
+  // console to /dev/null, and pkexec's stderr is the only clue when it fails.
+  const logFile = path.join(app.getPath('userData'), 'updater.log')
+  const toFile = (level, args) => {
+    try {
+      fs.appendFileSync(logFile, `${new Date().toISOString()} ${level} ${args.map(String).join(' ')}\n`)
+    } catch { /* logging must never break the update */ }
+  }
+  autoUpdater.logger = {
+    info: (...a) => { console.log(...a); toFile('INFO', a) },
+    warn: (...a) => { console.warn(...a); toFile('WARN', a) },
+    error: (...a) => { console.error(...a); toFile('ERROR', a) },
+    debug: () => {},
+  }
+  toFile('INFO', [`start v${app.getVersion()} pid=${process.pid} ppid=${process.ppid} stdinTTY=${Boolean(process.stdin.isTTY)}`])
   // Rehearse an update against a local feed before publishing a release:
   // AMR_UPDATE_FEED=http://localhost:8765 serves latest-linux.yml + artifacts.
   if (process.env.AMR_UPDATE_FEED) {
