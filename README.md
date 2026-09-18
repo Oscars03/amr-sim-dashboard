@@ -3,7 +3,7 @@
 Dashboard สำหรับจำลองและควบคุม AMR (Autonomous Mobile Robot) แบบ 2D — Electron + React
 ต่อกับ ROS 2 ผ่าน rosbridge WebSocket แล้วสั่งรัน sim node (`amr_2dsim`) ให้อัตโนมัติ
 
-เวอร์ชันล่าสุด: **v0.3.0** · [Releases](https://github.com/Oscars03/amr-sim-dashboard/releases/latest)
+[ดาวน์โหลดเวอร์ชันล่าสุด](https://github.com/Oscars03/amr-sim-dashboard/releases/latest) · รองรับ x86_64 และ arm64
 
 ---
 
@@ -56,20 +56,46 @@ Dashboard สำหรับจำลองและควบคุม AMR (Auto
 | **Ubuntu 22.04 + ROS 2 Humble** | ✅ ไฟล์ release ตัวเดียวกันใช้ได้เลย (Python 3.10) |
 | **ROS 2 Lyrical** | ✅ ไฟล์ release ตัวเดียวกันใช้ได้เลย (Python 3.14) |
 | x86_64 / amd64 | ✅ มีไฟล์ release ให้โหลด |
-| arm64 | ⚠️ ไม่มี prebuilt — ต้อง build เองด้วย `ARCH=arm64 ./build_deb.sh` |
-| macOS / Windows | ❌ ไม่รองรับ — map server อ่าน `/opt/ros/<distro>/setup.bash` ตรง ๆ และ rosbridge ติดตั้งผ่าน `apt` |
+| arm64 | ✅ มีไฟล์ release ให้โหลด ตั้งแต่ v0.4.2 (Raspberry Pi 5, Jetson, Ubuntu บน Apple Silicon) |
+| macOS / Windows | ❌ ตรง ๆ ไม่ได้ — แต่รันผ่าน VM ได้ [ดูวิธี](#macos--windows--ต้องผ่าน-vm) |
 
 ไฟล์ release **ไฟล์เดียวใช้ได้ทุก distro ข้างบน** — แยกกันแค่ architecture เท่านั้น เป็นเพราะ
 ROS package ทั้งสามตัว (`amr_2dsim`, `amr_navigation`, `amr_explorer`) เป็น `ament_python`
-ล้วน ไม่มี compiled extension สักไฟล์ ส่วน ROS runtime ใช้ของเครื่องปลายทาง
+ล้วน ไม่มี compiled extension สักไฟล์ (ตรวจแล้ว: `.so` 0 ไฟล์ในทั้ง workspace) ส่วน ROS
+runtime ใช้ของเครื่องปลายทาง ที่ต้องแยก build ตาม architecture คือตัว Electron เท่านั้น
 
 ไม่ใช่การอนุมาน — ทุก release จะถูกทดสอบอัตโนมัติด้วย
 [`release-smoke.yml`](.github/workflows/release-smoke.yml) ที่ลง `.deb` จริงลงคอนเทนเนอร์
-`ros:<distro>-ros-base` สะอาด ๆ ทั้งสาม distro แล้วเช็คว่า sim launch ขึ้นและ topic
-(`/odom` `/scan` `/camera/image_raw` `/joint_states`) กับ rosbridge ทำงานครบ
-([ผลของ v0.4.1](https://github.com/Oscars03/amr-sim-dashboard/actions/runs/35331403642))
+`ros:<distro>-ros-base` สะอาด ๆ **3 distro × 2 architecture = 6 job** แล้วเช็คว่า sim launch
+ขึ้นและ topic (`/odom` `/scan` `/camera/image_raw` `/joint_states`) กับ rosbridge ทำงานครบ
+ฝั่ง arm64 รันบน runner ที่เป็น arm64 จริง ไม่ใช่ qemu
+([ผลของ v0.4.1](https://github.com/Oscars03/amr-sim-dashboard/actions/runs/35331403642) —
+ตอนนั้นยังมีแต่ amd64)
 
 > ชื่อไฟล์ยังมี `_jazzy_` ติดอยู่ด้วยเหตุผลทางประวัติศาสตร์ — เป็นแค่ชื่อ ไม่ได้แปลว่าใช้ได้แค่ Jazzy
+
+### macOS / Windows — ต้องผ่าน VM
+
+map server อ่าน `/opt/ros/<distro>/setup.bash` ตรง ๆ และ rosbridge ติดตั้งผ่าน `apt` —
+ทั้งสองอย่างไม่มีบน macOS/Windows จึงรันแบบ native ไม่ได้ ทางออกคือลง **Ubuntu ใน VM**
+แล้วทำตามขั้นตอนฝั่ง Linux ทุกอย่างตามปกติ ไม่ต้องตั้งค่าอะไรเพิ่มเป็นพิเศษ
+
+| เครื่องคุณ | ตัวที่ใช้ได้ | ไฟล์ release ที่ต้องโหลด |
+| --- | --- | --- |
+| Windows (x86) | VirtualBox · VMware Workstation · Hyper-V | `x86_64` (AppImage) / `amd64` (deb) |
+| Mac Intel | VirtualBox · VMware Fusion | `x86_64` / `amd64` |
+| Mac Apple Silicon (M1–M4) | UTM · VMware Fusion · Parallels | **`arm64`** — Ubuntu บน Apple Silicon เป็น arm64 |
+
+* ให้ VM อย่างน้อย **4 GB RAM / 2 vCPU** และเปิด 3D acceleration — dashboard เป็น Electron
+  ที่วาด canvas สดตลอดเวลา
+* rosbridge (9090) กับ map server (3001) อยู่ใน VM ทั้งคู่ ไม่ต้อง forward port ออกมา
+  นอกจากจะอยากเปิด dashboard จากฝั่ง host
+* snapshot ไว้ก่อนลง ROS 2 ช่วยประหยัดเวลาตอนพัง
+
+> **WSL2 บน Windows 11** เป็นอีกทางที่น่าจะใช้ได้ (WSLg รัน GUI app ได้) แต่ **ยังไม่ได้ทดสอบ
+> กับแอปนี้** ถ้าจะลอง เตรียมเจอสองจุด: AppImage ต้องการ `libfuse2` (หรือใช้
+> `--appimage-extract-and-run`) และ DDS discovery ของ ROS 2 ใน WSL2 เคยมีปัญหาเรื่อง
+> multicast — เคสนี้ทุก node อยู่ใน instance เดียวกันจึงไม่น่ากระทบ แต่ยืนยันให้ไม่ได้
 
 ---
 
@@ -82,8 +108,9 @@ ROS package ทั้งสามตัว (`amr_2dsim`, `amr_navigation`, `amr_
 
 ```bash
 sudo apt install -y ros-jazzy-rosbridge-suite python3-numpy && \
+ARCH=$([ "$(uname -m)" = aarch64 ] && echo arm64 || echo x86_64) && \
 curl -fsSL "$(curl -fsSL https://api.github.com/repos/Oscars03/amr-sim-dashboard/releases/latest \
-  | grep -oE 'https://[^"]+\.AppImage')" -o ~/irish-amr-sim.AppImage && \
+  | grep -oE "https://[^\"]+_${ARCH}\.AppImage")" -o ~/irish-amr-sim.AppImage && \
 chmod +x ~/irish-amr-sim.AppImage && ~/irish-amr-sim.AppImage
 ```
 
@@ -114,6 +141,8 @@ sudo apt install ros-jazzy-rosbridge-suite python3-numpy
 ### 2. โหลดตัวแอป
 
 โหลด `.AppImage` จาก [GitHub Releases](https://github.com/Oscars03/amr-sim-dashboard/releases/latest)
+โดยเลือกให้ตรง architecture — `uname -m` ตอบ `x86_64` ให้เอาไฟล์ `_x86_64`, ตอบ `aarch64`
+ให้เอา `_arm64`
 
 ```bash
 chmod +x irish-amr-sim_*.AppImage
@@ -129,10 +158,6 @@ chmod +x irish-amr-sim_*.AppImage
 เปิดแอปครั้งแรกจะมีหน้าต่าง **Environment Check** ขึ้นมาบอกสถานะทุกอย่าง (ROS distro, `amr_2dsim`,
 `rosapi`, rosbridge) — ถ้าเขียวหมดคือพร้อมกด Launch
 
-> **Known issue v0.3.0**: ไฟล์ release v0.3.0 bundle workspace รุ่นที่ยังไม่มี node `rosapi`
-> ใน launch file ทำให้ **Topic Monitor ขึ้นว่าง** (ส่วนอื่นใช้ได้ปกติ) — แก้แล้วในซอร์สปัจจุบัน
-> รอ release ถัดไป หรือ build เองจากซอร์ส
-
 ### Auto-update ใช้ได้กับแบบไหนบ้าง
 
 | วิธีติดตั้ง | อัปเดตจากในแอป |
@@ -145,12 +170,16 @@ chmod +x irish-amr-sim_*.AppImage
 ที่ลิสต์ทั้งสองไฟล์ — electron-updater จะเลือกไฟล์ให้ตรงกับวิธีที่ติดตั้งมาเอง
 (`resources/package-type` เป็นตัวบอกว่าเครื่องนี้ลงมาแบบไหน)
 
+ตั้งแต่ v0.4.2 มี `latest-linux-arm64.yml` เพิ่มมาอีกไฟล์ เครื่อง arm64 จะอ่านไฟล์นั้นไฟล์เดียว
+จึงอัปเดตแยกกันคนละสายกับ x86_64
+
 > เวอร์ชันก่อน v0.4.0 อัปแค่ `.AppImage` — เครื่องที่ลงด้วย `.deb` รุ่นเก่าจะเห็นว่ามีเวอร์ชันใหม่
 > แต่โหลดไม่สำเร็จ ลง `.deb` ของ v0.4.0 ทับหนึ่งรอบแล้วรอบต่อ ๆ ไปจะอัปเดตเองได้
 
 ### ทางเลือก: ติดตั้งเป็น `.deb` ทั้งระบบ
 
-อยากได้ไอคอนในเมนูแอป + ติดตั้งลง `/opt` ให้ทุก user ใช้ ให้ build `.deb` จากซอร์ส:
+`.deb` จาก Releases ลงได้ตรง ๆ อยู่แล้ว (`sudo dpkg -i irish-amr-sim_*_amd64.deb`) — ส่วน
+วิธีข้างล่างนี้คือ build เองจากซอร์ส สำหรับเครื่องที่อยากให้ `colcon build` ตอนติดตั้ง:
 
 ```bash
 git clone https://github.com/Oscars03/amr-sim-dashboard.git

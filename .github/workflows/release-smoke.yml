@@ -19,7 +19,11 @@ on:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.ros_distro }} / ${{ matrix.arch }}
+    # The runner's architecture has to match the package: dpkg refuses a foreign
+    # one, and qemu would be testing an emulator rather than the artifact.
+    # GitHub's arm64 runners are free on public repositories.
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -27,6 +31,8 @@ jobs:
         # humble = 22.04 / Python 3.10, jazzy = 24.04 / Python 3.12,
         # lyrical = resolute. Same three the map server auto-detects.
         ros_distro: [humble, jazzy, lyrical]
+        # One artifact per architecture is the claim; six jobs are the evidence.
+        arch: [amd64, arm64]
     container:
       image: ros:${{ matrix.ros_distro }}-ros-base
     defaults:
@@ -48,6 +54,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           if [ -n "$TAG" ]; then
@@ -57,9 +64,10 @@ jobs:
           fi
           url=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" \
                   "https://api.github.com/${api}" \
-                | jq -r '.assets[] | select(.name | endswith("amd64.deb")) | .browser_download_url')
+                | jq -r --arg arch "$ARCH" \
+                    '.assets[] | select(.name | endswith($arch + ".deb")) | .browser_download_url')
           if [ -z "$url" ] || [ "$url" = "null" ]; then
-            echo "::error::no amd64 .deb asset on that release -- releases before v0.4.0 shipped the AppImage only"
+            echo "::error::no ${ARCH} .deb asset on that release -- releases before v0.4.0 shipped the AppImage only, and arm64 only from v0.4.2"
             exit 1
           fi
           echo "downloading $url"
