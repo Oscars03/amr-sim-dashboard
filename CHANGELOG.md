@@ -4,6 +4,11 @@ All notable changes to the IRiSH AMR Simulator Dashboard project will be documen
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-18
+
+### Fixed
+- **A `.deb` self-update ran `dpkg -i` twice and asked for the password twice.** The Update Ready dialog and the in-app Restart button both called `quitAndInstall`; electron-updater refuses the second call but then clears its own "installing" flag, so its quit-time handler ran `pkexec dpkg -i` again (seen on the real v0.4.1 → v0.4.2 update: two installs 8 s apart in `dpkg.log`). pkexec's policy is `auth_admin`, so each run prompts. Both paths now go through one guarded `installUpdate()`.
+
 ### Changed
 - **Smoke test reads topics with its own node instead of `ros2 topic echo`.** `echo --once` never waits the way the test needed: `--no-daemon` gives discovery about a second and then reports a 40 Hz publisher as silent (three of six CI jobs failed that way on v0.4.2, each on a different topic, with the artifact fine), while the daemon that does wait is the same one whose stale graph the readiness gate has to avoid — and which wedges. `docker/topic_probe.py` subscribes to every topic at once and copies each publisher's QoS, so a `BEST_EFFORT` stream like `/scan` matches too.
 

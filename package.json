@@ -2,7 +2,7 @@
   "name": "irish-amr-simulator",
   "productName": "IRiSH AMR Simulator",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "IRiSH Lab AMR Simulation for autonomous mobile robot navigation",
   "author": {
     "name": "Phuthanet Phengphan",
