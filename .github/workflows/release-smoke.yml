@@ -24,8 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         # The container, not the runner, decides the Ubuntu version:
-        # humble = 22.04 / Python 3.10, jazzy = 24.04 / Python 3.12.
-        ros_distro: [humble, jazzy]
+        # humble = 22.04 / Python 3.10, jazzy = 24.04 / Python 3.12,
+        # lyrical = resolute. Same three the map server auto-detects.
+        ros_distro: [humble, jazzy, lyrical]
     container:
       image: ros:${{ matrix.ros_distro }}-ros-base
     defaults:
