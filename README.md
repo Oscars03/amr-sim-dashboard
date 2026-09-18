@@ -52,12 +52,24 @@ Dashboard สำหรับจำลองและควบคุม AMR (Auto
 
 | สภาพแวดล้อม | สถานะ |
 | --- | --- |
-| **Ubuntu 24.04 + ROS 2 Jazzy** | ✅ รองรับเต็ม — ไฟล์ release build บน Jazzy (สังเกต `_jazzy_` ในชื่อไฟล์) |
-| Ubuntu 22.04 + ROS 2 Humble | ⚠️ แอป auto-detect ให้ แต่ prebuilt workspace เป็นของ Jazzy — ต้อง `colcon build` ใหม่เอง |
-| ROS 2 Lyrical | ⚠️ เหมือน Humble — auto-detect เจอ (ไล่เช็ค `lyrical` → `jazzy` → `humble`) แต่ไม่มี prebuilt ให้ |
+| **Ubuntu 24.04 + ROS 2 Jazzy** | ✅ ไฟล์ release ใช้ได้เลย (Python 3.12) |
+| **Ubuntu 22.04 + ROS 2 Humble** | ✅ ไฟล์ release ตัวเดียวกันใช้ได้เลย (Python 3.10) |
+| **ROS 2 Lyrical** | ✅ ไฟล์ release ตัวเดียวกันใช้ได้เลย (Python 3.14) |
 | x86_64 / amd64 | ✅ มีไฟล์ release ให้โหลด |
 | arm64 | ⚠️ ไม่มี prebuilt — ต้อง build เองด้วย `ARCH=arm64 ./build_deb.sh` |
 | macOS / Windows | ❌ ไม่รองรับ — map server อ่าน `/opt/ros/<distro>/setup.bash` ตรง ๆ และ rosbridge ติดตั้งผ่าน `apt` |
+
+ไฟล์ release **ไฟล์เดียวใช้ได้ทุก distro ข้างบน** — แยกกันแค่ architecture เท่านั้น เป็นเพราะ
+ROS package ทั้งสามตัว (`amr_2dsim`, `amr_navigation`, `amr_explorer`) เป็น `ament_python`
+ล้วน ไม่มี compiled extension สักไฟล์ ส่วน ROS runtime ใช้ของเครื่องปลายทาง
+
+ไม่ใช่การอนุมาน — ทุก release จะถูกทดสอบอัตโนมัติด้วย
+[`release-smoke.yml`](.github/workflows/release-smoke.yml) ที่ลง `.deb` จริงลงคอนเทนเนอร์
+`ros:<distro>-ros-base` สะอาด ๆ ทั้งสาม distro แล้วเช็คว่า sim launch ขึ้นและ topic
+(`/odom` `/scan` `/camera/image_raw` `/joint_states`) กับ rosbridge ทำงานครบ
+([ผลของ v0.4.1](https://github.com/Oscars03/amr-sim-dashboard/actions/runs/35331403642))
+
+> ชื่อไฟล์ยังมี `_jazzy_` ติดอยู่ด้วยเหตุผลทางประวัติศาสตร์ — เป็นแค่ชื่อ ไม่ได้แปลว่าใช้ได้แค่ Jazzy
 
 ---
 
