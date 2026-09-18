@@ -8,7 +8,9 @@
 #   ./docker/release-smoke.sh path/to/irish-amr-sim_X.Y.Z.deb
 #   DISTROS="humble jazzy lyrical" ./docker/release-smoke.sh
 #
-# Needs docker. Cross-architecture runs need binfmt/qemu registered
+# Needs docker or podman (podman is rootless and needs no daemon or group
+# membership -- set CONTAINER_ENGINE=podman, or just have it installed).
+# Cross-architecture runs need binfmt/qemu registered
 # (docker run --privileged --rm tonistiigi/binfmt --install all).
 set -uo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,11 +35,22 @@ else
 fi
 PLATFORM="linux/${DEB_ARCH}"
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "❌ docker not installed -- sudo apt install docker.io (then log out and back in)" >&2
+ENGINE="${CONTAINER_ENGINE:-}"
+if [ -z "$ENGINE" ]; then
+  for candidate in docker podman; do
+    command -v "$candidate" >/dev/null 2>&1 && ENGINE="$candidate" && break
+  done
+fi
+if [ -z "$ENGINE" ]; then
+  echo "❌ no container engine found. Either:" >&2
+  echo "     sudo apt install podman      # rootless, no daemon, no re-login" >&2
+  echo "     sudo apt install docker.io   # then add yourself to the docker group" >&2
+  echo "   Or skip containers entirely and run this in CI:" >&2
+  echo "     gh workflow run release-smoke.yml -f tag=vX.Y.Z" >&2
   exit 2
 fi
 
+echo "engine   : $ENGINE"
 echo "package  : $DEB ($DEB_ARCH)"
 echo "platform : $PLATFORM"
 echo "distros  : $DISTROS"
@@ -48,12 +61,13 @@ overall=0
 
 for distro in $DISTROS; do
   image="ros:${distro}-ros-base"
+  [ "$ENGINE" = podman ] && image="docker.io/library/$image"
   tag="amr-smoke:${distro}-${DEB_ARCH}"
   echo "───────────────────────────────────────────────"
   echo "▶ $distro  ($image)"
   echo "───────────────────────────────────────────────"
 
-  if ! docker build --platform "$PLATFORM" -f docker/Dockerfile.smoke \
+  if ! "$ENGINE" build --platform "$PLATFORM" -f docker/Dockerfile.smoke \
         --build-arg "ROS_IMAGE=$image" --build-arg "DEB_FILE=$DEB" \
         -t "$tag" . ; then
     results+=("$distro: BUILD FAILED (image missing, or the .deb would not install)")
@@ -61,7 +75,7 @@ for distro in $DISTROS; do
     continue
   fi
 
-  if docker run --rm --platform "$PLATFORM" "$tag"; then
+  if "$ENGINE" run --rm --platform "$PLATFORM" "$tag"; then
     results+=("$distro: PASS")
   else
     results+=("$distro: FAIL")

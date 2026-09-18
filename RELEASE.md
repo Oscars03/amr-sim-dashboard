@@ -108,7 +108,21 @@ APP_DIR="$PWD/release/linux-unpacked" ./docker/smoke.sh
 
 Cross-architecture runs need binfmt registered
 (`docker run --privileged --rm tonistiigi/binfmt --install all`); the driver
-picks the platform from the package's own `Architecture` field.
+picks the platform from the package's own `Architecture` field. `podman` works
+in place of `docker` (`CONTAINER_ENGINE=podman`, or just have it installed).
+
+**No container engine on the machine?** The same checks run on GitHub's runners,
+which is also what fires automatically on every published release:
+
+```bash
+gh workflow run release-smoke.yml -f tag=vX.Y.Z
+gh run watch
+```
+
+`.github/workflows/release-smoke.yml` runs one job per distro inside
+`ros:<distro>-ros-base`, downloads the `.deb` from that release, installs it and
+runs `docker/smoke.sh`. It needs the `.deb` to be on the release — which it is
+from v0.4.0 onward.
 
 ### 6. Publish to GitHub
 
