@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './UpdateProgressModal.css';
 import iconCircleTransparent from '/icon_circle_transparent.png?url';
 
@@ -195,6 +195,10 @@ function LidarMap({ percent }) {
 }
 
 export default function UpdateProgressModal({ updateInfo, appVersion, onClose }) {
+  // Tied to the status object the click happened on, so any new status from
+  // main (e.g. a failed install) ends the installing state by itself.
+  const [installingFor, setInstallingFor] = useState(null);
+  const installing = installingFor !== null && installingFor === updateInfo;
   if (!updateInfo) return null;
   
   if (updateInfo.status !== 'available' && updateInfo.status !== 'downloading' && updateInfo.status !== 'downloaded') {
@@ -291,17 +295,20 @@ export default function UpdateProgressModal({ updateInfo, appVersion, onClose })
   const isDownloaded = updateInfo.status === 'downloaded';
   const percent = isDownloaded ? 100 : (updateInfo.percent ?? updateInfo.progress ?? 0);
 
+  // Installing blocks the main process (pkexec + dpkg run synchronously), so the
+  // window stops repainting until the app relaunches. Paint the "installing"
+  // state first, then ask main to install; the button can't be hit twice.
   const handleRestart = () => {
-    if (window.electronAPI) {
-      window.electronAPI.restartApp?.();
-    }
+    if (installing) return;
+    setInstallingFor(updateInfo);
+    setTimeout(() => window.electronAPI?.restartApp?.(), 150);
   };
 
   return (
     <div className="upm-overlay">
       <div className="upm-card">
         {/* Optional close button for when downloaded */}
-        {isDownloaded && (
+        {isDownloaded && !installing && (
           <button className="upm-close-btn" onClick={onClose} title="Close">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -329,12 +336,20 @@ export default function UpdateProgressModal({ updateInfo, appVersion, onClose })
 
         <div className="upm-progress-labels">
           <span className="upm-label-left">
-            {isDownloaded ? 'Update ready — restart to apply' : 'Downloading update'}
+            {installing
+              ? 'Installing — the app will reopen by itself'
+              : isDownloaded ? 'Update ready — restart to apply' : 'Downloading update'}
           </span>
           <span className="upm-label-right">
             {percent}%
           </span>
         </div>
+
+        {isDownloaded && updateInfo.installError && !installing && (
+          <p className="upm-password-note upm-install-error">
+            Update was not installed ({updateInfo.installError}). You can try again.
+          </p>
+        )}
 
         {isDownloaded && updateInfo.needsPassword && (
           <p className="upm-password-note">
@@ -344,8 +359,8 @@ export default function UpdateProgressModal({ updateInfo, appVersion, onClose })
         )}
 
         {isDownloaded && (
-          <button className="upm-restart-btn" onClick={handleRestart}>
-            Restart now
+          <button className="upm-restart-btn" onClick={handleRestart} disabled={installing}>
+            {installing ? 'Installing…' : 'Restart now'}
           </button>
         )}
 

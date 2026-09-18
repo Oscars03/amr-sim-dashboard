@@ -9,6 +9,7 @@ const { autoUpdater } = pkg
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mapServer, win
 let updateDownloaded = false
+let downloadedVersion = null
 let installRequested = false
 
 // A .deb lives in /opt and is installed through dpkg, so the update has to run
@@ -158,6 +159,15 @@ function checkAutoUpdate() {
 
   autoUpdater.on('error', (err) => {
     if (err.message.includes('404')) return;
+    // The install failed or the password prompt was cancelled: the app keeps
+    // running, so put the Restart button back instead of leaving it stuck.
+    if (installRequested) {
+      installRequested = false
+      sendToWin('update-status', {
+        status: 'downloaded', version: downloadedVersion, needsPassword: isDebInstall(), installError: err.message
+      })
+      return
+    }
     sendToWin('update-status', { status: 'error', message: err.message })
   })
 
@@ -173,6 +183,7 @@ function checkAutoUpdate() {
 
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloaded = true
+    downloadedVersion = info.version
     const needsPassword = isDebInstall()
     // The in-app update modal is the only restart prompt; a native dialog on
     // top of it asked the same question twice.

@@ -118,6 +118,11 @@
   margin: 0;
 }
 
+.upm-install-error {
+  color: #F0997B;
+  margin-bottom: 8px;
+}
+
 .upm-restart-btn {
   width: 100%;
   background: rgba(43, 92, 217, 0.15);
@@ -134,4 +139,9 @@
 
 .upm-restart-btn:hover {
   background: rgba(43, 92, 217, 0.25);
+}
+
+.upm-restart-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
