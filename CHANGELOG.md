@@ -4,10 +4,17 @@ All notable changes to the IRiSH AMR Simulator Dashboard project will be documen
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-18
+
+### Fixed
+- **Every Launch from a `.deb` install failed** with `bash: /opt/IRiSH: No such file or directory`. `launchRos()` builds a `bash -c` string and interpolated four paths into it unquoted; the package installs under `/opt/IRiSH AMR Simulator/` and bash split that on the space. The AppImage mounts at `/tmp/.mount_irish-XXXXXX`, which has no spaces, so only package installs were affected — and the smoke test sources the workspace itself, so it went green on every distro while this was broken.
+
 ### Added
+- **The smoke test drives the app's own launch path**: it starts `map-server.cjs` (through `ELECTRON_RUN_AS_NODE`, so no `nodejs` package is needed in the image), POSTs `/switch`, and requires `/odom` to publish. The checks above it all pass through a shell command this script writes; this one uses the command the app writes.
 - **arm64 release artifacts**: `npm run dist` now builds `.deb` and `.AppImage` for x64 *and* arm64, plus a `latest-linux-arm64.yml` feed so arm64 installs can auto-update (they read that filename and no other). Raspberry Pi 5, Jetson and Ubuntu on Apple Silicon no longer need a build from source. The bundled ROS workspace is unchanged between the two — it contains no compiled extensions — so only Electron differs.
 
 ### Changed
+- **Smoke test is no longer at the mercy of the machine it runs on**: DDS discovery is pinned to localhost (a stale peer from another session made every topic check time out while the sim published fine), every `ros2` query uses `--no-daemon` (the daemon caches a graph that outlives the run it came from, so the readiness gate could pass on topics from a sim already killed), and `READY_TIMEOUT` now bounds wall clock rather than counting attempts.
 - **Release smoke test covers both architectures**: the CI matrix is now 3 distros × 2 architectures, with the arm64 half on `ubuntu-24.04-arm` rather than under qemu. `docker/release-smoke.sh` takes every `.deb` in `release/` instead of the newest one.
 - **README**: how to run on macOS and Windows through a VM (including which architecture each host needs), and the one-command install now picks its AppImage by `uname -m`.
 
