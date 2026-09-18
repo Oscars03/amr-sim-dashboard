@@ -67,7 +67,7 @@ jobs:
                 | jq -r --arg arch "$ARCH" \
                     '.assets[] | select(.name | endswith($arch + ".deb")) | .browser_download_url')
           if [ -z "$url" ] || [ "$url" = "null" ]; then
-            echo "::error::no ${ARCH} .deb asset on that release -- releases before v0.4.0 shipped the AppImage only, and arm64 only from v0.4.2"
+            echo "::error::no ${ARCH} .deb asset on ${TAG:-the latest release}. Either the release was published before its assets finished uploading (publish the draft last -- see RELEASE.md step 6), or it predates the asset: amd64 .deb from v0.4.0, arm64 from v0.4.2."
             exit 1
           fi
           echo "downloading $url"
