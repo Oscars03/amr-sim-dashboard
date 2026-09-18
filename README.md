@@ -78,6 +78,15 @@ chmod +x ~/irish-amr-sim.AppImage && ~/irish-amr-sim.AppImage
 (ใช้ ROS distro อื่นให้เปลี่ยน `ros-jazzy-` เป็น `ros-<distro>-` · เจอ error เรื่อง sandbox
 ให้ต่อท้ายด้วย `--no-sandbox`)
 
+> **Ubuntu Server / minimal ที่ไม่มี desktop** จะไม่มีไลบรารีที่ Electron ต้องใช้ติดมาให้
+> `.deb` ประกาศ dependency ครบแล้ว (apt ลงให้เอง) แต่ **AppImage ประกาศ dependency ไม่ได้** —
+> ต้องลงเองก่อน และ AppImage ยังต้องการ libfuse **2** ด้วย (runtime ของมัน `dlopen` `libfuse.so.2`):
+> ```bash
+> sudo apt install -y libasound2t64 libgbm1 libfuse2t64   # Ubuntu 24.04
+> sudo apt install -y libasound2 libgbm1 libfuse2         # Ubuntu 22.04
+> ```
+> ไม่อยากลง libfuse2 ก็รันแบบแตกไฟล์แทนได้: `./irish-amr-sim.AppImage --appimage-extract-and-run`
+
 รายละเอียดทีละขั้นอยู่ข้างล่าง
 
 ### 1. ติดตั้ง ROS 2 + dependencies
