@@ -111,6 +111,13 @@
   color: #F1EFE8;
 }
 
+.upm-password-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #B4B2A9;
+  margin: 0;
+}
+
 .upm-restart-btn {
   width: 100%;
   background: rgba(43, 92, 217, 0.15);

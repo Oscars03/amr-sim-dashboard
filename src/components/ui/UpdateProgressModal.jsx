@@ -336,6 +336,13 @@ export default function UpdateProgressModal({ updateInfo, appVersion, onClose })
           </span>
         </div>
 
+        {isDownloaded && updateInfo.needsPassword && (
+          <p className="upm-password-note">
+            Linux will ask for your password to install it. This app was installed as a .deb
+            package into /opt, which only an administrator can change.
+          </p>
+        )}
+
         {isDownloaded && (
           <button className="upm-restart-btn" onClick={handleRestart}>
             Restart now

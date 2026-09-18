@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { fork } from 'child_process'
+import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import pkg from 'electron-updater'
@@ -9,6 +10,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mapServer, win
 let updateDownloaded = false
 let installRequested = false
+
+// A .deb lives in /opt and is installed through dpkg, so the update has to run
+// as root and Linux asks for the password. The AppImage replaces itself and
+// never asks. electron-updater picks its installer from the same file.
+function isDebInstall() {
+  try {
+    return fs.readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim() === 'deb'
+  } catch {
+    return false
+  }
+}
+const PASSWORD_NOTE =
+  'Linux will ask for your password to install it. This app was installed as a .deb package ' +
+  'into /opt, which only an administrator can change, so the update needs admin rights once.'
 
 // The updater can emit after the window is gone (an install failing inside
 // its quit handler), and webContents.send on a destroyed window throws.
@@ -125,6 +140,11 @@ ipcMain.handle('check-for-updates', async () => {
 
 function checkAutoUpdate() {
   autoUpdater.autoDownload = false
+  // Rehearse an update against a local feed before publishing a release:
+  // AMR_UPDATE_FEED=http://localhost:8765 serves latest-linux.yml + artifacts.
+  if (process.env.AMR_UPDATE_FEED) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.AMR_UPDATE_FEED })
+  }
 
   autoUpdater.on('checking-for-update', () => {
     sendToWin('update-status', { status: 'checking', message: 'Checking for updates...' })
@@ -156,11 +176,13 @@ function checkAutoUpdate() {
 
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloaded = true
-    sendToWin('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.' })
+    const needsPassword = isDebInstall()
+    sendToWin('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.', needsPassword })
     dialog.showMessageBox({
       type: 'info',
       title: 'Update Ready',
       message: 'The update has been downloaded. Restart the app to apply the changes.',
+      detail: needsPassword ? PASSWORD_NOTE : undefined,
       buttons: ['Restart', 'Later']
     }).then((result) => {
       if (result.response === 0) {
