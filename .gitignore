@@ -52,3 +52,11 @@ __pycache__/
 *.egg-info/
 *.deb
 scratch_*.py
+
+# Agent/AI working notes: kept locally, not shipped
+CLAUDE.md
+AI_HANDOVER.md
+AI_Folder.md
+KICKOFF_PROMPT.md
+ITERATION_LOG.md
+.claude/
