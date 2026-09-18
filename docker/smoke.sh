@@ -14,7 +14,7 @@ APP_DIR="${APP_DIR:-/opt/IRiSH AMR Simulator}"
 WS_SETUP="$APP_DIR/resources/app/simamr_ws/install/setup.bash"
 APP_BIN="$APP_DIR/irish-amr-simulator"
 MAP_SERVER="$APP_DIR/resources/app/map-server.cjs"
-TOPIC_TIMEOUT="${TOPIC_TIMEOUT:-15}"
+TOPIC_TIMEOUT="${TOPIC_TIMEOUT:-30}"
 READY_TIMEOUT="${READY_TIMEOUT:-90}"
 LAUNCH_LOG="$(mktemp -t amr-smoke-XXXXXX.log)"
 SERVER_LOG="$(mktemp -t amr-smoke-server-XXXXXX.log)"
@@ -136,11 +136,12 @@ trap cleanup EXIT
 # topic checked always looks broken. READY_TIMEOUT bounds wall clock, not
 # attempts: 90 attempts at a call that can itself take 10s is 15 minutes.
 #
-# --no-daemon throughout. The ros2 daemon caches a graph that outlives the run it
-# came from, so a topic list can report /odom from a sim this script already
-# killed -- a false pass in the very check meant to catch a launch that died. It
-# also wedges: seen locally with every `ros2 topic list` hitting its timeout
-# while `--no-daemon` answered in a second.
+# --no-daemon on the listing. The ros2 daemon caches a graph that outlives the
+# run it came from, so a topic list can report /odom from a sim this script
+# already killed -- a false pass in the very check meant to catch a launch that
+# died. It also wedges: seen locally with every `ros2 topic list` hitting its
+# timeout while `--no-daemon` answered in a second. (Reading a message is the
+# opposite case; see topic_has_message below.)
 wait_for_odom() {
   ros_run "deadline=\$(( \$(date +%s) + $READY_TIMEOUT ))
            while [ \$(date +%s) -lt \$deadline ]; do
@@ -156,30 +157,43 @@ else
   fail "sim did not come up within ${READY_TIMEOUT}s"
 fi
 
-# `ros2 topic echo --once` does not wait for a topic to show up. With
-# --no-daemon it is a cold node that gives discovery about a second and then
-# exits 1 with "does not appear to be published yet" -- so a publisher running
-# at 40 Hz reads as "no message" barely a second after the gate above confirmed
-# the topic was advertised. Three of six CI jobs failed that way on v0.4.2, each
-# on a different topic, with nothing wrong with the artifact. Retry inside the
-# budget instead of trusting one cold attempt.
-topic_has_message() {
-  local topic="$1" budget="${2:-$TOPIC_TIMEOUT}" deadline
-  deadline=$(( $(date +%s) + budget ))
-  while [ "$(date +%s)" -lt "$deadline" ]; do
-    ros_run "timeout 10 ros2 topic echo --once --no-daemon $topic" >/dev/null 2>&1 && return 0
-    sleep 1
-  done
-  return 1
+# Reading a message is not `ros2 topic echo --once`. Measured, with the topic
+# absent: --no-daemon exits 1 after ~1s ("does not appear to be published yet"),
+# and with the daemon it blocks until something kills it. So --no-daemon turns
+# "wait for a message" into "is one there this instant", and a publisher at
+# 40 Hz reads as silent a second after the gate above confirmed the topic --
+# that failed three of six CI jobs on v0.4.2, each on a different topic, with
+# the artifact fine. Retrying cold attempts inside the budget still left /scan
+# failing on a loaded runner, because every attempt paid discovery again. The
+# daemon would wait properly, but it is the same daemon whose stale graph the
+# gate above avoids, and it wedges (seen locally: every `ros2 topic list`
+# hitting its timeout while --no-daemon answered in a second).
+#
+# Neither setting is right in both places, so stop asking the CLI.
+# topic_probe.py is one node that subscribes to every topic at once, waits
+# properly, and copies each publisher's QoS -- which echo's default
+# RELIABLE/VOLATILE does not do for a BEST_EFFORT sensor stream like /scan.
+PROBE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/topic_probe.py"
+
+probe_topics() {   # probe_topics <seconds> <topic>...
+  local budget="$1"; shift
+  ros_run "python3 '$PROBE' --timeout $budget $*"
 }
 
-for topic in /odom /scan /camera/image_raw /joint_states; do
-  if topic_has_message "$topic"; then
-    pass "$topic publishes"
-  else
-    fail "$topic produced no message within ${TOPIC_TIMEOUT}s"
-  fi
-done
+topic_has_message() { probe_topics "${2:-$TOPIC_TIMEOUT}" "$1" >/dev/null 2>&1; }
+
+probe_out=$(probe_topics "$TOPIC_TIMEOUT" /odom /scan /camera/image_raw /joint_states 2>&1)
+if printf '%s\n' "$probe_out" | grep -qE '^(OK|MISS) '; then
+  while IFS=' ' read -r verdict topic; do
+    case "$verdict" in
+      OK)   pass "$topic publishes" ;;
+      MISS) fail "$topic produced no message within ${TOPIC_TIMEOUT}s" ;;
+    esac
+  done < <(printf '%s\n' "$probe_out" | grep -E '^(OK|MISS) ')
+else
+  fail "topic probe did not run -- no topic was checked"
+  printf '      %s\n' "$(printf '%s\n' "$probe_out" | tail -3)"
+fi
 
 # ── 6. rosbridge is listening where the dashboard expects it ─────────────────
 if timeout 15 python3 - <<'PY'

@@ -33,5 +33,5 @@ RUN apt-get update \
  && rm -f /tmp/app.deb \
  && rm -rf /var/lib/apt/lists/*
 
-COPY docker/smoke.sh /usr/local/bin/smoke.sh
+COPY docker/smoke.sh docker/topic_probe.py /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/smoke.sh"]
