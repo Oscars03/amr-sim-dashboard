@@ -149,8 +149,15 @@ extension in the feed for its own architecture (`DebUpdater` →
 `findFile(files, "deb", …)`), so a feed entry with no matching asset is a
 download failure, not a fallback.
 
+**Create it as a draft, upload, then publish.** `release-smoke.yml` triggers on
+`release: published`, which fires the moment `gh release create` returns — a
+publish-then-upload order starts the smoke run against a release with no assets,
+and all six jobs fail on "no .deb asset" while the binaries are still uploading.
+(That is exactly what happened on v0.4.2, run 35337639567.) Publishing last
+makes the trigger mean what it looks like it means.
+
 ```bash
-gh release create vX.Y.Z --generate-notes --latest \
+gh release create vX.Y.Z --draft --generate-notes \
   --title "irish-amr-sim Release vX.Y.Z"
 gh release upload vX.Y.Z \
   release/irish-amr-sim_X.Y.Z_jazzy_x86_64.AppImage \
@@ -159,6 +166,7 @@ gh release upload vX.Y.Z \
   release/irish-amr-sim_X.Y.Z_jazzy_arm64.deb \
   release/latest-linux.yml \
   release/latest-linux-arm64.yml
+gh release edit vX.Y.Z --draft=false --latest      # this is what fires the smoke run
 ```
 
 > Up to and including v0.3.0 the release was AppImage-only and the `.deb` block
