@@ -4,6 +4,9 @@ All notable changes to the IRiSH AMR Simulator Dashboard project will be documen
 
 ## [Unreleased]
 
+### Changed
+- **Smoke test reads topics with its own node instead of `ros2 topic echo`.** `echo --once` never waits the way the test needed: `--no-daemon` gives discovery about a second and then reports a 40 Hz publisher as silent (three of six CI jobs failed that way on v0.4.2, each on a different topic, with the artifact fine), while the daemon that does wait is the same one whose stale graph the readiness gate has to avoid — and which wedges. `docker/topic_probe.py` subscribes to every topic at once and copies each publisher's QoS, so a `BEST_EFFORT` stream like `/scan` matches too.
+
 ## [0.4.2] - 2026-09-18
 
 ### Fixed
