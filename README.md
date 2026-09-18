@@ -63,6 +63,23 @@ Dashboard สำหรับจำลองและควบคุม AMR (Auto
 
 ## Download & Install (ฉบับเต็ม)
 
+### ติดตั้งแบบคำสั่งเดียว (Ubuntu)
+
+มี ROS 2 อยู่แล้ว วางบรรทัดนี้ได้เลย — ลง dependency, ดึง AppImage ตัวล่าสุดจาก Releases,
+ให้สิทธิ์รัน แล้วเปิดแอป:
+
+```bash
+sudo apt install -y ros-jazzy-rosbridge-suite python3-numpy && \
+curl -fsSL "$(curl -fsSL https://api.github.com/repos/Oscars03/amr-sim-dashboard/releases/latest \
+  | grep -oE 'https://[^"]+\.AppImage')" -o ~/irish-amr-sim.AppImage && \
+chmod +x ~/irish-amr-sim.AppImage && ~/irish-amr-sim.AppImage
+```
+
+(ใช้ ROS distro อื่นให้เปลี่ยน `ros-jazzy-` เป็น `ros-<distro>-` · เจอ error เรื่อง sandbox
+ให้ต่อท้ายด้วย `--no-sandbox`)
+
+รายละเอียดทีละขั้นอยู่ข้างล่าง
+
 ### 1. ติดตั้ง ROS 2 + dependencies
 
 ```bash
@@ -94,6 +111,24 @@ chmod +x irish-amr-sim_*.AppImage
 > **Known issue v0.3.0**: ไฟล์ release v0.3.0 bundle workspace รุ่นที่ยังไม่มี node `rosapi`
 > ใน launch file ทำให้ **Topic Monitor ขึ้นว่าง** (ส่วนอื่นใช้ได้ปกติ) — แก้แล้วในซอร์สปัจจุบัน
 > รอ release ถัดไป หรือ build เองจากซอร์ส
+
+### Auto-update ใช้ได้กับแบบไหนบ้าง
+
+| วิธีติดตั้ง | อัปเดตจากในแอป |
+| --- | --- |
+| **AppImage จาก Releases** | ✅ ใช้ได้ — แอปเช็คเวอร์ชันใหม่, โหลด, แล้วเขียนทับไฟล์ AppImage ตัวเดิมให้ |
+| **`.deb`** | ❌ ใช้ไม่ได้ — ต้องลงตัวใหม่เอง |
+
+เหตุผลของฝั่ง `.deb`: electron-builder ใส่ไฟล์ `resources/package-type` ค่า `deb` ไว้ในแพ็กเกจ
+ทำให้ electron-updater สลับไปใช้ `DebUpdater` ซึ่งไล่หาไฟล์ **`.deb`** ใน update feed
+แต่ GitHub Release ของโปรเจกต์นี้อัปขึ้นแค่ `.AppImage` + `latest-linux.yml` — แอปจึงเห็นว่า
+มีเวอร์ชันใหม่แต่โหลดไฟล์มาติดตั้งไม่ได้
+
+อัปเดตเครื่องที่ลงด้วย `.deb` ให้ build ตัวใหม่แล้วลงทับ (`dpkg` จัดการ upgrade ให้เอง):
+
+```bash
+sudo dpkg -i irish-amr-simulator_<version>_amd64.deb
+```
 
 ### ทางเลือก: ติดตั้งเป็น `.deb` ทั้งระบบ
 
