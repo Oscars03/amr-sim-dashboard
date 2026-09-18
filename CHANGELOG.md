@@ -4,6 +4,28 @@ All notable changes to the IRiSH AMR Simulator Dashboard project will be documen
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-18
+
+### Added
+- **Virtual camera**: the sim node now publishes `/camera/image_raw` (`sensor_msgs/Image`, 320×240, 70° FOV) rendered by raycasting the 2D world into a perspective view, at 10 Hz alongside the physics tick.
+- **Camera shutter**: a shutter button in the dashboard publishes `/camera/shutter` (`std_msgs/Empty`); the sim answers with an immediate frame, and the UI plays a click plus a flash animation.
+- **Release guard**: `verify-release-workspace.cjs` runs from `predist` and fails the build when `simamr_ws/install` is missing, stale (no `rosapi` node in the launch file), or carries hardcoded `/home/...` paths — the exact ways v0.3.0 shipped a broken Topic Monitor.
+- **`RELEASE.md`** — the build and release procedure; **`GIT_POLICY.md`** — the rule that irreversible git operations need a structural guard.
+
+### Fixed
+- **Camera image mirrored**: the perspective render had column 0 on the robot's right; column 0 is now the robot's left and `W-1` the right.
+- **Environment check missed workspace packages**: it tested `/opt/ros/<distro>/share/<pkg>`, which only sees apt-installed packages, so `rosapi` came up missing on machines that had it via an overlay — and the Topic Monitor failed silently. It now sources the distro plus the workspace and asks `ros2 pkg prefix`.
+- **Packaging shipped machine-specific paths**: the release workspace could bake in `/home/<user>` prefixes from the build shell. `package.xml` also declared neither `std_msgs`, `std_srvs` nor `rcl_interfaces`, and `sim_bringup.launch.py` failed obscurely when a URDF or world file was absent — it now checks explicitly. `build_deb.sh` depends on `python3-numpy` and prioritises `lyrical` → `jazzy` → `humble`.
+- **Electron process lifecycle**: added a single-instance lock, error and unexpected-exit handlers for the forked map server, an `app.relaunch()` fallback when restart is requested with no update staged, and a skipped `before-quit` timeout when the map server is already dead.
+- **Duplicate sim launches / port collisions**: `POST /switch` and `POST /stop` are guarded by a mutex, so a double-click can no longer spawn two `ros2 launch` trees; the server now handles `EADDRINUSE` on port 3001 instead of crashing.
+- **Teleop readout showed 0.00 while moving**: the X/Y/Z display under the D-pad re-derived the twist with its own rule and only knew `i , j l` — every diagonal and every holonomic key read zero. Both the readout and the `/cmd_vel` publisher now share `twistFromKeys` (`src/utils/teleop.js`).
+- **Malformed requests returned 500**: `/map`, `/urdf`, `/switch` and `/save_map` called string methods on whatever arrived, so a repeated query parameter or a non-string JSON field threw. They answer `400` now.
+- **Unbounded undo stack**: the world editor kept every intermediate state (a full copy of walls and obstacles each), capped at 100 entries from the oldest end.
+
+### Changed
+- **CI now blocks on lint** as well as tests, now that the warning backlog is cleared.
+- **README** rewritten around what users actually need: features, OS compatibility, download/install of the complete build, and a worked example.
+
 ## [0.3.0] - 2026-08-30
 
 ### Added
