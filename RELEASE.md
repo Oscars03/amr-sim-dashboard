@@ -80,7 +80,51 @@ cp release/irish-amr-sim_X.Y.Z_jazzy_amd64.deb \
    ~/Downloads/IRiSH-AMR-Sim/vX.Y.Z/
 ```
 
-### 5. Publish to GitHub
+### 5. Smoke-test the artifacts (Docker)
+
+The bundled workspace is built once, on Jazzy with Python 3.12, and then shipped
+to whatever distro the user has. Nothing in the build proves that works —
+`docker/release-smoke.sh` does:
+
+```bash
+./docker/release-smoke.sh                      # newest .deb in release/
+DISTROS="humble jazzy" ./docker/release-smoke.sh path/to/x.deb
+```
+
+For each distro it builds a clean `ros:<distro>-ros-base` image, installs the
+`.deb` the way a user would (`dpkg -i`, then `apt-get -f install`), and checks:
+the bundled `setup.bash` has no build-machine paths, `ros2 pkg prefix amr_2dsim`
+resolves under that distro's ament index, `amr_2dsim.simulator_node` imports
+under that distro's Python, the Electron binary has no unresolved shared
+libraries, `/odom` `/scan` `/camera/image_raw` `/joint_states` all publish, and
+rosbridge answers on :9090.
+
+`docker/smoke.sh` is the container half and runs anywhere ROS 2 is installed —
+useful against a local build without Docker at all:
+
+```bash
+APP_DIR="$PWD/release/linux-unpacked" ./docker/smoke.sh
+```
+
+Cross-architecture runs need binfmt registered
+(`docker run --privileged --rm tonistiigi/binfmt --install all`); the driver
+picks the platform from the package's own `Architecture` field. `podman` works
+in place of `docker` (`CONTAINER_ENGINE=podman`, or just have it installed).
+
+**No container engine on the machine?** The same checks run on GitHub's runners,
+which is also what fires automatically on every published release:
+
+```bash
+gh workflow run release-smoke.yml -f tag=vX.Y.Z
+gh run watch
+```
+
+`.github/workflows/release-smoke.yml` runs one job per distro inside
+`ros:<distro>-ros-base`, downloads the `.deb` from that release, installs it and
+runs `docker/smoke.sh`. It needs the `.deb` to be on the release — which it is
+from v0.4.0 onward.
+
+### 6. Publish to GitHub
 
 **Upload both binaries plus the updater feed.** `latest-linux.yml` as written by
 `npm run dist` lists the AppImage *and* the `.deb`; ship it unmodified. Both
@@ -103,7 +147,7 @@ gh release upload vX.Y.Z \
 > was trimmed out of the feed by hand. That left every `.deb` install unable to
 > update itself. Do not trim it any more.
 
-### 6. Commit + tag
+### 7. Commit + tag
 
 ```bash
 git add package.json simamr_ws/src/amr_2dsim/package.xml CHANGELOG.md
