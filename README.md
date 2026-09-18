@@ -216,6 +216,3 @@ sudo dpkg -i irish-amr-simulator_*.deb
 อยากให้ Nav2 หรือ node อื่นขับแทน: สลับเป็นโหมด **Terminal** แล้ว publish `/cmd_vel` เข้ามาได้เลย
 dashboard จะหยุดส่ง twist ของตัวเองแต่ยังวาดผลลัพธ์ให้ดูตามปกติ
 
----
-
-<sub>นักพัฒนา: ขั้นตอน build จากซอร์ส, dev server และการ cut release อยู่ใน `RELEASE.md`</sub>
