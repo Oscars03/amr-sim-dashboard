@@ -28,6 +28,11 @@ jobs:
         ros_distro: [humble, jazzy]
     container:
       image: ros:${{ matrix.ros_distro }}-ros-base
+    defaults:
+      run:
+        # Container jobs default to `sh -e`, where `set -o pipefail` is an
+        # illegal option and every step below dies on line 1.
+        shell: bash
     steps:
       - name: Install what the container lacks
         run: |
