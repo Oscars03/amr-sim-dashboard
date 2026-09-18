@@ -116,19 +116,16 @@ chmod +x irish-amr-sim_*.AppImage
 
 | วิธีติดตั้ง | อัปเดตจากในแอป |
 | --- | --- |
-| **AppImage จาก Releases** | ✅ ใช้ได้ — แอปเช็คเวอร์ชันใหม่, โหลด, แล้วเขียนทับไฟล์ AppImage ตัวเดิมให้ |
-| **`.deb`** | ❌ ใช้ไม่ได้ — ต้องลงตัวใหม่เอง |
+| **AppImage จาก Releases** | ✅ แอปโหลดตัวใหม่แล้วเขียนทับไฟล์ AppImage เดิมให้ |
+| **`.deb` จาก Releases** | ✅ แอปโหลด `.deb` ตัวใหม่แล้วสั่ง `dpkg -i` ให้ — จะมีหน้าต่างขอรหัสผ่าน (pkexec) ตอนติดตั้ง |
+| `.deb` ที่ build เองด้วย `build_deb.sh` | ✅ เหมือนกัน — ใช้ชื่อแพ็กเกจ `irish-amr-simulator` เดียวกัน `dpkg` จึง upgrade ทับให้ |
 
-เหตุผลของฝั่ง `.deb`: electron-builder ใส่ไฟล์ `resources/package-type` ค่า `deb` ไว้ในแพ็กเกจ
-ทำให้ electron-updater สลับไปใช้ `DebUpdater` ซึ่งไล่หาไฟล์ **`.deb`** ใน update feed
-แต่ GitHub Release ของโปรเจกต์นี้อัปขึ้นแค่ `.AppImage` + `latest-linux.yml` — แอปจึงเห็นว่า
-มีเวอร์ชันใหม่แต่โหลดไฟล์มาติดตั้งไม่ได้
+ตั้งแต่ v0.4.0 เป็นต้นไป GitHub Release อัปทั้ง `.AppImage` และ `.deb` พร้อม `latest-linux.yml`
+ที่ลิสต์ทั้งสองไฟล์ — electron-updater จะเลือกไฟล์ให้ตรงกับวิธีที่ติดตั้งมาเอง
+(`resources/package-type` เป็นตัวบอกว่าเครื่องนี้ลงมาแบบไหน)
 
-อัปเดตเครื่องที่ลงด้วย `.deb` ให้ build ตัวใหม่แล้วลงทับ (`dpkg` จัดการ upgrade ให้เอง):
-
-```bash
-sudo dpkg -i irish-amr-simulator_<version>_amd64.deb
-```
+> เวอร์ชันก่อน v0.4.0 อัปแค่ `.AppImage` — เครื่องที่ลงด้วย `.deb` รุ่นเก่าจะเห็นว่ามีเวอร์ชันใหม่
+> แต่โหลดไม่สำเร็จ ลง `.deb` ของ v0.4.0 ทับหนึ่งรอบแล้วรอบต่อ ๆ ไปจะอัปเดตเองได้
 
 ### ทางเลือก: ติดตั้งเป็น `.deb` ทั้งระบบ
 
