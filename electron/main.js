@@ -8,6 +8,16 @@ const { autoUpdater } = pkg
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mapServer, win
 let updateDownloaded = false
+let installRequested = false
+
+// electron-updater resets its own "already installing" flag when a second
+// quitAndInstall is refused, so its quit handler then runs `pkexec dpkg -i`
+// again. The Update Ready dialog and the in-app Restart button can both fire.
+function installUpdate() {
+  if (installRequested) return
+  installRequested = true
+  autoUpdater.quitAndInstall(false, true)
+}
 
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
@@ -61,7 +71,7 @@ ipcMain.handle('restart-app', () => {
     app.quit()
     return
   }
-  autoUpdater.quitAndInstall(false, true)
+  installUpdate()
 })
 
 let devDownloadInterval = null;
@@ -148,7 +158,7 @@ function checkAutoUpdate() {
       buttons: ['Restart', 'Later']
     }).then((result) => {
       if (result.response === 0) {
-        autoUpdater.quitAndInstall(false, true)
+        installUpdate()
       }
     })
   })
