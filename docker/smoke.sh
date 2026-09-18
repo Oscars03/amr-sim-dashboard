@@ -156,8 +156,25 @@ else
   fail "sim did not come up within ${READY_TIMEOUT}s"
 fi
 
+# `ros2 topic echo --once` does not wait for a topic to show up. With
+# --no-daemon it is a cold node that gives discovery about a second and then
+# exits 1 with "does not appear to be published yet" -- so a publisher running
+# at 40 Hz reads as "no message" barely a second after the gate above confirmed
+# the topic was advertised. Three of six CI jobs failed that way on v0.4.2, each
+# on a different topic, with nothing wrong with the artifact. Retry inside the
+# budget instead of trusting one cold attempt.
+topic_has_message() {
+  local topic="$1" budget="${2:-$TOPIC_TIMEOUT}" deadline
+  deadline=$(( $(date +%s) + budget ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    ros_run "timeout 10 ros2 topic echo --once --no-daemon $topic" >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  return 1
+}
+
 for topic in /odom /scan /camera/image_raw /joint_states; do
-  if ros_run "timeout $TOPIC_TIMEOUT ros2 topic echo --once --no-daemon $topic" >/dev/null 2>&1; then
+  if topic_has_message "$topic"; then
     pass "$topic publishes"
   else
     fail "$topic produced no message within ${TOPIC_TIMEOUT}s"
@@ -241,12 +258,9 @@ except urllib.error.HTTPError as exc:
 PY
   ); then
     pass "map-server accepted POST /switch: $switched"
-    # Gate first, then read. POST /switch returns as soon as the launch is
-    # spawned, and `ros2 topic echo --once` does not wait for a topic to appear
-    # -- it prints "does not appear to be published yet" and exits 1 straight
-    # away. Poll until the topic exists, then require an actual message.
-    if wait_for_odom &&
-       ros_run "timeout $TOPIC_TIMEOUT ros2 topic echo --once --no-daemon /odom" >/dev/null 2>&1; then
+    # Gate first, then read: POST /switch returns as soon as the launch is
+    # spawned, so wait for the topic to exist before asking for a message.
+    if wait_for_odom && topic_has_message /odom; then
       pass "sim came up through map-server's own launch command (/odom publishing)"
     else
       fail "map-server accepted the switch but the sim never came up"
