@@ -539,10 +539,11 @@ app.post('/api/robots', (req, res) => {
     max_steering_angle = 30,
     omni_wheel_count = 3,
     // Actuator dynamics — 0 = no limit (instant response). Units match the
-    // <amr_sim_config> schema: m/s^2, rad/s^2, deg/s.
+    // <amr_sim_config> schema: m/s^2, rad/s^2, deg/s, deg/s^2.
     max_linear_accel = 0,
     max_angular_accel = 0,
     max_steering_rate = 0,
+    max_steering_accel = 0,
     // Visual
     color
   } = req.body;
@@ -613,11 +614,12 @@ app.post('/api/robots', (req, res) => {
     <laser_y>${parseFloat(lidar_y).toFixed(3)}</laser_y>
     <laser_height>${parseFloat(lidar_height).toFixed(3)}</laser_height>
     <ticks_per_meter>${parseFloat(ticks_per_meter).toFixed(1)}</ticks_per_meter>
-    <max_steering_angle>${parseFloat(max_steering_angle).toFixed(1)}</max_steering_angle>
+    <max_steering_angle>${parseFloat(max_steering_angle).toFixed(2)}</max_steering_angle>
     ${kinematic_model === 'omni' ? `<omni_wheel_count>${parseInt(omni_wheel_count, 10)}</omni_wheel_count>` : ''}
     ${parseFloat(max_linear_accel) > 0 ? `<max_linear_accel>${parseFloat(max_linear_accel).toFixed(2)}</max_linear_accel>` : ''}
     ${parseFloat(max_angular_accel) > 0 ? `<max_angular_accel>${parseFloat(max_angular_accel).toFixed(2)}</max_angular_accel>` : ''}
     ${kinematic_model === 'ackermann' && parseFloat(max_steering_rate) > 0 ? `<max_steering_rate>${parseFloat(max_steering_rate).toFixed(1)}</max_steering_rate>` : ''}
+    ${kinematic_model === 'ackermann' && parseFloat(max_steering_accel) > 0 ? `<max_steering_accel>${parseFloat(max_steering_accel).toFixed(1)}</max_steering_accel>` : ''}
   </amr_sim_config>
 
   <material name="body_color">

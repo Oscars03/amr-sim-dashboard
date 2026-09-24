@@ -15,6 +15,8 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import logging
 
+from amr_2dsim.actuators import slew_steering
+
 _DEFAULTS = {
     'kinematic_model': 'diff_drive',
     'wheel_base': 0.5,
@@ -33,6 +35,10 @@ _DEFAULTS = {
     'max_linear_accel': 0.0,    # m/s^2  (matches Nav2 acc_lim_x)
     'max_angular_accel': 0.0,   # rad/s^2, diff-drive/omni yaw (matches Nav2 acc_lim_theta)
     'max_steering_rate': 0.0,   # rad/s, ackermann steering servo (URDF authors in deg/s)
+    # rad/s^2, ackermann steering servo angular ACCELERATION (URDF authors in
+    # deg/s^2). A hobby/bus servo is acceleration-limited as well as rate-
+    # limited: small corrections never reach the peak rate. <= 0 = rate-only.
+    'max_steering_accel': 0.0,
     # Gaussian range noise (metres) added to each /scan hit. <= 0 = ideal scan.
     'laser_noise_stddev': 0.0,
 }
@@ -106,6 +112,13 @@ def parse_sim_config(urdf_path: str) -> dict:
                 cfg['max_steering_rate'] = math.radians(float(msr.text.strip()))
             except ValueError as e:
                 logging.warning(f"amr_sim_config: cannot parse <max_steering_rate>: {e}, ignoring")
+        # max_steering_accel: DEGREES/second^2, same convention as the rate.
+        msa_acc = sim_cfg.find('max_steering_accel')
+        if msa_acc is not None and (msa_acc.text or '').strip():
+            try:
+                cfg['max_steering_accel'] = math.radians(float(msa_acc.text.strip()))
+            except ValueError as e:
+                logging.warning(f"amr_sim_config: cannot parse <max_steering_accel>: {e}, ignoring")
         # drive_axle_x: optional; keep None if absent (means "skip convention check")
         ax_elem = sim_cfg.find('drive_axle_x')
         if ax_elem is not None and (ax_elem.text or '').strip():
@@ -268,6 +281,7 @@ class AmrSimulator(Node):
             self.max_linear_accel  = cfg['max_linear_accel']
             self.max_angular_accel = cfg['max_angular_accel']
             self.max_steering_rate = cfg['max_steering_rate']
+            self.max_steering_accel = cfg['max_steering_accel']
             self.declare_parameter('creep_on_turn_mps', self.creep_on_turn_mps)
             self.robot_length    = None
             self.robot_width     = None
@@ -340,6 +354,7 @@ class AmrSimulator(Node):
             self.max_linear_accel  = _DEFAULTS['max_linear_accel']
             self.max_angular_accel = _DEFAULTS['max_angular_accel']
             self.max_steering_rate = _DEFAULTS['max_steering_rate']
+            self.max_steering_accel = _DEFAULTS['max_steering_accel']
             self.robot_length    = None
             self.robot_width     = None
             self.footprint_offset_x = 0.0
@@ -502,6 +517,7 @@ class AmrSimulator(Node):
         self.joint_pub = self.create_publisher(JointState, '/joint_states', 10)
         self.camera_pub = self.create_publisher(Image, '/camera/image_raw', 10)
         self.current_steering_angle = 0.0
+        self.current_steering_rate = 0.0  # rad/s, servo angular velocity (accel-limited model)
 
         # Camera simulation configuration (320x240 @ 10 Hz)
         self._camera_width = 320
@@ -559,6 +575,7 @@ class AmrSimulator(Node):
         self.total_pulse_left = 0.0
         self.total_pulse_right = 0.0
         self.current_steering_angle = 0.0
+        self.current_steering_rate = 0.0
         self.last_time = time.time()
         self.prev_dir = 0
         self.last_nonzero_dir = 0
@@ -605,6 +622,12 @@ class AmrSimulator(Node):
         self.cmd_vel['vx'] = msg.linear.x
         self.cmd_vel['vy'] = msg.linear.y
         self.cmd_vel['w'] = msg.angular.z
+
+    def _slew_steering_accel_limited(self, target, dt):
+        """Servo limited in angular acceleration AND rate -- see actuators.slew_steering."""
+        self.current_steering_angle, self.current_steering_rate = slew_steering(
+            self.current_steering_angle, self.current_steering_rate, target, dt,
+            self.max_steering_accel, self.max_steering_rate)
 
     def steering_cmd_callback(self, msg):
         self._explicit_steer_fraction = max(-1.0, min(1.0, msg.data))
@@ -698,11 +721,15 @@ class AmrSimulator(Node):
             # Steering servo slews toward the demanded angle; the achieved yaw
             # rate then follows the ACTUAL wheel angle and the (rate-limited)
             # forward speed -- never the raw demand.
-            if self.max_steering_rate > 0.0:
+            if self.max_steering_accel > 0.0:
+                self._slew_steering_accel_limited(delta, dt)
+            elif self.max_steering_rate > 0.0:
                 dd = self.max_steering_rate * dt
                 self.current_steering_angle += max(-dd, min(dd, delta - self.current_steering_angle))
+                self.current_steering_rate = 0.0
             else:
                 self.current_steering_angle = delta
+                self.current_steering_rate = 0.0
             w = 0.0 if abs(vx) < 1e-4 else vx * math.tan(self.current_steering_angle) / self.wheel_base
         elif self.max_angular_accel > 0.0:
             dw = self.max_angular_accel * dt

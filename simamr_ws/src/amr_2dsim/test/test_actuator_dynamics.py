@@ -159,3 +159,29 @@ def test_steering_rate_lets_the_angle_settle_at_the_target(node, monkeypatch):
 
     _, _, deltas = drive(node, monkeypatch, vx=vx, w_cmd=w_cmd, dt=0.05, steps=40)
     assert deltas[-1] == pytest.approx(target, abs=1e-6)
+
+
+# ── max_steering_accel (servo acceleration limit, deg/s^2 in the URDF) ──
+
+def test_steering_accel_limits_how_fast_the_servo_speeds_up(node, monkeypatch):
+    """Through timer_callback, not just actuators.slew_steering: with Rhino's
+    measured 262.2 deg/s^2 / 82.0 deg/s the servo gains at most a * dt of rate
+    per 50 ms tick, so the first tick moves far less than rate-only would."""
+    node.kinematic_model = 'ackermann'
+    node.wheel_base = 0.385
+    node.max_steering_angle = math.radians(18.95)
+    node.max_steering_rate = math.radians(82.0)
+    node.max_steering_accel = math.radians(262.2)
+    dt = 0.05
+    _, _, deltas = drive(node, monkeypatch, vx=0.3, w_cmd=2.0, dt=dt, steps=40)
+    # tick 1: rate = a*dt = 13.1 deg/s -> moved 0.66 deg, vs 4.1 deg rate-only
+    assert math.degrees(deltas[0]) == pytest.approx(262.2 * dt * dt, rel=1e-6)
+    rates = np.diff([0.0] + deltas) / dt
+    land = int(np.flatnonzero(rates)[-1])  # the tick that snaps onto the target
+    changes = np.abs(np.diff(rates[:land]))
+    assert np.max(changes) <= math.radians(262.2) * dt + 1e-9
+    # The landing tick moves only the sub-tick remainder (actuators.py docstring):
+    # its apparent deceleration may exceed a*dt, but by less than one tick's worth.
+    assert abs(rates[land] - rates[land - 1]) <= 2 * math.radians(262.2) * dt
+    assert deltas[-1] == pytest.approx(node.max_steering_angle)
+    assert node.current_steering_rate == 0.0

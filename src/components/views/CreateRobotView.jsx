@@ -59,7 +59,7 @@ export default function CreateRobotView({ onCreated }) {
     lidar_noise_stddev: 0,
     ticks_per_meter: 2000, omni_wheel_count: 3,
     // Actuator dynamics — 0 = no limit (instant response)
-    max_linear_accel: 0, max_angular_accel: 0, max_steering_rate: 0,
+    max_linear_accel: 0, max_angular_accel: 0, max_steering_rate: 0, max_steering_accel: 0,
   });
 
   const getAllowedGeometries = (model, omniCount) => {
@@ -526,7 +526,11 @@ export default function CreateRobotView({ onCreated }) {
                     <div style={{ fontSize: '11px', color: text, opacity: 0.6, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Actuator Dynamics · 0 = instant</div>
                     <ParamRow label="Max Linear Accel" unit="m/s²" value={form.max_linear_accel} min={0} max={5} step={0.1} onChange={v => set('max_linear_accel', v)} {...shared} inputBg={bg} />
                     {showSteeringAngle
-                      ? <ParamRow label="Max Steering Rate" unit="°/s" value={form.max_steering_rate} min={0} max={360} step={5} onChange={v => set('max_steering_rate', v)} {...shared} inputBg={bg} />
+                      ? <>
+                          <ParamRow label="Max Steering Rate" unit="°/s" value={form.max_steering_rate} min={0} max={360} step={5} onChange={v => set('max_steering_rate', v)} {...shared} inputBg={bg} />
+                          {/* A servo is acceleration-limited too: small corrections never reach the peak rate. */}
+                          <ParamRow label="Max Steering Accel" unit="°/s²" value={form.max_steering_accel} min={0} max={2000} step={10} onChange={v => set('max_steering_accel', v)} {...shared} inputBg={bg} />
+                        </>
                       : <ParamRow label="Max Angular Accel" unit="rad/s²" value={form.max_angular_accel} min={0} max={10} step={0.1} onChange={v => set('max_angular_accel', v)} {...shared} inputBg={bg} />}
                   </div>
                 </>
