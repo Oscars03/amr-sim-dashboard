@@ -23,27 +23,34 @@
         (tf_z = '0.510'; the old 0.295 was wrong by 215 mm and is retracted)
 
   amr_sim_config VALUES   (re-synced 2026-09-24 to master-ackerman-thesis CLAUDE_rhino.md §3/§16/§19;
-                        max_steering_angle 2026-09-28, W40 plan E3)
+                        max_steering_angle 2026-09-29, after the 2026-09-28 steering refit)
     [measured]   wheel_base 0.385 · axle_track 0.345 · wheel_radius 0.0889
-    [measured]   max_steering_angle 22.80 deg — delta_BIKE (the effective bicycle
-                 angle, delta = atan(L/R)), not a wheel angle, not servo_max_steer_deg
-                 (20.0f, the SERVO COMMAND range). It is the LARGEST delta_bike
-                 measured ON THE FLOOR: a 90 deg turn at the 20 deg command gave
-                 R 0.916 m turning RIGHT (22.80 deg) and R 1.301 m turning LEFT
-                 (16.49 deg), 2026-09-12 (master-ackerman-thesis
-                 paper_data/ekf_input_audit_2026-09-12.md §4.1,
-                 measurement_checklist.md item 1). The sim models ONE symmetric
-                 limit, and the owner decided 2026-09-28 (W40 plan E3) not to split
-                 left/right: take the single largest value.
-                 ⚠ KNOWN LIMITATION: the sim turns LEFT down to R 0.916 m where the
-                 real robot only reaches 1.301 m. A baseline (RPP/MPPI) can follow
-                 left arcs in the sim that the robot cannot, so left-turn sim
-                 results are OPTIMISTIC. Nav2's minimum_turning_radius 1.20 sits
-                 between the two; the new Ackermann controller caps itself at
-                 +/-16.49 deg and is not affected.
-                 SUPERSEDED here 2026-09-28: 18.95 deg (static, front axle lifted,
-                 9-point protractor 2026-09-07: 18.95 L / 21.83 R) — on the floor
-                 the left side reaches less, the right side more.
+    [source]     max_steering_angle 18.0 deg — the COMMAND cap in the robot's
+                 base_controller (max_steer_deg: 18.0, rhino-robot-ws#31, merged
+                 3b85083), deliberately below the firmware's servo_max_steer_deg 20.
+                 The steering servo was found loose and refitted on 2026-09-28;
+                 since then a +20 deg command stalls against a mechanical stop at
+                 +18.62 deg (servo axis, front axle lifted), so the owner capped the
+                 command at 18 deg on both sides. At the cap the servo axis settles
+                 at +17.84 / -17.78 deg (master-ackerman-thesis
+                 paper_data/servo_steering_2026-09-28.md).
+                 This field clamps the ACHIEVED bicycle angle (delta in
+                 simulator_node.py's w = v*tan(delta)/L). The sim has no linkage, so
+                 it takes delta_bike = command: 18.0 is the largest angle the robot
+                 can be told to steer, one value for both sides (the sim stays
+                 symmetric, owner decision W40 plan E3). What delta_bike the real
+                 linkage reaches at 18 deg is NOT MEASURED — every delta_bike below
+                 predates the refit. Do not quote 18.0 as a measured delta_bike.
+                 R = 0.385 / tan(18 deg) = 1.185 m, just under Nav2's
+                 minimum_turning_radius 1.20, so the sim can follow anything the
+                 planner plans. Same digits as the 1.185 m retracted below, a
+                 different claim: that 18 was a measured wheel angle, this 18 is a
+                 command cap, and neither is the robot's R_min (unmeasured).
+                 SUPERSEDED 2026-09-29: 18.95 deg (static, front axle lifted,
+                 9-point protractor 2026-09-07: 18.95 L / 21.83 R) and the floor
+                 values 16.49 L / 22.80 R (2026-09-12). All were measured at the
+                 20 deg command with a servo loose from an unknown date, so none of
+                 them describes the current robot.
                  RETRACTED 2026-09-24: "18 deg (L) / 25 deg (R)" and
                  "R_min = 0.385/tan(18) = 1.185 m" — that 18/25 pair was the RIGHT
                  wheel read in two turn directions (CLAUDE_rhino.md §2/§24).
@@ -101,11 +108,11 @@
     <laser_y>0.000</laser_y>
     <laser_height>0.03885</laser_height>
     <ticks_per_meter>1432.2</ticks_per_meter>
-    <!-- DEGREES (simulator_node.py converts). Largest delta_bike measured on the
-         floor (right turn, 2026-09-12), one value for both sides (owner, 2026-09-28),
-         NOT the servo's 20 deg command range — see amr_sim_config VALUES above.
-         22.80 deg gives R 0.916 m; the real left side stops at 1.301 m. -->
-    <max_steering_angle>22.80</max_steering_angle>
+    <!-- DEGREES (simulator_node.py converts). The robot's base_controller command
+         cap (max_steer_deg 18.0, rhino-robot-ws#31), one value for both sides —
+         NOT a measured delta_bike; see amr_sim_config VALUES above.
+         18.0 deg gives R 1.185 m, under Nav2's minimum_turning_radius 1.20. -->
+    <max_steering_angle>18.0</max_steering_angle>
     <!-- Servo dynamics at servo_speed 3000 [measured 2026-09-08], DEGREES/s and /s^2. -->
     <max_steering_rate>82.0</max_steering_rate>
     <max_steering_accel>262.2</max_steering_accel>
