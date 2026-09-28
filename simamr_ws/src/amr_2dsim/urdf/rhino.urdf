@@ -54,15 +54,26 @@
                  RETRACTED 2026-09-24: "18 deg (L) / 25 deg (R)" and
                  "R_min = 0.385/tan(18) = 1.185 m" — that 18/25 pair was the RIGHT
                  wheel read in two turn directions (CLAUDE_rhino.md §2/§24).
-    [measured]   max_steering_rate 82.0 deg/s and max_steering_accel 262.2 deg/s^2 —
-                 the servo at servo_speed 3000 (fixed for Phase B, §21), 64 slews,
-                 2026-09-08 [CI 80.8–83.3 / 260.0–264.5]. The servo is
-                 ACCELERATION-limited: a 5 deg correction peaks at ~36 deg/s, only
-                 steps >= ~26 deg reach 82 (actuators.slew_steering reproduces both).
-                 Measured at the servo AXLE: delta_bike moves 1.091x that when
-                 turning right and 0.964x turning left (binding wheel-side peak
-                 89.5 deg/s). The sim applies the axle values symmetrically — a
-                 +/-9 % asymmetry it does not model.
+    [source]     max_steering_rate 45.0 deg/s — the robot's base_controller
+                 rate-limits the steering COMMAND at max_steer_rate_deg_s 45
+                 (rhino-robot-ws#31, merged 3b85083, 2026-09-28) before it reaches
+                 the servo; measured 44.0–45.8 deg/s (mean 44.9) over 5
+                 lock-to-lock swings at the servo axis, front axle lifted
+                 (master-ackerman-thesis paper_data/servo_steering_2026-09-28.md).
+                 This is also the thesis' steering-rate KPI (<= 45 deg/s).
+                 SUPERSEDED 2026-09-29: 82.0 deg/s, the servo running free with no
+                 software limit — still the servo's own peak, and what the robot
+                 does only if base_controller's limit is disabled (<= 0).
+    [measured]   max_steering_accel 262.2 deg/s^2 — the servo at servo_speed 3000
+                 (fixed for Phase B, §21), 64 slews, 2026-09-08 [CI 260.0–264.5;
+                 peak 82.0, CI 80.8–83.3, re-confirmed 80–81 on 2026-09-28]. With
+                 the 45 cap, actuators.slew_steering gives t90 0.45 s for an 18 deg
+                 step and 0.81 s for a 36 deg lock-to-lock swing; measured 0.48 and
+                 0.83 (feedback period 0.059 s).
+                 Both are at the servo AXLE. Before the 2026-09-28 refit delta_bike
+                 moved 1.091x that turning right and 0.964x turning left; after the
+                 refit that map is not measured. The sim applies the axle values
+                 symmetrically.
     [LOCK §19]   creep_on_turn_mps 0.0 — 0.3 drove the robot forward on any rotation
                  command (§11.2a) and was the shipped default until 2026-09-19.
                  no_creep_mode stays false: that flag also selects the Nav2
@@ -113,8 +124,9 @@
          NOT a measured delta_bike; see amr_sim_config VALUES above.
          18.0 deg gives R 1.185 m, under Nav2's minimum_turning_radius 1.20. -->
     <max_steering_angle>18.0</max_steering_angle>
-    <!-- Servo dynamics at servo_speed 3000 [measured 2026-09-08], DEGREES/s and /s^2. -->
-    <max_steering_rate>82.0</max_steering_rate>
+    <!-- DEGREES/s and /s^2. Rate: base_controller's command limit 45 (rhino-robot-ws#31);
+         accel: the servo at servo_speed 3000 [measured 2026-09-08]. -->
+    <max_steering_rate>45.0</max_steering_rate>
     <max_steering_accel>262.2</max_steering_accel>
     <drive_axle_x>0.0</drive_axle_x>
     <!-- §19 LOCK: 0.0. 0.3 injected uncommanded forward motion on every rotation command. -->
