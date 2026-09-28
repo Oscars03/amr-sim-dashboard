@@ -10,6 +10,12 @@ let mapServer, win
 let updateDownloaded = false
 let installRequested = false
 
+// The updater can emit after the window is gone (an install failing inside
+// its quit handler), and webContents.send on a destroyed window throws.
+function sendToWin(channel, payload) {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+}
+
 // electron-updater resets its own "already installing" flag when a second
 // quitAndInstall is refused, so its quit handler then runs `pkexec dpkg -i`
 // again. The Update Ready dialog and the in-app Restart button can both fire.
@@ -84,9 +90,9 @@ ipcMain.handle('start-download', () => {
       percent += 2;
       if (percent >= 100) {
         clearInterval(devDownloadInterval);
-        win?.webContents.send('update-status', { status: 'downloaded', version: '0.3.0', message: 'Update ready.' });
+        sendToWin('update-status', { status: 'downloaded', version: '0.3.0', message: 'Update ready.' });
       } else {
-        win?.webContents.send('update-status', {
+        sendToWin('update-status', {
           status: 'downloading',
           percent: percent,
           progress: percent,
@@ -102,9 +108,9 @@ ipcMain.handle('start-download', () => {
 ipcMain.handle('check-for-updates', async () => {
   if (!app.isPackaged) {
     // Mock update flow: send checking, then send available (waits for start-download)
-    win?.webContents.send('update-status', { status: 'checking', message: 'Checking for updates...' })
+    sendToWin('update-status', { status: 'checking', message: 'Checking for updates...' })
     setTimeout(() => {
-      win?.webContents.send('update-status', { status: 'available', version: '0.3.0', message: 'New version v0.3.0 is available!' })
+      sendToWin('update-status', { status: 'available', version: '0.3.0', message: 'New version v0.3.0 is available!' })
     }, 1000);
     return { status: 'dev', message: 'Auto-update is mocked in Development mode.' }
   }
@@ -112,7 +118,7 @@ ipcMain.handle('check-for-updates', async () => {
     const result = await autoUpdater.checkForUpdates()
     return { status: 'checking', result }
   } catch (err) {
-    win?.webContents.send('update-status', { status: 'error', message: err.message })
+    sendToWin('update-status', { status: 'error', message: err.message })
     return { status: 'error', message: err.message }
   }
 })
@@ -121,26 +127,26 @@ function checkAutoUpdate() {
   autoUpdater.autoDownload = false
 
   autoUpdater.on('checking-for-update', () => {
-    win?.webContents.send('update-status', { status: 'checking', message: 'Checking for updates...' })
+    sendToWin('update-status', { status: 'checking', message: 'Checking for updates...' })
   })
 
   autoUpdater.on('update-available', (info) => {
-    win?.webContents.send('update-status', { status: 'available', version: info.version, message: `New version v${info.version} is available!` })
+    sendToWin('update-status', { status: 'available', version: info.version, message: `New version v${info.version} is available!` })
     // The front-end custom UI now displays a confirmation popup and calls start-download
   })
 
   autoUpdater.on('update-not-available', () => {
-    win?.webContents.send('update-status', { status: 'not-available', message: 'App is up to date.' })
+    sendToWin('update-status', { status: 'not-available', message: 'App is up to date.' })
   })
 
   autoUpdater.on('error', (err) => {
     if (err.message.includes('404')) return;
-    win?.webContents.send('update-status', { status: 'error', message: err.message })
+    sendToWin('update-status', { status: 'error', message: err.message })
   })
 
   autoUpdater.on('download-progress', (progressObj) => {
     const percent = Math.floor(progressObj?.percent || 0)
-    win?.webContents.send('update-status', {
+    sendToWin('update-status', {
       status: 'downloading',
       percent: percent,
       progress: percent,
@@ -150,7 +156,7 @@ function checkAutoUpdate() {
 
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloaded = true
-    win?.webContents.send('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.' })
+    sendToWin('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.' })
     dialog.showMessageBox({
       type: 'info',
       title: 'Update Ready',
@@ -173,13 +179,13 @@ app.whenReady().then(() => {
 
   mapServer.on('error', (err) => {
     console.error('map-server process error:', err)
-    win?.webContents.send('backend-error', { message: err.message })
+    sendToWin('backend-error', { message: err.message })
   })
 
   mapServer.on('exit', (code, signal) => {
     if (!isQuitting) {
       console.warn(`map-server exited unexpectedly (code: ${code}, signal: ${signal})`)
-      win?.webContents.send('backend-error', {
+      sendToWin('backend-error', {
         message: `Simulation backend stopped unexpectedly (code: ${code})`
       })
     }
