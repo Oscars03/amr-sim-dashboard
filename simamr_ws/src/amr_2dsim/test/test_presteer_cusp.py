@@ -8,7 +8,7 @@ angle from the *held* vx (0), which falls into the full-lock-by-sign(w)
 branch: reversing with w > 0 needs a negative (right) angle, yet for the whole
 hold the servo was driven toward +max_steering_angle (left), then back.
 
-Rhino's own numbers (urdf/rhino.urdf): L 0.385 m, 18.0 deg (command cap), servo 82.0 deg/s
+Rhino's own numbers (urdf/rhino.urdf): L 0.385 m, 18.0 deg (command cap), 45.0 deg/s (command rate cap)
 and 262.2 deg/s^2, creep 0.0 (section 19 lock), presteer_ms 200.
 """
 import math
@@ -43,7 +43,7 @@ def configure_rhino(node):
     node.kinematic_model = 'ackermann'
     node.wheel_base = 0.385
     node.max_steering_angle = math.radians(18.0)
-    node.max_steering_rate = math.radians(82.0)
+    node.max_steering_rate = math.radians(45.0)
     node.max_steering_accel = math.radians(262.2)
     node.creep_on_turn_mps = 0.0
     node.no_creep_mode = False
