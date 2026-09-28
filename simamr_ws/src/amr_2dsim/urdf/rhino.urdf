@@ -22,27 +22,46 @@
       — matches the live static_transform_publisher in lidar_bringup.launch.py:19
         (tf_z = '0.510'; the old 0.295 was wrong by 215 mm and is retracted)
 
-  amr_sim_config VALUES
+  amr_sim_config VALUES   (re-synced 2026-09-24 to master-ackerman-thesis CLAUDE_rhino.md §3/§16/§19)
     [measured]   wheel_base 0.385 · axle_track 0.345 · wheel_radius 0.0889
-    [measured]   max_steering_angle 18 deg — NOT servo_max_steer_deg (that's 20.0f,
-                 the SERVO COMMAND range). The steering linkage is physically
-                 asymmetric: a full 20 deg command reaches only 18 deg at the
-                 left front wheel but overshoots to 25 deg at the right
-                 (CLAUDE_rhino.md, measured 2026-08-23). This field feeds the
-                 kinematic clamp on ACHIEVED wheel angle (delta in
-                 simulator_node.py's w = v*tan(delta)/L), so it must be the
-                 wheel-angle limit, not the command range — and must match
-                 the single worst-case value Nav2's planner already assumes
-                 (nav2_params.yaml minimum_turning_radius: 1.20, derived from
-                 this same 18 deg). Modelling the full 18/25 asymmetry would
-                 let the sim out-corner what the planner thinks is safe.
+    [measured]   max_steering_angle 18.95 deg — delta_BIKE, not a wheel angle, not
+                 servo_max_steer_deg (20.0f, the SERVO COMMAND range). 9-point
+                 protractor calibration 2026-09-07: delta_bike reaches 18.95 deg
+                 turning LEFT and 21.83 deg turning RIGHT. This field feeds the
+                 clamp on the ACHIEVED bicycle angle (delta in simulator_node.py's
+                 w = v*tan(delta)/L), and the sim models one symmetric limit, so it
+                 takes the worst (left) case — the same one Nav2's planner assumes:
+                 R_min = 0.385 / tan(18.95 deg) = 1.121 m, padded to
+                 minimum_turning_radius 1.20. Using the 21.83 right-turn value
+                 would let the sim out-corner what the planner treats as safe.
+                 RETRACTED here 2026-09-24: "18 deg (L) / 25 deg (R)" and
+                 "R_min = 0.385/tan(18) = 1.185 m" — that 18/25 pair was the RIGHT
+                 wheel read in two turn directions (CLAUDE_rhino.md §2/§24).
+    [measured]   max_steering_rate 82.0 deg/s and max_steering_accel 262.2 deg/s^2 —
+                 the servo at servo_speed 3000 (fixed for Phase B, §21), 64 slews,
+                 2026-09-08 [CI 80.8–83.3 / 260.0–264.5]. The servo is
+                 ACCELERATION-limited: a 5 deg correction peaks at ~36 deg/s, only
+                 steps >= ~26 deg reach 82 (actuators.slew_steering reproduces both).
+                 Measured at the servo AXLE: delta_bike moves 1.091x that when
+                 turning right and 0.964x turning left (binding wheel-side peak
+                 89.5 deg/s). The sim applies the axle values symmetrically — a
+                 +/-9 % asymmetry it does not model.
+    [LOCK §19]   creep_on_turn_mps 0.0 — 0.3 drove the robot forward on any rotation
+                 command (§11.2a) and was the shipped default until 2026-09-19.
+                 no_creep_mode stays false: that flag also selects the Nav2
+                 (signed-vx) steering convention when reversing.
+    [open]       max_linear_accel NOT set (instant). The MCU smoother's running value
+                 is unresolved: PRSH 2026-08-13 reads kin_max_lin_acc 5.0 m/s^2,
+                 paper_data/revsign_floor_2026-09-09.md quotes 0.2 from the source.
+                 Filling it with a guess is what §16 forbids; velocity_smoother
+                 (§21 factors 7/8) still bounds the command upstream in the sim.
                  ticks_per_meter from PPR = 800 (PRSH dump 2026-08-13)
                  laser_range_max 30.0 m (RPLIDAR S2E)
     [derived]    robot_radius 0.551 = sqrt(0.505^2 + 0.220^2), circumscribed from base_link
                  ticks_per_meter 1432.2 = 800 / (2*pi*0.0889)
-                 R_min = 0.385 / tan(18 deg) = 1.185 m  ✓ CLAUDE_rhino.md §3, matches
-                 nav2_params.yaml minimum_turning_radius: 1.20 (padded worst-case)
     [PLACEHOLDER] wheel_width 0.050 — never measured; drawing only, no physics effect
+    ⚠ Still §24: simulated jerk is not a result. These limits make the sim's steering
+      lag realistic for rehearsal (planner feasibility, clearance, tracking), nothing more.
 
   NO <inertial> HERE, BY DESIGN. M and CoM are NOT MEASURED. amr_2dsim is purely
   kinematic and ignores inertia; the placeholders live in the authoritative file only.
@@ -72,12 +91,16 @@
     <laser_y>0.000</laser_y>
     <laser_height>0.03885</laser_height>
     <ticks_per_meter>1432.2</ticks_per_meter>
-    <!-- DEGREES (simulator_node.py converts). Wheel-angle limit, NOT the servo's
-         20 deg command range — see amr_sim_config VALUES above. 18 deg matches
-         Nav2's minimum_turning_radius: 1.20 in nav2_params.yaml. -->
-    <max_steering_angle>18.0</max_steering_angle>
+    <!-- DEGREES (simulator_node.py converts). delta_bike worst case (left), NOT the
+         servo's 20 deg command range — see amr_sim_config VALUES above. 18.95 deg
+         gives R_min 1.121 m under Nav2's minimum_turning_radius: 1.20. -->
+    <max_steering_angle>18.95</max_steering_angle>
+    <!-- Servo dynamics at servo_speed 3000 [measured 2026-09-08], DEGREES/s and /s^2. -->
+    <max_steering_rate>82.0</max_steering_rate>
+    <max_steering_accel>262.2</max_steering_accel>
     <drive_axle_x>0.0</drive_axle_x>
-    <creep_on_turn_mps>0.3</creep_on_turn_mps>
+    <!-- §19 LOCK: 0.0. 0.3 injected uncommanded forward motion on every rotation command. -->
+    <creep_on_turn_mps>0.0</creep_on_turn_mps>
     <presteer_ms>200</presteer_ms>
     <no_creep_mode>false</no_creep_mode>
   </amr_sim_config>
