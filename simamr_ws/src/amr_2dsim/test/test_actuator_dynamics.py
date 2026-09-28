@@ -169,7 +169,7 @@ def test_steering_accel_limits_how_fast_the_servo_speeds_up(node, monkeypatch):
     per 50 ms tick, so the first tick moves far less than rate-only would."""
     node.kinematic_model = 'ackermann'
     node.wheel_base = 0.385
-    node.max_steering_angle = math.radians(18.95)
+    node.max_steering_angle = math.radians(18.0)
     node.max_steering_rate = math.radians(82.0)
     node.max_steering_accel = math.radians(262.2)
     dt = 0.05

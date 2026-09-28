@@ -22,20 +22,22 @@ def cfg():
     return {e.tag: (e.text or '').strip() for e in c}, root
 
 
-def test_steering_limit_is_delta_bike_worst_case(cfg):
+def test_steering_limit_is_the_command_cap(cfg):
     c, _ = cfg
-    # §3: delta_bike 18.95 deg left / 21.83 deg right; the planner takes the worst.
-    assert float(c['max_steering_angle']) == pytest.approx(18.95)
+    # base_controller max_steer_deg 18.0 (rhino-robot-ws#31), both sides, since
+    # the 2026-09-28 steering refit. A command cap, not a measured delta_bike:
+    # delta_bike after the refit is not measured
+    # (paper_data/servo_steering_2026-09-28.md).
+    assert float(c['max_steering_angle']) == pytest.approx(18.0)
 
 
-def test_turning_radius_matches_the_planner(cfg):
+def test_turning_radius_at_the_cap_fits_the_planner(cfg):
     c, _ = cfg
     L = float(c['wheel_base'])
-    r_min = L / math.tan(math.radians(float(c['max_steering_angle'])))
-    assert r_min == pytest.approx(1.121, abs=1e-3)          # §3 [derived]
-    # The sim must never turn tighter than Nav2 plans for (minimum_turning_radius 1.20),
-    # nor be unable to follow what it plans.
-    assert r_min <= 1.20
+    r = L / math.tan(math.radians(float(c['max_steering_angle'])))
+    assert r == pytest.approx(1.185, abs=1e-3)              # R at the 18 deg cap
+    # The sim can follow anything Nav2 plans (minimum_turning_radius 1.20).
+    assert r <= 1.20
 
 
 def test_servo_dynamics_are_the_measured_ones(cfg):
