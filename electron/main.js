@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { fork } from 'child_process'
+import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import pkg from 'electron-updater'
@@ -8,7 +9,19 @@ const { autoUpdater } = pkg
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mapServer, win
 let updateDownloaded = false
+let downloadedVersion = null
 let installRequested = false
+
+// A .deb lives in /opt and is installed through dpkg, so the update has to run
+// as root and Linux asks for the password. The AppImage replaces itself and
+// never asks. electron-updater picks its installer from the same file.
+function isDebInstall() {
+  try {
+    return fs.readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim() === 'deb'
+  } catch {
+    return false
+  }
+}
 
 // The updater can emit after the window is gone (an install failing inside
 // its quit handler), and webContents.send on a destroyed window throws.
@@ -18,7 +31,7 @@ function sendToWin(channel, payload) {
 
 // electron-updater resets its own "already installing" flag when a second
 // quitAndInstall is refused, so its quit handler then runs `pkexec dpkg -i`
-// again. The Update Ready dialog and the in-app Restart button can both fire.
+// again. A double click on Restart now is enough to trigger that.
 function installUpdate() {
   if (installRequested) return
   installRequested = true
@@ -125,6 +138,26 @@ ipcMain.handle('check-for-updates', async () => {
 
 function checkAutoUpdate() {
   autoUpdater.autoDownload = false
+  // Keep the updater's log on disk: an app relaunched by an update writes its
+  // console to /dev/null, and pkexec's stderr is the only clue when it fails.
+  const logFile = path.join(app.getPath('userData'), 'updater.log')
+  const toFile = (level, args) => {
+    try {
+      fs.appendFileSync(logFile, `${new Date().toISOString()} ${level} ${args.map(String).join(' ')}\n`)
+    } catch { /* logging must never break the update */ }
+  }
+  autoUpdater.logger = {
+    info: (...a) => { console.log(...a); toFile('INFO', a) },
+    warn: (...a) => { console.warn(...a); toFile('WARN', a) },
+    error: (...a) => { console.error(...a); toFile('ERROR', a) },
+    debug: () => {},
+  }
+  toFile('INFO', [`start v${app.getVersion()} pid=${process.pid} ppid=${process.ppid} stdinTTY=${Boolean(process.stdin.isTTY)}`])
+  // Rehearse an update against a local feed before publishing a release:
+  // AMR_UPDATE_FEED=http://localhost:8765 serves latest-linux.yml + artifacts.
+  if (process.env.AMR_UPDATE_FEED) {
+    autoUpdater.setFeedURL({ provider: 'generic', url: process.env.AMR_UPDATE_FEED })
+  }
 
   autoUpdater.on('checking-for-update', () => {
     sendToWin('update-status', { status: 'checking', message: 'Checking for updates...' })
@@ -141,6 +174,15 @@ function checkAutoUpdate() {
 
   autoUpdater.on('error', (err) => {
     if (err.message.includes('404')) return;
+    // The install failed or the password prompt was cancelled: the app keeps
+    // running, so put the Restart button back instead of leaving it stuck.
+    if (installRequested) {
+      installRequested = false
+      sendToWin('update-status', {
+        status: 'downloaded', version: downloadedVersion, needsPassword: isDebInstall(), installError: err.message
+      })
+      return
+    }
     sendToWin('update-status', { status: 'error', message: err.message })
   })
 
@@ -156,17 +198,11 @@ function checkAutoUpdate() {
 
   autoUpdater.on('update-downloaded', (info) => {
     updateDownloaded = true
-    sendToWin('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.' })
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Update Ready',
-      message: 'The update has been downloaded. Restart the app to apply the changes.',
-      buttons: ['Restart', 'Later']
-    }).then((result) => {
-      if (result.response === 0) {
-        installUpdate()
-      }
-    })
+    downloadedVersion = info.version
+    const needsPassword = isDebInstall()
+    // The in-app update modal is the only restart prompt; a native dialog on
+    // top of it asked the same question twice.
+    sendToWin('update-status', { status: 'downloaded', version: info.version, message: 'Update ready to install.', needsPassword })
   })
 
   autoUpdater.checkForUpdatesAndNotify()
