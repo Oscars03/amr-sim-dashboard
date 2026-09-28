@@ -518,6 +518,7 @@ class AmrSimulator(Node):
         self.camera_pub = self.create_publisher(Image, '/camera/image_raw', 10)
         self.current_steering_angle = 0.0
         self.current_steering_rate = 0.0  # rad/s, servo angular velocity (accel-limited model)
+        self.target_steering_angle = 0.0  # rad, what the servo is slewing toward
 
         # Camera simulation configuration (320x240 @ 10 Hz)
         self._camera_width = 320
@@ -575,6 +576,7 @@ class AmrSimulator(Node):
         self.total_pulse_left = 0.0
         self.total_pulse_right = 0.0
         self.current_steering_angle = 0.0
+        self.target_steering_angle = 0.0
         self.current_steering_rate = 0.0
         self.last_time = time.time()
         self.prev_dir = 0
@@ -629,6 +631,25 @@ class AmrSimulator(Node):
             self.current_steering_angle, self.current_steering_rate, target, dt,
             self.max_steering_accel, self.max_steering_rate)
 
+    def _kinematic_steer_target(self, v, w):
+        """Steering target (rad) for a commanded (v, w) -- port of
+        rhino_interface base_controller.cpp kinematic_steer_deg().
+
+        |v| > 0.01: bicycle model atan(L*w/v) with the SIGNED v, so reversing
+        under the same yaw-rate demand asks for the opposite angle. At or
+        below 0.01 the angle is undefined (division by v): full lock in the
+        direction of w, 0 if w == 0. Clamped to +/- max_steering_angle.
+
+        no_creep_mode keeps the sim's teleop convention (abs(v): the wheel
+        does not flip in reverse); the robot's /cmd_vel path has no such mode.
+        """
+        if abs(v) > 0.01:
+            denom = abs(v) if self.no_creep_mode else v
+            delta = math.atan((w * self.wheel_base) / denom)
+        else:
+            delta = self.max_steering_angle if w > 0.0 else (-self.max_steering_angle if w < 0.0 else 0.0)
+        return max(-self.max_steering_angle, min(self.max_steering_angle, delta))
+
     def steering_cmd_callback(self, msg):
         self._explicit_steer_fraction = max(-1.0, min(1.0, msg.data))
         self._last_steering_cmd_time = time.time()
@@ -654,6 +675,16 @@ class AmrSimulator(Node):
             vy = 0.0 # Diff drive cannot move sideways
         elif self.kinematic_model == 'ackermann':
             vy = 0.0 # Car cannot move sideways
+
+            # The steering target comes from the COMMANDED (signed) v and w,
+            # captured here before pre-steer/creep rewrite vx -- exactly like
+            # rhino_interface base_controller.cpp, which decides the angle in
+            # cmd_vel_callback (kinematic_steer_deg(target_v_, target_w_)) and
+            # sends it unchanged while the pre-steer hold zeroes DYNV. Deriving
+            # it from the held vx (0) instead meant full lock by sign(w) at
+            # every cusp: reversing with w > 0 swung the servo to the WRONG
+            # side for presteer_ms, then back.
+            cmd_v, cmd_w = vx, w
 
             # --- PRE-STEER AND CREEP LOGIC ---
             v_dir = 0
@@ -693,19 +724,10 @@ class AmrSimulator(Node):
                 # front wheels, it just doesn't rotate the chassis until vx != 0.
                 delta = self._explicit_steer_fraction * self.max_steering_angle
                 delta = max(-self.max_steering_angle, min(self.max_steering_angle, delta))
-            elif abs(vx) < 1e-4:
-                # Real base_controller fallback at low speeds: full lock
-                delta = self.max_steering_angle if w > 0.0 else (-self.max_steering_angle if w < 0.0 else 0.0)
             else:
-                # Treat raw w command as intent, calculate required steering angle
-                if self.no_creep_mode:
-                    # Teleop/Real car mode: use abs(vx) so reverse motion doesn't invert steering wheel direction
-                    delta = math.atan((w * self.wheel_base) / abs(vx))
-                else:
-                    # Nav2 compatible mode: use vx so steering swaps, preserving the commanded chassis yaw rate (w)
-                    delta = math.atan((w * self.wheel_base) / vx)
-                # Clamp to physical limits
-                delta = max(-self.max_steering_angle, min(self.max_steering_angle, delta))
+                delta = self._kinematic_steer_target(cmd_v, cmd_w)
+            # The servo slews toward this; kept for tests / introspection.
+            self.target_steering_angle = delta
 
         # --- ACTUATOR DYNAMICS ---
         # Above resolved the velocity / steering the chassis was *commanded*.
