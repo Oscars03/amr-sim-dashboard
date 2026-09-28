@@ -22,20 +22,26 @@ def cfg():
     return {e.tag: (e.text or '').strip() for e in c}, root
 
 
-def test_steering_limit_is_delta_bike_worst_case(cfg):
+def test_steering_limit_is_the_largest_floor_delta_bike(cfg):
     c, _ = cfg
-    # §3: delta_bike 18.95 deg left / 21.83 deg right; the planner takes the worst.
-    assert float(c['max_steering_angle']) == pytest.approx(18.95)
+    # Floor (dynamic) delta_bike at the 20 deg command, 2026-09-12:
+    # 16.49 deg left (R 1.301 m) / 22.80 deg right (R 0.916 m)
+    # (paper_data/ekf_input_audit_2026-09-12.md §4.1). One symmetric limit,
+    # the largest value — owner decision 2026-09-28 (W40 plan E3).
+    assert float(c['max_steering_angle']) == pytest.approx(22.80)
 
 
-def test_turning_radius_matches_the_planner(cfg):
+def test_turning_radius_is_the_floor_right_turn(cfg):
     c, _ = cfg
     L = float(c['wheel_base'])
     r_min = L / math.tan(math.radians(float(c['max_steering_angle'])))
-    assert r_min == pytest.approx(1.121, abs=1e-3)          # §3 [derived]
-    # The sim must never turn tighter than Nav2 plans for (minimum_turning_radius 1.20),
-    # nor be unable to follow what it plans.
+    assert r_min == pytest.approx(0.916, abs=1e-3)          # right turn, on the floor
+    # The sim can follow anything Nav2 plans (minimum_turning_radius 1.20) ...
     assert r_min <= 1.20
+    # ... and, by the E3 decision, turns LEFT tighter than the robot can
+    # (1.301 m). Left-turn sim results are optimistic — a documented
+    # limitation, not a bug. If this ever fails, the decision changed.
+    assert r_min < 1.301
 
 
 def test_servo_dynamics_are_the_measured_ones(cfg):

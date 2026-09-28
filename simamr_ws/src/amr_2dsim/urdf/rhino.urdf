@@ -22,19 +22,29 @@
       — matches the live static_transform_publisher in lidar_bringup.launch.py:19
         (tf_z = '0.510'; the old 0.295 was wrong by 215 mm and is retracted)
 
-  amr_sim_config VALUES   (re-synced 2026-09-24 to master-ackerman-thesis CLAUDE_rhino.md §3/§16/§19)
+  amr_sim_config VALUES   (re-synced 2026-09-24 to master-ackerman-thesis CLAUDE_rhino.md §3/§16/§19;
+                        max_steering_angle 2026-09-28, W40 plan E3)
     [measured]   wheel_base 0.385 · axle_track 0.345 · wheel_radius 0.0889
-    [measured]   max_steering_angle 18.95 deg — delta_BIKE, not a wheel angle, not
-                 servo_max_steer_deg (20.0f, the SERVO COMMAND range). 9-point
-                 protractor calibration 2026-09-07: delta_bike reaches 18.95 deg
-                 turning LEFT and 21.83 deg turning RIGHT. This field feeds the
-                 clamp on the ACHIEVED bicycle angle (delta in simulator_node.py's
-                 w = v*tan(delta)/L), and the sim models one symmetric limit, so it
-                 takes the worst (left) case — the same one Nav2's planner assumes:
-                 R_min = 0.385 / tan(18.95 deg) = 1.121 m, padded to
-                 minimum_turning_radius 1.20. Using the 21.83 right-turn value
-                 would let the sim out-corner what the planner treats as safe.
-                 RETRACTED here 2026-09-24: "18 deg (L) / 25 deg (R)" and
+    [measured]   max_steering_angle 22.80 deg — delta_BIKE (the effective bicycle
+                 angle, delta = atan(L/R)), not a wheel angle, not servo_max_steer_deg
+                 (20.0f, the SERVO COMMAND range). It is the LARGEST delta_bike
+                 measured ON THE FLOOR: a 90 deg turn at the 20 deg command gave
+                 R 0.916 m turning RIGHT (22.80 deg) and R 1.301 m turning LEFT
+                 (16.49 deg), 2026-09-12 (master-ackerman-thesis
+                 paper_data/ekf_input_audit_2026-09-12.md §4.1,
+                 measurement_checklist.md item 1). The sim models ONE symmetric
+                 limit, and the owner decided 2026-09-28 (W40 plan E3) not to split
+                 left/right: take the single largest value.
+                 ⚠ KNOWN LIMITATION: the sim turns LEFT down to R 0.916 m where the
+                 real robot only reaches 1.301 m. A baseline (RPP/MPPI) can follow
+                 left arcs in the sim that the robot cannot, so left-turn sim
+                 results are OPTIMISTIC. Nav2's minimum_turning_radius 1.20 sits
+                 between the two; the new Ackermann controller caps itself at
+                 +/-16.49 deg and is not affected.
+                 SUPERSEDED here 2026-09-28: 18.95 deg (static, front axle lifted,
+                 9-point protractor 2026-09-07: 18.95 L / 21.83 R) — on the floor
+                 the left side reaches less, the right side more.
+                 RETRACTED 2026-09-24: "18 deg (L) / 25 deg (R)" and
                  "R_min = 0.385/tan(18) = 1.185 m" — that 18/25 pair was the RIGHT
                  wheel read in two turn directions (CLAUDE_rhino.md §2/§24).
     [measured]   max_steering_rate 82.0 deg/s and max_steering_accel 262.2 deg/s^2 —
@@ -91,10 +101,11 @@
     <laser_y>0.000</laser_y>
     <laser_height>0.03885</laser_height>
     <ticks_per_meter>1432.2</ticks_per_meter>
-    <!-- DEGREES (simulator_node.py converts). delta_bike worst case (left), NOT the
-         servo's 20 deg command range — see amr_sim_config VALUES above. 18.95 deg
-         gives R_min 1.121 m under Nav2's minimum_turning_radius: 1.20. -->
-    <max_steering_angle>18.95</max_steering_angle>
+    <!-- DEGREES (simulator_node.py converts). Largest delta_bike measured on the
+         floor (right turn, 2026-09-12), one value for both sides (owner, 2026-09-28),
+         NOT the servo's 20 deg command range — see amr_sim_config VALUES above.
+         22.80 deg gives R 0.916 m; the real left side stops at 1.301 m. -->
+    <max_steering_angle>22.80</max_steering_angle>
     <!-- Servo dynamics at servo_speed 3000 [measured 2026-09-08], DEGREES/s and /s^2. -->
     <max_steering_rate>82.0</max_steering_rate>
     <max_steering_accel>262.2</max_steering_accel>
