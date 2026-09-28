@@ -8,7 +8,7 @@ angle from the *held* vx (0), which falls into the full-lock-by-sign(w)
 branch: reversing with w > 0 needs a negative (right) angle, yet for the whole
 hold the servo was driven toward +max_steering_angle (left), then back.
 
-Rhino's own numbers (urdf/rhino.urdf): L 0.385 m, 22.80 deg, servo 82.0 deg/s
+Rhino's own numbers (urdf/rhino.urdf): L 0.385 m, 18.0 deg (command cap), servo 82.0 deg/s
 and 262.2 deg/s^2, creep 0.0 (section 19 lock), presteer_ms 200.
 """
 import math
@@ -42,7 +42,7 @@ def node():
 def configure_rhino(node):
     node.kinematic_model = 'ackermann'
     node.wheel_base = 0.385
-    node.max_steering_angle = math.radians(22.80)
+    node.max_steering_angle = math.radians(18.0)
     node.max_steering_rate = math.radians(82.0)
     node.max_steering_accel = math.radians(262.2)
     node.creep_on_turn_mps = 0.0
@@ -79,9 +79,9 @@ def test_reverse_cusp_presteer_targets_the_commanded_side(node, monkeypatch):
     configure_rhino(node)
     clock = Clock(monkeypatch)
     node.last_time = clock.t
-    v, w = 0.3, 0.3
-    fwd = math.atan(w * node.wheel_base / v)      # +21.06 deg, left
-    rev = math.atan(w * node.wheel_base / -v)     # -21.06 deg, right
+    v, w = 0.3, 0.2
+    fwd = math.atan(w * node.wheel_base / v)      # +14.40 deg, left
+    rev = math.atan(w * node.wheel_base / -v)     # -14.40 deg, right
     assert 0.0 < fwd < node.max_steering_angle   # unclamped: a clean test
 
     # Settle forward on the left arc.
@@ -129,7 +129,7 @@ def test_creep_does_not_change_the_steering_target(node, monkeypatch):
     node.creep_on_turn_mps = 0.3
     clock = Clock(monkeypatch)
     node.last_time = clock.t
-    w = 0.3  # atan(0.385*0.3/0.3) = 21.06 deg < 22.80: creep would lower it
+    w = 0.2  # atan(0.385*0.2/0.3) = 14.40 deg < 18.0: creep would lower it
     ticks = run(node, clock, 0.0, w, steps=2)
     assert ticks[-1][3] == pytest.approx(0.3)                 # creep drives
     assert ticks[-1][1] == pytest.approx(node.max_steering_angle)
