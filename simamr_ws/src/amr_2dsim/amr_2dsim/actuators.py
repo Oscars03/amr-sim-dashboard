@@ -73,3 +73,38 @@ def steering_backlash(wheel, servo, width):
     if servo - wheel < -half:
         return servo + half
     return wheel
+
+
+DRIVE_RESPONSE_KEYS = ('drive_resp_g_fast', 'drive_resp_tau_fast', 'drive_resp_g_slow',
+                       'drive_resp_tau_slow', 'drive_resp_accel', 'drive_resp_decel')
+
+
+def drive_response(state, command, dt, g_fast, tau_fast, g_slow, tau_slow, accel, decel):
+    """One tick of a drive whose wheels do not reach the commanded speed at once.
+
+    `state` is (r_s, z, v); returns the new state, whose v is the speed the chassis
+    actually moves at. Same units as the caller (m/s, s).
+
+      r_s  the command through a smoother: towards `command` at <= accel while speeding
+           up, <= decel while slowing down or reversing, never past it
+      z    r_s low-passed with tau_slow, reset to 0 while r_s == 0 (an integral that
+           winds up slowly, and that the firmware clears at a zero command)
+      v    g_fast r_s + g_slow z, low-passed with tau_fast; 0 target while r_s == 0
+
+    Fitted on Rhino's own bags (master-ackerman-thesis
+    paper_data/drive_speed_response_2026-10-20.md, model lin2r): g_fast 0.557, g_slow 0.374,
+    tau_slow 7.77 s, tau_fast 0.01 s, accel 3.81, decel 0.8 m/s^2 -- a 0.4 m/s step reaches
+    ~0.22 m/s in 0.1 s and ~0.35 m/s after 15 s, and stops within ~0.5 s. Exact
+    discretisation of the lags, so any dt is stable.
+    """
+    r_s, z, v = state
+    speeding_up = abs(command) > abs(r_s) and command * r_s >= 0.0
+    lim = (accel if speeding_up else decel) * dt
+    r_s += max(-lim, min(lim, command - r_s))
+    if r_s == 0.0:
+        z, target = 0.0, 0.0
+    else:
+        z += (r_s - z) * (1.0 - math.exp(-dt / tau_slow))
+        target = g_fast * r_s + g_slow * z
+    v += (target - v) * (1.0 - math.exp(-dt / tau_fast))
+    return (r_s, z, v)

@@ -213,3 +213,28 @@ def test_straight_after_a_lock_turns_like_rhino(node, monkeypatch, w_lock, measu
     assert deltas[-1] == 0.0                                   # the servo is centred
     assert math.degrees(node.wheel_angle()) == pytest.approx(measured_deg, abs=1e-6)
     assert ws[-1] == pytest.approx(0.15 * math.tan(node.wheel_angle()) / node.wheel_base)
+
+
+# ── drive_resp_* (wheel speed response, m/s / s / m/s^2 in the URDF) ──
+
+def test_drive_response_is_off_by_default(node, monkeypatch):
+    configure_ackermann(node)
+    assert not node.drive_response_on()
+    vxs, _, _ = drive(node, monkeypatch, vx=0.4, w_cmd=0.0, dt=0.05, steps=1)
+    assert vxs[0] == pytest.approx(0.4)
+
+
+def test_drive_response_slows_the_achieved_speed_but_not_the_steering_target(node, monkeypatch):
+    """Through timer_callback with Rhino's fitted response: the chassis moves at the
+    response's speed, the steering target still comes from the COMMANDED v (like
+    base_controller), so the path curvature is w_cmd / v_cmd while the yaw rate
+    follows the slower achieved v."""
+    configure_ackermann(node)
+    node.wheel_base = 0.385
+    node.max_steering_angle = math.radians(18.0)
+    node.drive_resp.update(drive_resp_g_fast=0.557, drive_resp_tau_fast=0.01, drive_resp_g_slow=0.374,
+                           drive_resp_tau_slow=7.77, drive_resp_accel=3.81, drive_resp_decel=0.8)
+    vxs, ws, deltas = drive(node, monkeypatch, vx=0.4, w_cmd=0.2, dt=0.05, steps=20)
+    assert 0.22 < vxs[-1] < 0.26
+    assert deltas[-1] == pytest.approx(math.atan(0.2 * 0.385 / 0.4))
+    assert ws[-1] == pytest.approx(vxs[-1] * 0.2 / 0.4, rel=1e-6)
