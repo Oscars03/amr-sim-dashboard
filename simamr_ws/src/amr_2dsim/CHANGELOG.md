@@ -4,6 +4,9 @@ All notable changes to the `amr_2dsim` ROS 2 package will be documented in this 
 
 ## [Unreleased]
 
+### Changed
+- **Rhino `max_steering_rate` 45 → 82.0 deg/s (2026-10-20)**: the robot's `base_controller` steering rate limit is off since rhino-robot-ws#35 (`max_steer_rate_deg_s` 0), so the servo slews at its own measured 82.0 deg/s (accel 262.2 deg/s² unchanged). With the 45 limit under Nav2, RPP weaved on the robot (master-ackerman-thesis #206/#207); the thesis enforces its 45 deg/s KPI inside its own controller instead. `test_rhino_urdf_matches_thesis.py` pins 82.0; the 45-cap step test keeps its rate pinned at 45 as a model check of the 2026-09-28 measurement. `test_presteer_cusp.py` runs at 82.0.
+
 ### Fixed
 - **Ackermann pre-steer at a cusp now steers the way the robot does (2026-09-28)**: the steering target is computed from the *commanded, signed* `/cmd_vel` (v, ω) before the pre-steer hold / creep rewrite v, ported from rhino_interface `base_controller.cpp` `kinematic_steer_deg()` (rhino-robot-ws main `43728f6`): `atan(L·ω/v)` for |v| > 0.01, full lock by sign(ω) at or below it, clamped. Before, the 200 ms hold set v = 0 and the angle was taken from that, so it went to full lock by sign(ω): reversing with ω > 0 drove the servo to the wrong side first (Rhino with the 22.80° limit this fix was first measured against, 0.3 m/s ω 0.3 cusp: +21.06° → +22.80° → −21.06°, reaching the target at 1050 ms instead of 800 ms; the test now runs at the 18.0° cap with ω 0.2 so the angle stays unclamped). Side effects, both also matching the robot: with creep on, a v = 0 turn is full lock (creep no longer sets the angle), and the full-lock threshold is |v| ≤ 0.01 instead of < 1e-4. The servo slew (`max_steering_rate` / `max_steering_accel`) is unchanged and still acts on the target; `creep_on_turn_mps` stays 0.0 for Rhino. Test: `test/test_presteer_cusp.py`.
 
