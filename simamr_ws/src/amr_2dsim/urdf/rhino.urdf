@@ -131,9 +131,10 @@
     <!-- EXPERIMENT (exp/legA-backlash, not for main): linkage play and centre measured
          2026-10-20 after the refit, master-ackerman-thesis
          paper_data/steer_zero_postrefit_2026-10-20.md (steer_backlash_deg,
-         steer_zero_offset_deg). DEGREES. -->
+         steer_zero_offset_deg). DEGREES. Variant: play only, offset 0, to separate
+         the play from the constant bias. -->
     <steering_backlash>3.22</steering_backlash>
-    <steering_zero_offset>-0.43</steering_zero_offset>
+    <steering_zero_offset>0.0</steering_zero_offset>
     <drive_axle_x>0.0</drive_axle_x>
     <!-- §19 LOCK: 0.0. 0.3 injected uncommanded forward motion on every rotation command. -->
     <creep_on_turn_mps>0.0</creep_on_turn_mps>
