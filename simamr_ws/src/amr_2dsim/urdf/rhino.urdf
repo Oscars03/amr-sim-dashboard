@@ -129,7 +129,7 @@
     <max_steering_rate>82.0</max_steering_rate>
     <max_steering_accel>262.2</max_steering_accel>
     <!-- EXPERIMENT (exp/legA-backlash-drive-latency, not for main): Rhino measured 2026-10-20,
-         master-ackerman-thesis params/rhino.yaml -- steering play / offset (deg), wheel speed
+         master-ackerman-thesis params/rhino.yaml: steering play / offset (deg), wheel speed
          response (drive_resp_*), steering transport delay (steer_actuation_latency_s). -->
     <steering_backlash>3.22</steering_backlash>
     <steering_zero_offset>-0.43</steering_zero_offset>
