@@ -108,3 +108,35 @@ def drive_response(state, command, dt, g_fast, tau_fast, g_slow, tau_slow, accel
         target = g_fast * r_s + g_slow * z
     v += (target - v) * (1.0 - math.exp(-dt / tau_fast))
     return (r_s, z, v)
+
+
+class DelayLine:
+    """A command that takes effect `latency` seconds after it was given (transport delay).
+
+    update(t, value, latency) records `value` at time t and returns the value given at
+    t - latency: the newest record no later than that, or `initial` before the first one
+    old enough. Records within `slack` (2 ms) of that time count as old enough, so a
+    latency equal to the simulator's tick is one tick despite wall-clock jitter.
+    latency <= 0 returns `value` itself.
+
+    Measured on Rhino (master-ackerman-thesis paper_nav2_params/data/
+    sim_real_legA_postrefit_2026-10-20.md section 13.1, scripts/legA_steer_latency.py): the
+    servo axis follows the commanded angle 0.050-0.055 s later than the servo model
+    predicts -- serial out, MCU, servo, and the readback on the way back, so an upper
+    bound on the actuation delay.
+    """
+
+    def __init__(self, initial=0.0, slack=0.002):
+        self.initial = initial
+        self.slack = slack
+        self._q = []
+
+    def update(self, t, value, latency):
+        self._q.append((t, value))
+        if latency <= 0.0:
+            self._q = self._q[-1:]
+            return value
+        due = t - latency + self.slack
+        while len(self._q) >= 2 and self._q[1][0] <= due:
+            self._q.pop(0)
+        return self._q[0][1] if self._q[0][0] <= due else self.initial

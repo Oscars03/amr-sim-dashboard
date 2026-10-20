@@ -238,3 +238,24 @@ def test_drive_response_slows_the_achieved_speed_but_not_the_steering_target(nod
     assert 0.22 < vxs[-1] < 0.26
     assert deltas[-1] == pytest.approx(math.atan(0.2 * 0.385 / 0.4))
     assert ws[-1] == pytest.approx(vxs[-1] * 0.2 / 0.4, rel=1e-6)
+
+
+# ── steering_latency (transport delay of the steering demand, s in the URDF) ──
+
+def test_no_steering_latency_by_default(node, monkeypatch):
+    configure_ackermann(node)
+    assert node.steering_latency == 0.0
+    _, _, deltas = drive(node, monkeypatch, vx=1.0, w_cmd=0.3, dt=0.05, steps=1)
+    assert deltas[0] == pytest.approx(math.atan(0.3 * node.wheel_base / 1.0))
+
+
+def test_steering_latency_holds_the_servo_back_one_tick(node, monkeypatch):
+    """Through timer_callback, instant servo: with 0.05 s at a 0.05 s tick the angle
+    reaches the demand one tick late (Rhino: 0.050-0.055 s measured)."""
+    configure_ackermann(node)
+    node.steering_latency = 0.05
+    target = math.atan(0.3 * node.wheel_base / 1.0)
+    _, _, deltas = drive(node, monkeypatch, vx=1.0, w_cmd=0.3, dt=0.05, steps=3)
+    assert deltas[0] == 0.0
+    assert deltas[1] == pytest.approx(target)
+    assert deltas[2] == pytest.approx(target)
