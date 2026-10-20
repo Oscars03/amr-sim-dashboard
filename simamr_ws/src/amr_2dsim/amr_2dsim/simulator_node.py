@@ -15,7 +15,7 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import logging
 
-from amr_2dsim.actuators import slew_steering, steering_backlash
+from amr_2dsim.actuators import slew_steering, steering_backlash, drive_response, DRIVE_RESPONSE_KEYS
 
 _DEFAULTS = {
     'kinematic_model': 'diff_drive',
@@ -45,6 +45,16 @@ _DEFAULTS = {
     # rad, constant offset of the wheels from the servo, added after the play
     # (URDF authors in deg; + = left). 0 = wheels straight at servo 0.
     'steering_zero_offset': 0.0,
+    # Wheel speed response (actuators.drive_response): how the speed the chassis
+    # moves at follows the commanded one. Off unless drive_resp_g_fast or
+    # drive_resp_g_slow is set (> 0); then the other four default to a quick,
+    # unlimited response. Units m/s, s, m/s^2.
+    'drive_resp_g_fast': 0.0,
+    'drive_resp_tau_fast': 0.01,
+    'drive_resp_g_slow': 0.0,
+    'drive_resp_tau_slow': 1.0,
+    'drive_resp_accel': 1e6,
+    'drive_resp_decel': 1e6,
     # Gaussian range noise (metres) added to each /scan hit. <= 0 = ideal scan.
     'laser_noise_stddev': 0.0,
 }
@@ -80,7 +90,7 @@ def parse_sim_config(urdf_path: str) -> dict:
         # numeric fields — each isolated so one bad value doesn't block others
         for field in ('wheel_base', 'robot_radius', 'laser_range_max', 'ticks_per_meter',
                       'creep_on_turn_mps', 'presteer_ms', 'max_linear_accel', 'max_angular_accel',
-                      'laser_noise_stddev'):
+                      'laser_noise_stddev') + DRIVE_RESPONSE_KEYS:
             cfg[field] = _get_float(sim_cfg, field, cfg[field])
         
         no_creep = sim_cfg.find('no_creep_mode')
@@ -298,6 +308,7 @@ class AmrSimulator(Node):
             self.max_steering_accel = cfg['max_steering_accel']
             self.steering_backlash = cfg['steering_backlash']
             self.steering_zero_offset = cfg['steering_zero_offset']
+            self.drive_resp = {k: cfg[k] for k in DRIVE_RESPONSE_KEYS}
             self.declare_parameter('creep_on_turn_mps', self.creep_on_turn_mps)
             self.robot_length    = None
             self.robot_width     = None
@@ -319,7 +330,8 @@ class AmrSimulator(Node):
                 f"wheel_base={self.wheel_base} max_steer={math.degrees(self.max_steering_angle):.1f}° "
                 f"geometry={self.geometry_type} "
                 f"steer_backlash={math.degrees(self.steering_backlash):.2f}° "
-                f"steer_zero_offset={math.degrees(self.steering_zero_offset):+.2f}°"
+                f"steer_zero_offset={math.degrees(self.steering_zero_offset):+.2f}° "
+                f"drive_resp={'on ' + ','.join(f'{k[11:]}={v:g}' for k, v in self.drive_resp.items()) if self.drive_response_on() else 'off'}"
                 + (f" ({self.robot_length}x{self.robot_width}"
                    f" @ offset {self.footprint_offset_x:+.3f},{self.footprint_offset_y:+.3f})"
                    if self.geometry_type == 'rectangle' else '')
@@ -375,6 +387,7 @@ class AmrSimulator(Node):
             self.max_steering_accel = _DEFAULTS['max_steering_accel']
             self.steering_backlash = _DEFAULTS['steering_backlash']
             self.steering_zero_offset = _DEFAULTS['steering_zero_offset']
+            self.drive_resp = {k: _DEFAULTS[k] for k in DRIVE_RESPONSE_KEYS}
             self.robot_length    = None
             self.robot_width     = None
             self.footprint_offset_x = 0.0
@@ -539,6 +552,7 @@ class AmrSimulator(Node):
         self.current_steering_angle = 0.0
         self.current_steering_rate = 0.0  # rad/s, servo angular velocity (accel-limited model)
         self.wheel_steering_angle = 0.0   # rad, where the play leaves the wheels (before the offset)
+        self.drive_state = (0.0, 0.0, 0.0)  # (smoothed command, slow part, achieved v), drive_response
         self.target_steering_angle = 0.0  # rad, what the servo is slewing toward
 
         # Camera simulation configuration (320x240 @ 10 Hz)
@@ -600,6 +614,7 @@ class AmrSimulator(Node):
         self.target_steering_angle = 0.0
         self.current_steering_rate = 0.0
         self.wheel_steering_angle = 0.0
+        self.drive_state = (0.0, 0.0, 0.0)
         self.last_time = time.time()
         self.prev_dir = 0
         self.last_nonzero_dir = 0
@@ -646,6 +661,9 @@ class AmrSimulator(Node):
         self.cmd_vel['vx'] = msg.linear.x
         self.cmd_vel['vy'] = msg.linear.y
         self.cmd_vel['w'] = msg.angular.z
+
+    def drive_response_on(self):
+        return self.drive_resp['drive_resp_g_fast'] > 0.0 or self.drive_resp['drive_resp_g_slow'] > 0.0
 
     def wheel_angle(self):
         """Bicycle angle of the wheels: the servo angle through the play, plus the offset."""
@@ -760,6 +778,13 @@ class AmrSimulator(Node):
         # A physical chassis only approaches that over time -- slew the
         # integrated quantities toward it at the configured limits. A limit
         # <= 0 keeps the historical instant response.
+        if self.drive_response_on():
+            d = self.drive_resp
+            self.drive_state = drive_response(
+                self.drive_state, vx, dt, d['drive_resp_g_fast'], d['drive_resp_tau_fast'],
+                d['drive_resp_g_slow'], d['drive_resp_tau_slow'], d['drive_resp_accel'],
+                d['drive_resp_decel'])
+            vx = self.drive_state[2]
         if self.max_linear_accel > 0.0:
             dv = self.max_linear_accel * dt
             vx = self.achieved_vx + max(-dv, min(dv, vx - self.achieved_vx))
