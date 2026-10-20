@@ -185,3 +185,31 @@ def test_steering_accel_limits_how_fast_the_servo_speeds_up(node, monkeypatch):
     assert abs(rates[land] - rates[land - 1]) <= 2 * math.radians(262.2) * dt
     assert deltas[-1] == pytest.approx(node.max_steering_angle)
     assert node.current_steering_rate == 0.0
+
+
+# ── steering_backlash / steering_zero_offset (linkage play, deg in the URDF) ──
+
+def test_no_backlash_by_default_the_wheels_are_the_servo(node, monkeypatch):
+    configure_ackermann(node)
+    assert node.steering_backlash == 0.0 and node.steering_zero_offset == 0.0
+    _, ws, deltas = drive(node, monkeypatch, vx=1.0, w_cmd=0.3, dt=0.05, steps=3)
+    assert node.wheel_angle() == deltas[-1]
+    assert ws[-1] == pytest.approx(1.0 * math.tan(deltas[-1]) / node.wheel_base)
+
+
+@pytest.mark.parametrize('w_lock, measured_deg', [(+2.0, +1.18), (-2.0, -2.04)])
+def test_straight_after_a_lock_turns_like_rhino(node, monkeypatch, w_lock, measured_deg):
+    """Through timer_callback: lock at standstill (v = 0, creep off), then drive
+    straight at command 0. With Rhino's measured 3.22 deg play and -0.43 deg
+    centre the chassis turns at v * tan(rest angle) / L, the rest angle depending
+    on the side the steering came from (paper_data/steer_zero_postrefit_2026-10-20.md)."""
+    configure_ackermann(node)
+    node.wheel_base = 0.385
+    node.max_steering_angle = math.radians(18.0)
+    node.steering_backlash = math.radians(3.22)
+    node.steering_zero_offset = math.radians(-0.43)
+    drive(node, monkeypatch, vx=0.0, w_cmd=w_lock, dt=0.05, steps=10)
+    _, ws, deltas = drive(node, monkeypatch, vx=0.15, w_cmd=0.0, dt=0.05, steps=10, t0=2000.0)
+    assert deltas[-1] == 0.0                                   # the servo is centred
+    assert math.degrees(node.wheel_angle()) == pytest.approx(measured_deg, abs=1e-6)
+    assert ws[-1] == pytest.approx(0.15 * math.tan(node.wheel_angle()) / node.wheel_base)

@@ -15,7 +15,7 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import logging
 
-from amr_2dsim.actuators import slew_steering
+from amr_2dsim.actuators import slew_steering, steering_backlash
 
 _DEFAULTS = {
     'kinematic_model': 'diff_drive',
@@ -39,6 +39,12 @@ _DEFAULTS = {
     # deg/s^2). A hobby/bus servo is acceleration-limited as well as rate-
     # limited: small corrections never reach the peak rate. <= 0 = rate-only.
     'max_steering_accel': 0.0,
+    # rad, play between the steering servo and the wheels (URDF authors in deg):
+    # the wheels stay put until the servo has moved through it. <= 0 = rigid.
+    'steering_backlash': 0.0,
+    # rad, constant offset of the wheels from the servo, added after the play
+    # (URDF authors in deg; + = left). 0 = wheels straight at servo 0.
+    'steering_zero_offset': 0.0,
     # Gaussian range noise (metres) added to each /scan hit. <= 0 = ideal scan.
     'laser_noise_stddev': 0.0,
 }
@@ -119,6 +125,14 @@ def parse_sim_config(urdf_path: str) -> dict:
                 cfg['max_steering_accel'] = math.radians(float(msa_acc.text.strip()))
             except ValueError as e:
                 logging.warning(f"amr_sim_config: cannot parse <max_steering_accel>: {e}, ignoring")
+        # steering_backlash / steering_zero_offset: DEGREES, stored in radians.
+        for tag in ('steering_backlash', 'steering_zero_offset'):
+            el = sim_cfg.find(tag)
+            if el is not None and (el.text or '').strip():
+                try:
+                    cfg[tag] = math.radians(float(el.text.strip()))
+                except ValueError as e:
+                    logging.warning(f"amr_sim_config: cannot parse <{tag}>: {e}, ignoring")
         # drive_axle_x: optional; keep None if absent (means "skip convention check")
         ax_elem = sim_cfg.find('drive_axle_x')
         if ax_elem is not None and (ax_elem.text or '').strip():
@@ -282,6 +296,8 @@ class AmrSimulator(Node):
             self.max_angular_accel = cfg['max_angular_accel']
             self.max_steering_rate = cfg['max_steering_rate']
             self.max_steering_accel = cfg['max_steering_accel']
+            self.steering_backlash = cfg['steering_backlash']
+            self.steering_zero_offset = cfg['steering_zero_offset']
             self.declare_parameter('creep_on_turn_mps', self.creep_on_turn_mps)
             self.robot_length    = None
             self.robot_width     = None
@@ -301,7 +317,9 @@ class AmrSimulator(Node):
             self.get_logger().info(
                 f"Loaded config from URDF: model={self.kinematic_model} "
                 f"wheel_base={self.wheel_base} max_steer={math.degrees(self.max_steering_angle):.1f}° "
-                f"geometry={self.geometry_type}"
+                f"geometry={self.geometry_type} "
+                f"steer_backlash={math.degrees(self.steering_backlash):.2f}° "
+                f"steer_zero_offset={math.degrees(self.steering_zero_offset):+.2f}°"
                 + (f" ({self.robot_length}x{self.robot_width}"
                    f" @ offset {self.footprint_offset_x:+.3f},{self.footprint_offset_y:+.3f})"
                    if self.geometry_type == 'rectangle' else '')
@@ -355,6 +373,8 @@ class AmrSimulator(Node):
             self.max_angular_accel = _DEFAULTS['max_angular_accel']
             self.max_steering_rate = _DEFAULTS['max_steering_rate']
             self.max_steering_accel = _DEFAULTS['max_steering_accel']
+            self.steering_backlash = _DEFAULTS['steering_backlash']
+            self.steering_zero_offset = _DEFAULTS['steering_zero_offset']
             self.robot_length    = None
             self.robot_width     = None
             self.footprint_offset_x = 0.0
@@ -518,6 +538,7 @@ class AmrSimulator(Node):
         self.camera_pub = self.create_publisher(Image, '/camera/image_raw', 10)
         self.current_steering_angle = 0.0
         self.current_steering_rate = 0.0  # rad/s, servo angular velocity (accel-limited model)
+        self.wheel_steering_angle = 0.0   # rad, where the play leaves the wheels (before the offset)
         self.target_steering_angle = 0.0  # rad, what the servo is slewing toward
 
         # Camera simulation configuration (320x240 @ 10 Hz)
@@ -578,6 +599,7 @@ class AmrSimulator(Node):
         self.current_steering_angle = 0.0
         self.target_steering_angle = 0.0
         self.current_steering_rate = 0.0
+        self.wheel_steering_angle = 0.0
         self.last_time = time.time()
         self.prev_dir = 0
         self.last_nonzero_dir = 0
@@ -624,6 +646,10 @@ class AmrSimulator(Node):
         self.cmd_vel['vx'] = msg.linear.x
         self.cmd_vel['vy'] = msg.linear.y
         self.cmd_vel['w'] = msg.angular.z
+
+    def wheel_angle(self):
+        """Bicycle angle of the wheels: the servo angle through the play, plus the offset."""
+        return self.wheel_steering_angle + self.steering_zero_offset
 
     def _slew_steering_accel_limited(self, target, dt):
         """Servo limited in angular acceleration AND rate -- see actuators.slew_steering."""
@@ -752,7 +778,11 @@ class AmrSimulator(Node):
             else:
                 self.current_steering_angle = delta
                 self.current_steering_rate = 0.0
-            w = 0.0 if abs(vx) < 1e-4 else vx * math.tan(self.current_steering_angle) / self.wheel_base
+            # The wheels follow the servo through the linkage's play, then the
+            # offset; with both 0 this is the servo angle, as before.
+            self.wheel_steering_angle = steering_backlash(
+                self.wheel_steering_angle, self.current_steering_angle, self.steering_backlash)
+            w = 0.0 if abs(vx) < 1e-4 else vx * math.tan(self.wheel_angle()) / self.wheel_base
         elif self.max_angular_accel > 0.0:
             dw = self.max_angular_accel * dt
             w = self.achieved_w + max(-dw, min(dw, w - self.achieved_w))
@@ -855,7 +885,7 @@ class AmrSimulator(Node):
         js.header.stamp = self.stamp
         if self.kinematic_model == 'ackermann':
             js.name = ['virtual_wheel_fl', 'virtual_wheel_fr']
-            js.position = [float(self.current_steering_angle), float(self.current_steering_angle)]
+            js.position = [float(self.wheel_angle()), float(self.wheel_angle())]
         self.joint_pub.publish(js)
 
 

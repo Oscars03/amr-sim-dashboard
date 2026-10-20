@@ -47,3 +47,29 @@ def slew_steering(angle, rate, target, dt, max_accel, max_rate=0.0):
     if (err > 0 and step >= err) or (err < 0 and step <= err):
         return target, 0.0
     return angle + step, rate
+
+
+def steering_backlash(wheel, servo, width):
+    """One tick of the play (backlash) between the steering servo and the wheels.
+
+    Returns the new wheel angle. The wheels stay where they are while the servo
+    moves inside the play; once the servo has taken up the slack it drags them
+    along, `width / 2` behind it. Same units as the caller (radians in the
+    simulator). `width <= 0` means a rigid linkage: the wheels are the servo.
+
+    Measured on Rhino after the 2026-09-28 refit (master-ackerman-thesis
+    paper_data/steer_zero_postrefit_2026-10-20.md): driving straight at command 0,
+    the wheels rest at +1.18 deg after the steering came from the left and at
+    -2.04 deg after it came from the right, with the servo axis at +-0.1 deg in
+    both cases -- a 3.22 deg band whose centre is -0.43 deg. The simulator models
+    the band with this function and the centre as a constant offset
+    (<steering_zero_offset>), added after it.
+    """
+    if width <= 0.0:
+        return servo
+    half = 0.5 * width
+    if servo - wheel > half:
+        return servo - half
+    if servo - wheel < -half:
+        return servo + half
+    return wheel
