@@ -42,9 +42,9 @@ def test_turning_radius_at_the_cap_fits_the_planner(cfg):
 
 def test_steering_dynamics_are_the_robots(cfg):
     c, _ = cfg
-    # base_controller max_steer_rate_deg_s 45 (rhino-robot-ws#31), not the free
-    # servo's 82 -- the robot never steers faster than 45 while the node runs.
-    assert float(c['max_steering_rate']) == pytest.approx(45.0)     # deg/s, 2026-09-28
+    # The free servo's 82: base_controller's 45 deg/s limit (rhino-robot-ws#31)
+    # is off since 2026-10-20 (rhino-robot-ws#35, max_steer_rate_deg_s 0).
+    assert float(c['max_steering_rate']) == pytest.approx(82.0)     # deg/s, 2026-10-20
     assert float(c['max_steering_accel']) == pytest.approx(262.2)   # deg/s^2, 2026-09-08
 
 
@@ -53,10 +53,13 @@ def test_steering_reproduces_the_cap18_rate45_steps(cfg, step, measured_t90):
     # paper_data/servo_steering_2026-09-28.md §3, servo_l2l_cap18_rate45_2321.csv:
     # 0 -> +18 settles to 90 % in 0.48 s, each +/-18 lock-to-lock in 0.83-0.84 s.
     # The robot reads the servo every 0.059 s, so agreement within one period.
+    # Model check of the servo model against a measurement taken with the 45
+    # deg/s base_controller limit on (2026-09-28); the rate is pinned to that run's
+    # 45, not read from the URDF, which is 82 since the limit was switched off.
     from amr_2dsim.actuators import slew_steering
     c, _ = cfg
     a = float(c['max_steering_accel'])
-    r = float(c['max_steering_rate'])
+    r = 45.0
     angle, rate, t, dt = 0.0, 0.0, 0.0, 0.001
     while angle < 0.9 * step:
         angle, rate = slew_steering(angle, rate, step, dt, a, r)
