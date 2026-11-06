@@ -140,3 +140,34 @@ class DelayLine:
         while len(self._q) >= 2 and self._q[1][0] <= due:
             self._q.pop(0)
         return self._q[0][1] if self._q[0][0] <= due else self.initial
+
+
+def ackermann_yaw_rate(v, delta, wheel_base, understeer_gradient=0.0):
+    """Yaw rate of a bicycle at forward speed v and wheel angle delta (rad/s).
+
+    v * tan(delta) / (L + K_us * v^2): the steady-state bicycle model with understeer
+    gradient K_us (s^2/m, i.e. rad of extra steering per m/s^2 of lateral acceleration,
+    since delta = (L + K_us v^2) / R). K_us = 0 is the kinematic v * tan(delta) / L, the
+    simulator's historical formula, evaluated the same way. 0 below |v| = 1e-4 m/s, as
+    before: an Ackermann chassis does not yaw at standstill.
+
+    K_us > 0 widens every turn as the speed rises; at Rhino's speeds the term K_us * v^2
+    is small next to L = 0.385 m unless K_us is large. A proxy, not a tyre model: the
+    sim has no mass, so K_us is a number to set, not one the sim derives.
+    """
+    if abs(v) < 1e-4:
+        return 0.0
+    if understeer_gradient > 0.0:
+        return v * math.tan(delta) / (wheel_base + understeer_gradient * v * v)
+    return v * math.tan(delta) / wheel_base
+
+
+def first_order_lag(y, target, dt, tau):
+    """One tick of y' = (target - y) / tau, discretised exactly (stable at any dt).
+
+    tau <= 0 returns target (no lag). The simulator uses it for the yaw-rate lag
+    (<yaw_rate_tau>): after a step in the target, y reaches 63% of it in tau seconds.
+    """
+    if tau <= 0.0:
+        return target
+    return y + (target - y) * (1.0 - math.exp(-dt / tau))

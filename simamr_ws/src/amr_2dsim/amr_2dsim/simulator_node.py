@@ -11,12 +11,13 @@ from nav_msgs.msg import Odometry
 import math
 import time
 import json
+import secrets
 import numpy as np
 import xml.etree.ElementTree as ET
 import logging
 
 from amr_2dsim.actuators import (slew_steering, steering_backlash, drive_response, DRIVE_RESPONSE_KEYS,
-                                 DelayLine)
+                                 DelayLine, ackermann_yaw_rate, first_order_lag)
 
 _DEFAULTS = {
     'kinematic_model': 'diff_drive',
@@ -61,7 +62,124 @@ _DEFAULTS = {
     'drive_resp_decel': 1e6,
     # Gaussian range noise (metres) added to each /scan hit. <= 0 = ideal scan.
     'laser_noise_stddev': 0.0,
+    # ---- Sim-fidelity knobs (FIDELITY_KEYS). Every one is per robot (its URDF's
+    # <amr_sim_config>) and its default reproduces the ideal sim exactly: a URDF that
+    # does not set a knob is not affected by it. Logged on their own "Sim fidelity
+    # config:" line, so the "Loaded config from URDF" line stays byte-identical.
+    #
+    # Three kinds of motion are kept apart (see AmrSimulator.timer_callback):
+    #   wheel motion  what the drive and the steering did: wheel speed v_w and the
+    #                 kinematic yaw rate v_w*tan(delta)/L (Ackermann) or the wheels'
+    #                 commanded w (diff-drive/omni). Encoders and /wheel/vel see this.
+    #   true motion   what the chassis did: the wheel motion through slip, understeer
+    #                 and the yaw-rate lag. Integrated into the TRUE pose, which /scan,
+    #                 collision, the camera and /ground_truth/odom use.
+    #   odometry      wheel odometry: the wheel motion times odom_*_scale plus white
+    #                 noise, integrated into its own pose. /odom and the odom->base_link
+    #                 TF report this. Equal to the true motion when every knob is off.
+    #
+    # Odometry (sensor side). Scale bias of what odometry reports per unit of wheel
+    # motion (1.0 = exact) and white noise (std per 50 ms tick, m/s and rad/s) on the
+    # twist it integrates, so the /odom pose drifts the way wheel odometry does.
+    'odom_lin_scale': 1.0,
+    'odom_yaw_scale': 1.0,
+    'odom_lin_noise_std': 0.0,
+    'odom_yaw_noise_std': 0.0,
+    # IMU. /imu angular_velocity.z is 'command' (the /cmd_vel angular.z -- the ideal
+    # sim's historical behaviour) or 'achieved' (the true yaw rate, what a gyro sees),
+    # plus a constant bias (rad/s) and white noise (std per /imu message, rad/s).
+    'imu_omega_source': 'command',
+    'imu_gyro_noise_std': 0.0,
+    'imu_gyro_bias': 0.0,
+    # Wheel slip (true-motion side), fractions in [0, 1). slip_long: the chassis
+    # travels (1 - slip_long) of the wheel speed, on the same path (the yaw rate scales
+    # with it). slip_yaw: the path's curvature is (1 - slip_yaw) of the kinematic one.
+    # Odometry still reports the pre-slip wheel motion, so it over-reads distance by
+    # 1/(1 - slip_long) and yaw by 1/(1 - slip_yaw) -- ON TOP of odom_*_scale: the two
+    # multiply, odom/true = odom_lin_scale / (1 - slip_long). Set one or the other
+    # from a measured over-read, not both, or it is counted twice.
+    'slip_long': 0.0,
+    'slip_yaw': 0.0,
+    # Mass / inertia proxies (the sim is kinematic: no forces, no tyre model).
+    # understeer_gradient K_us (s^2/m = rad per m/s^2 of lateral acceleration,
+    # Ackermann only): true curvature tan(delta) / (L + K_us * v^2), the steady-state
+    # bicycle model with understeer. yaw_rate_tau (s): the true yaw rate follows its
+    # target through a first-order lag (yaw inertia); an Ackermann chassis still
+    # cannot yaw at standstill. 0 = kinematic.
+    'understeer_gradient': 0.0,
+    'yaw_rate_tau': 0.0,
+    # s, transport delay between the speed command and the drive acting on it (serial,
+    # MCU), applied after pre-steer/creep and before drive_resp/max_linear_accel --
+    # the speed twin of steering_latency. 0 = none.
+    'drive_latency': 0.0,
+    # Seed of the noise generators (odom v, odom w, gyro: independent streams, so
+    # enabling one noise knob does not change another's sequence). None (tag absent)
+    # = a fresh seed per start; either way the seed used is logged.
+    'noise_seed': None,
 }
+
+# (tag, check, rule): a value that fails the check is ignored with a warning.
+_FIDELITY_FLOATS = (
+    ('odom_lin_scale', lambda x: x > 0.0, '> 0'),
+    ('odom_yaw_scale', lambda x: x > 0.0, '> 0'),
+    ('odom_lin_noise_std', lambda x: x >= 0.0, '>= 0'),
+    ('odom_yaw_noise_std', lambda x: x >= 0.0, '>= 0'),
+    ('imu_gyro_noise_std', lambda x: x >= 0.0, '>= 0'),
+    ('imu_gyro_bias', lambda x: True, 'finite'),
+    ('slip_long', lambda x: 0.0 <= x < 1.0, 'in [0, 1)'),
+    ('slip_yaw', lambda x: 0.0 <= x < 1.0, 'in [0, 1)'),
+    ('understeer_gradient', lambda x: x >= 0.0, '>= 0'),
+    ('yaw_rate_tau', lambda x: x >= 0.0, '>= 0'),
+    ('drive_latency', lambda x: x >= 0.0, '>= 0'),
+)
+IMU_OMEGA_SOURCES = ('command', 'achieved')
+FIDELITY_KEYS = tuple(k for k, _, _ in _FIDELITY_FLOATS) + ('imu_omega_source', 'noise_seed')
+
+
+def _parse_fidelity(sim_cfg, cfg):
+    """Read the sim-fidelity tags of <amr_sim_config> into cfg; bad values keep the default."""
+    for tag, ok, rule in _FIDELITY_FLOATS:
+        val = _get_float(sim_cfg, tag, cfg[tag], logging.warning)
+        if math.isfinite(val) and ok(val):
+            cfg[tag] = val
+        else:
+            logging.warning(f"amr_sim_config: <{tag}>{val}</{tag}> must be {rule}; "
+                            f"using default {cfg[tag]}")
+    src = sim_cfg.find('imu_omega_source')
+    if src is not None and (src.text or '').strip():
+        val = src.text.strip().lower()
+        if val in IMU_OMEGA_SOURCES:
+            cfg['imu_omega_source'] = val
+        else:
+            logging.warning(f"amr_sim_config: <imu_omega_source>{val}</imu_omega_source> must be "
+                            f"one of {IMU_OMEGA_SOURCES}; using '{cfg['imu_omega_source']}'")
+    seed = sim_cfg.find('noise_seed')
+    if seed is not None and (seed.text or '').strip():
+        try:
+            val = int(seed.text.strip())
+            if val < 0:
+                raise ValueError('negative')
+            cfg['noise_seed'] = val
+        except ValueError as e:
+            logging.warning(f"amr_sim_config: cannot parse <noise_seed>: {e} "
+                            f"(a non-negative integer); using a fresh seed")
+
+
+def fidelity_log_line(values, seed, seed_from_urdf):
+    """The startup line that reports every sim-fidelity knob. Deliberately not part of the
+    'Loaded config from URDF' line (a4_campaign_runs.sh config_ok greps the first such line)."""
+    v = values
+    return (f"Sim fidelity config: odom_lin_scale={v['odom_lin_scale']:g} "
+            f"odom_yaw_scale={v['odom_yaw_scale']:g} "
+            f"odom_lin_noise_std={v['odom_lin_noise_std']:g} "
+            f"odom_yaw_noise_std={v['odom_yaw_noise_std']:g} "
+            f"imu_omega_source={v['imu_omega_source']} "
+            f"imu_gyro_noise_std={v['imu_gyro_noise_std']:g} "
+            f"imu_gyro_bias={v['imu_gyro_bias']:g} "
+            f"slip_long={v['slip_long']:g} slip_yaw={v['slip_yaw']:g} "
+            f"understeer_gradient={v['understeer_gradient']:g} "
+            f"yaw_rate_tau={v['yaw_rate_tau']:g}s drive_latency={v['drive_latency']:g}s "
+            f"noise_seed={seed} ({'urdf' if seed_from_urdf else 'auto'})")
 
 def _get_float(elem, tag, default, warn_cb=None):
     """Parse a single float field from XML element; return default on any error."""
@@ -97,6 +215,8 @@ def parse_sim_config(urdf_path: str) -> dict:
                       'laser_noise_stddev', 'steering_latency') + DRIVE_RESPONSE_KEYS:
             cfg[field] = _get_float(sim_cfg, field, cfg[field])
         
+        _parse_fidelity(sim_cfg, cfg)
+
         no_creep = sim_cfg.find('no_creep_mode')
         if no_creep is not None and (no_creep.text or '').strip().lower() in ('true', '1', 'yes'):
             cfg['no_creep_mode'] = True
@@ -314,6 +434,8 @@ class AmrSimulator(Node):
             self.steering_zero_offset = cfg['steering_zero_offset']
             self.drive_resp = {k: cfg[k] for k in DRIVE_RESPONSE_KEYS}
             self.steering_latency = cfg['steering_latency']
+            for k in FIDELITY_KEYS:
+                setattr(self, k, cfg[k])
             self.declare_parameter('creep_on_turn_mps', self.creep_on_turn_mps)
             self.robot_length    = None
             self.robot_width     = None
@@ -395,10 +517,22 @@ class AmrSimulator(Node):
             self.steering_zero_offset = _DEFAULTS['steering_zero_offset']
             self.drive_resp = {k: _DEFAULTS[k] for k in DRIVE_RESPONSE_KEYS}
             self.steering_latency = _DEFAULTS['steering_latency']
+            for k in FIDELITY_KEYS:
+                setattr(self, k, _DEFAULTS[k])
             self.robot_length    = None
             self.robot_width     = None
             self.footprint_offset_x = 0.0
             self.footprint_offset_y = 0.0
+
+        # Noise generators for the sim-fidelity knobs: one seed, three independent
+        # streams (odom v, odom w, gyro). Nothing is drawn while a noise std is 0.
+        self.noise_seed_from_urdf = self.noise_seed is not None
+        if self.noise_seed is None:
+            self.noise_seed = secrets.randbits(32)
+        self._rng_odom_v, self._rng_odom_w, self._rng_gyro = (
+            np.random.default_rng(s) for s in np.random.SeedSequence(self.noise_seed).spawn(3))
+        self.get_logger().info(fidelity_log_line(
+            {k: getattr(self, k) for k in FIDELITY_KEYS}, self.noise_seed, self.noise_seed_from_urdf))
 
         _ip = self.get_parameter('initial_pose').value
         self._initial_pose = (float(_ip[0]), float(_ip[1]), float(_ip[2]))
@@ -492,13 +626,26 @@ class AmrSimulator(Node):
             )
 
         self.cmd_vel = {'vx': 0.0, 'vy': 0.0, 'w': 0.0}
-        # What /odom (and anything downstream of it, e.g. an EKF) should report:
-        # the velocity actually used to integrate this tick's pose, AFTER the
-        # ackermann steering clamp and creep/pre-steer logic -- not the raw
-        # /cmd_vel command, which nothing here guarantees is achievable.
+        # The TRUE motion: the velocity actually used to integrate this tick's pose,
+        # AFTER the ackermann steering clamp and creep/pre-steer logic -- not the raw
+        # /cmd_vel command, which nothing here guarantees is achievable. /odom reports
+        # exactly this unless a sim-fidelity odometry/slip knob is on (odom_error_on);
+        # /ground_truth/odom always does.
         self.achieved_vx = 0.0
         self.achieved_vy = 0.0
         self.achieved_w = 0.0
+        # The wheels' own motion, before slip / understeer / yaw-rate lag: what the
+        # encoders, /wheel/vel and wheel odometry see, and the state the acceleration
+        # limits slew from. Equal to achieved_* while those knobs are off.
+        self.wheel_vx = 0.0
+        self.wheel_vy = 0.0
+        self.wheel_w = 0.0
+        # Wheel odometry's own pose and twist (/odom, odom->base_link). A copy of the
+        # true pose and the achieved twist while odom_error_on() is False.
+        self.odom_pose = {'x': self.pose['x'], 'y': self.pose['y'], 'theta': self.pose['theta']}
+        self.odom_vx = 0.0
+        self.odom_vy = 0.0
+        self.odom_w = 0.0
         self.last_cmd_time = time.time()
         self.last_time = time.time()
         self.prev_dir = 0
@@ -538,6 +685,11 @@ class AmrSimulator(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
         
         self.odom_pub = self.create_publisher(Odometry, '/odom', 10)
+        # The simulator's true pose and twist, in its world frame (= the map frame when
+        # the Nav2 map is drawn from the same world, as in the thesis harness). Always
+        # published; differs from /odom only when a sim-fidelity knob is on. For KPIs
+        # that must not inherit the odometry error (CTE, jerk, path length).
+        self.ground_truth_pub = self.create_publisher(Odometry, '/ground_truth/odom', 10)
         self.scan_pub = self.create_publisher(LaserScan, '/scan', 10)
         self.encoder_pub = self.create_publisher(String, '/wheel/encoder', 10)
         self.sub_cmd = self.create_subscription(Twist, '/cmd_vel', self.cmd_callback, 10)
@@ -561,6 +713,7 @@ class AmrSimulator(Node):
         self.wheel_steering_angle = 0.0   # rad, where the play leaves the wheels (before the offset)
         self.drive_state = (0.0, 0.0, 0.0)  # (smoothed command, slow part, achieved v), drive_response
         self.steer_delay = DelayLine()      # steering demand -> servo, steering_latency
+        self.drive_delay = DelayLine(initial=(0.0, 0.0, 0.0))  # speed command -> drive, drive_latency
         self.target_steering_angle = 0.0  # rad, what the servo is slewing toward
 
         # Camera simulation configuration (320x240 @ 10 Hz)
@@ -616,6 +769,15 @@ class AmrSimulator(Node):
         self.achieved_vx = 0.0
         self.achieved_vy = 0.0
         self.achieved_w = 0.0
+        self.wheel_vx = 0.0
+        self.wheel_vy = 0.0
+        self.wheel_w = 0.0
+        # Odometry restarts at the new pose: the sim's odom frame is its world frame
+        # at every (re)start, as before.
+        self.odom_pose = {'x': target_x, 'y': target_y, 'theta': target_theta}
+        self.odom_vx = 0.0
+        self.odom_vy = 0.0
+        self.odom_w = 0.0
         self.total_pulse_left = 0.0
         self.total_pulse_right = 0.0
         self.current_steering_angle = 0.0
@@ -624,6 +786,7 @@ class AmrSimulator(Node):
         self.wheel_steering_angle = 0.0
         self.drive_state = (0.0, 0.0, 0.0)
         self.steer_delay = DelayLine()
+        self.drive_delay = DelayLine(initial=(0.0, 0.0, 0.0))
         self.last_time = time.time()
         self.prev_dir = 0
         self.last_nonzero_dir = 0
@@ -673,6 +836,68 @@ class AmrSimulator(Node):
 
     def drive_response_on(self):
         return self.drive_resp['drive_resp_g_fast'] > 0.0 or self.drive_resp['drive_resp_g_slow'] > 0.0
+
+    def true_motion_on(self):
+        """True while a knob makes the chassis move differently from its wheels."""
+        return (self.slip_long > 0.0 or self.slip_yaw > 0.0
+                or self.understeer_gradient > 0.0 or self.yaw_rate_tau > 0.0)
+
+    def odom_error_on(self):
+        """True while /odom can differ from the true motion (it is integrated on its own)."""
+        return (self.true_motion_on()
+                or self.odom_lin_scale != 1.0 or self.odom_yaw_scale != 1.0
+                or self.odom_lin_noise_std > 0.0 or self.odom_yaw_noise_std > 0.0)
+
+    def _true_motion(self, vx, vy, w, dt):
+        """The chassis motion from the wheel motion (vx, vy, w): slip, understeer, yaw lag.
+
+        slip_long scales the speed and keeps the path (the yaw rate scales with it);
+        slip_yaw scales the curvature; understeer_gradient (Ackermann) replaces L by
+        L + K_us v^2 at the TRUE speed; yaw_rate_tau lags the result (an Ackermann chassis
+        still has no yaw rate at standstill).
+        """
+        keep = 1.0 - self.slip_long
+        vx, vy = vx * keep, vy * keep
+        if self.kinematic_model == 'ackermann':
+            w = ackermann_yaw_rate(vx, self.wheel_angle(), self.wheel_base, self.understeer_gradient)
+        else:
+            w = w * keep
+        w = w * (1.0 - self.slip_yaw)
+        if self.yaw_rate_tau > 0.0:
+            if self.kinematic_model == 'ackermann' and abs(vx) < 1e-4:
+                w = 0.0
+            else:
+                w = first_order_lag(self.achieved_w, w, dt, self.yaw_rate_tau)
+        return vx, vy, w
+
+    def _odom_twist(self):
+        """What wheel odometry reports: the wheel motion times odom_*_scale, plus noise."""
+        vx = self.wheel_vx * self.odom_lin_scale
+        vy = self.wheel_vy * self.odom_lin_scale
+        w = self.wheel_w * self.odom_yaw_scale
+        if self.odom_lin_noise_std > 0.0:
+            vx += self._rng_odom_v.normal(0.0, self.odom_lin_noise_std)
+            if self.kinematic_model not in ('diff_drive', 'ackermann'):
+                vy += self._rng_odom_v.normal(0.0, self.odom_lin_noise_std)
+        if self.odom_yaw_noise_std > 0.0:
+            w += self._rng_odom_w.normal(0.0, self.odom_yaw_noise_std)
+        return float(vx), float(vy), float(w)
+
+    def _update_odometry(self, dt):
+        """Advance /odom: its own midpoint integration of the odometry twist when an
+        odometry/slip knob is on (no collision -- the wheels keep counting against a
+        wall), else a copy of the true pose and twist (the ideal sim, unchanged)."""
+        if not self.odom_error_on():
+            self.odom_pose = {'x': self.pose['x'], 'y': self.pose['y'], 'theta': self.pose['theta']}
+            self.odom_vx, self.odom_vy, self.odom_w = self.achieved_vx, self.achieved_vy, self.achieved_w
+            return
+        vx, vy, w = self._odom_twist()
+        p = self.odom_pose
+        mid_theta = p['theta'] + (w * dt / 2.0)
+        p['x'] += (vx * math.cos(mid_theta) - vy * math.sin(mid_theta)) * dt
+        p['y'] += (vx * math.sin(mid_theta) + vy * math.cos(mid_theta)) * dt
+        p['theta'] += w * dt
+        self.odom_vx, self.odom_vy, self.odom_w = vx, vy, w
 
     def wheel_angle(self):
         """Bicycle angle of the wheels: the servo angle through the play, plus the offset."""
@@ -782,6 +1007,12 @@ class AmrSimulator(Node):
             # The servo slews toward this; kept for tests / introspection.
             self.target_steering_angle = delta
 
+        # Drive transport delay: the drive starts on the speed command of drive_latency
+        # ago (serial, MCU) -- after pre-steer/creep, which base_controller decides on
+        # the PC side, like steering_latency for the servo. 0 = none.
+        if self.drive_latency > 0.0:
+            vx, vy, w = self.drive_delay.update(current_time, (vx, vy, w), self.drive_latency)
+
         # --- ACTUATOR DYNAMICS ---
         # Above resolved the velocity / steering the chassis was *commanded*.
         # A physical chassis only approaches that over time -- slew the
@@ -796,8 +1027,8 @@ class AmrSimulator(Node):
             vx = self.drive_state[2]
         if self.max_linear_accel > 0.0:
             dv = self.max_linear_accel * dt
-            vx = self.achieved_vx + max(-dv, min(dv, vx - self.achieved_vx))
-            vy = self.achieved_vy + max(-dv, min(dv, vy - self.achieved_vy))
+            vx = self.wheel_vx + max(-dv, min(dv, vx - self.wheel_vx))
+            vy = self.wheel_vy + max(-dv, min(dv, vy - self.wheel_vy))
 
         if self.kinematic_model == 'ackermann':
             # Steering servo slews toward the demanded angle; the achieved yaw
@@ -818,13 +1049,20 @@ class AmrSimulator(Node):
             # offset; with both 0 this is the servo angle, as before.
             self.wheel_steering_angle = steering_backlash(
                 self.wheel_steering_angle, self.current_steering_angle, self.steering_backlash)
-            w = 0.0 if abs(vx) < 1e-4 else vx * math.tan(self.wheel_angle()) / self.wheel_base
+            # Kinematic yaw rate from the wheels: v * tan(delta) / L.
+            w = ackermann_yaw_rate(vx, self.wheel_angle(), self.wheel_base)
         elif self.max_angular_accel > 0.0:
             dw = self.max_angular_accel * dt
-            w = self.achieved_w + max(-dw, min(dw, w - self.achieved_w))
+            w = self.wheel_w + max(-dw, min(dw, w - self.wheel_w))
 
-        # This is what actually gets integrated below (and is exactly what
-        # /odom must report -- see achieved_vx/vy/w assignment there).
+        # What the wheels did: encoders, /wheel/vel and wheel odometry see this.
+        self.wheel_vx = vx
+        self.wheel_vy = vy
+        self.wheel_w = w
+        # What the chassis did (slip, understeer, yaw lag; the wheel motion while all
+        # are off). This is what gets integrated below and what /ground_truth/odom reports.
+        if self.true_motion_on():
+            vx, vy, w = self._true_motion(vx, vy, w, dt)
         self.achieved_vx = vx
         self.achieved_vy = vy
         self.achieved_w = w
@@ -862,17 +1100,18 @@ class AmrSimulator(Node):
                 collided = True
 
         self.pose['theta'] = new_theta
+        self._update_odometry(dt)
 
         # ----------------------------------------------------
-        # Simulate Fake Encoder
+        # Simulate Fake Encoder -- the wheels' motion, before any slip
         # ----------------------------------------------------
         if self.kinematic_model == 'ackermann':
             # Real Rhino firmware uses a solid rear axle (setRPML = setRPMR)
-            v_right = vx
-            v_left = vx
+            v_right = self.wheel_vx
+            v_left = self.wheel_vx
         else:
-            v_right = vx + (w * self.wheel_base / 2.0)
-            v_left = vx - (w * self.wheel_base / 2.0)
+            v_right = self.wheel_vx + (self.wheel_w * self.wheel_base / 2.0)
+            v_left = self.wheel_vx - (self.wheel_w * self.wheel_base / 2.0)
         
         # Calculate pulse increments
         delta_pulse_right = v_right * dt * self.ticks_per_meter
@@ -903,6 +1142,7 @@ class AmrSimulator(Node):
             self.publish_camera()
 
         self.publish_odom()
+        self.publish_ground_truth()
         self.publish_collision(collided)
 
         # 3. ส่งข้อมูล Topic ด้วยค่าสะสมที่แปลงเป็นจำนวนเต็ม (Integer)
@@ -944,7 +1184,17 @@ class AmrSimulator(Node):
         msg.orientation.z = math.sin(self.pose['theta'] / 2.0)
         msg.orientation.w = math.cos(self.pose['theta'] / 2.0)
         
-        msg.angular_velocity.z = self.cmd_vel['w']
+        # 'command' (default): the /cmd_vel yaw rate, the ideal sim's historical value.
+        # 'achieved': the true yaw rate, what a gyro on the chassis measures.
+        if self.imu_omega_source == 'achieved':
+            gz = self.achieved_w
+        else:
+            gz = self.cmd_vel['w']
+        if self.imu_gyro_bias != 0.0:
+            gz = gz + self.imu_gyro_bias
+        if self.imu_gyro_noise_std > 0.0:
+            gz = gz + self._rng_gyro.normal(0.0, self.imu_gyro_noise_std)
+        msg.angular_velocity.z = float(gz)
         
         msg.linear_acceleration.x = 0.0
         msg.linear_acceleration.y = 0.0
@@ -961,11 +1211,15 @@ class AmrSimulator(Node):
         t.header.stamp = self.stamp
         t.header.frame_id = 'odom'
         t.child_frame_id = 'base_link'
-        t.transform.translation.x = self.pose['x']
-        t.transform.translation.y = self.pose['y']
+        # odom -> base_link is wheel odometry, the same pose /odom reports (the true pose
+        # while every sim-fidelity knob is off). The localiser (AMCL in the thesis
+        # harness) supplies map -> odom from the scans, which come from the TRUE pose.
+        p = self.odom_pose
+        t.transform.translation.x = p['x']
+        t.transform.translation.y = p['y']
         t.transform.translation.z = 0.0
-        t.transform.rotation.z = math.sin(self.pose['theta'] / 2.0)
-        t.transform.rotation.w = math.cos(self.pose['theta'] / 2.0)
+        t.transform.rotation.z = math.sin(p['theta'] / 2.0)
+        t.transform.rotation.w = math.cos(p['theta'] / 2.0)
         self.tf_broadcaster.sendTransform(t)
 
     def publish_scan(self):
@@ -1113,11 +1367,12 @@ class AmrSimulator(Node):
         odom.header.frame_id = 'odom'
         odom.child_frame_id = 'base_link'
         
-        odom.pose.pose.position.x = self.pose['x']
-        odom.pose.pose.position.y = self.pose['y']
+        p = self.odom_pose
+        odom.pose.pose.position.x = p['x']
+        odom.pose.pose.position.y = p['y']
         odom.pose.pose.position.z = 0.0
-        odom.pose.pose.orientation.z = math.sin(self.pose['theta'] / 2.0)
-        odom.pose.pose.orientation.w = math.cos(self.pose['theta'] / 2.0)
+        odom.pose.pose.orientation.z = math.sin(p['theta'] / 2.0)
+        odom.pose.pose.orientation.w = math.cos(p['theta'] / 2.0)
         
         # 1. Pose Covariance (Global 'odom' frame)
         # ความคลาดเคลื่อนตำแหน่งโลก (Global) ต้องสะสมและเพิ่มขึ้นทั้งแกน X และ Y
@@ -1134,9 +1389,11 @@ class AmrSimulator(Node):
         # command -- the ackermann branch above clamps steering angle (and can
         # override vx via creep/pre-steer), so self.cmd_vel can disagree with
         # the pose that was actually integrated. See F-02 in the DOE audit.
-        odom.twist.twist.linear.x = self.achieved_vx
-        odom.twist.twist.linear.y = 0.0 if self.kinematic_model == 'diff_drive' else self.achieved_vy
-        odom.twist.twist.angular.z = self.achieved_w
+        # With an odometry/slip knob on, this is what wheel odometry measured
+        # (odom_vx/vy/w); otherwise it is the achieved twist itself.
+        odom.twist.twist.linear.x = self.odom_vx
+        odom.twist.twist.linear.y = 0.0 if self.kinematic_model == 'diff_drive' else self.odom_vy
+        odom.twist.twist.angular.z = self.odom_w
         
         # 2. Twist Covariance (Local 'base_link' frame)
         # ความเร็วในมุมมองหุ่น (Local) แบบ Diff-Drive ไม่ไถลข้าง แกน Y จึงเป็น 1e-5 ได้
@@ -1150,6 +1407,21 @@ class AmrSimulator(Node):
         odom.twist.covariance = twist_cov
         
         self.odom_pub.publish(odom)
+
+    def publish_ground_truth(self):
+        """/ground_truth/odom: the true pose (world = map frame) and the achieved twist."""
+        gt = Odometry()
+        gt.header.stamp = self.stamp
+        gt.header.frame_id = 'map'
+        gt.child_frame_id = 'base_link'
+        gt.pose.pose.position.x = self.pose['x']
+        gt.pose.pose.position.y = self.pose['y']
+        gt.pose.pose.orientation.z = math.sin(self.pose['theta'] / 2.0)
+        gt.pose.pose.orientation.w = math.cos(self.pose['theta'] / 2.0)
+        gt.twist.twist.linear.x = float(self.achieved_vx)
+        gt.twist.twist.linear.y = float(self.achieved_vy)
+        gt.twist.twist.angular.z = float(self.achieved_w)
+        self.ground_truth_pub.publish(gt)
 
     def check_collision(self, new_x, new_y):
         # Vectorized point-to-segment distance for all walls at once
